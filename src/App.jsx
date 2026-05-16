@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, ReferenceLine, Cell,
 } from "recharts";
 import {
-  DEFAULT_PARAMS, MESES, FUENTES, CAMPOS_ESPEJO,
+  DEFAULT_PARAMS, MESES, FUENTES,
   calcEtapa1, calcEtapa2, calcEtapa3, calcEtapa4, calcTotal,
   getPctInop, velPromedioPonderada, checkEspejo,
   runMonteCarlo, runMCMensual, CLIMA_ZARATE, CLIMA_BB,
