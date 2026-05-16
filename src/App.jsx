@@ -1239,8 +1239,18 @@ function TabEscenarios({p}) {
       <div className="card">
         <div className="ct">Guardar Escenario Actual</div>
         <div className="g2" style={{marginBottom:10}}>
-          <Campo label="Nombre" value={nom} onChange={v=>setNom(v)} tipo="usuario" nota="Ej: Caso base junio 2026 VLSFO hoy"/>
-          <Campo label="Descripción" value={desc} onChange={v=>setDesc(v)} tipo="usuario"/>
+          <div className="campo">
+            <div className="campo-label" style={{color:T.usuario.label}}>Nombre <TipoBadge tipo="usuario"/></div>
+            <input className="campo-input" type="text" value={nom} onChange={e=>setNom(e.target.value)}
+              placeholder="Ej: Caso base junio 2026 VLSFO hoy"
+              style={{background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}/>
+          </div>
+          <div className="campo">
+            <div className="campo-label" style={{color:T.usuario.label}}>Descripción <TipoBadge tipo="usuario"/></div>
+            <input className="campo-input" type="text" value={desc} onChange={e=>setDesc(e.target.value)}
+              placeholder="Notas sobre este escenario"
+              style={{background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}/>
+          </div>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar escenario"}</button>
