@@ -197,14 +197,14 @@ const TTip = { contentStyle:{background:"#213363",border:"1px solid #1a3356",col
 
 // ─── ESPEJO CHECK ──────────────────────────────────────────────────────────
 const EspejoCheck = ({p}) => {
-  const checks = checkEspejo(p);
-  const hasDiff = checks.some(c=>c.difiere);
+  const checks = checkEspejo(p) || [];
+  const hasDiff = checks.some(c=>c && c.difiere);
   if(!hasDiff) return <div className="espejo-ok">✓ Todos los campos espejo (carga ↔ descarga) son iguales.</div>;
   return (
     <div className="espejo-warn">
       ⚠️ Campos que difieren entre Carga y Descarga:
-      {checks.filter(c=>c.difiere).map(c=>(
-        <div key={c.label} style={{marginTop:4}}>
+      {checks.filter(c=>c && c.difiere).map((c,i)=>(
+        <div key={i} style={{marginTop:4}}>
           <strong>{c.label}</strong>: Carga = {c.valCap} · Descarga = {c.valDes}
         </div>
       ))}
