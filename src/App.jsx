@@ -812,6 +812,11 @@ function TabMC({p}) {
               <div className="pbadge-v" style={{color:C.navy}}>${(res.p90-res.p10).toFixed(1)}</div>
               <div className="pbadge-d" style={{color:C.muted}}>σ=${res.std.toFixed(1)} · {res.n.toLocaleString()} sims</div>
             </div>
+            <div className="pbadge" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
+              <div className="pbadge-l" style={{color:"#0369A1"}}>Media (4 dec.)</div>
+              <div className="pbadge-v" style={{color:"#0369A1",fontSize:15}}>${res.mean.toFixed(4)}</div>
+              <div className="pbadge-d" style={{color:"#0369A1"}}>varía entre corridas ~±${(res.std/Math.sqrt(res.n)*2).toFixed(3)}</div>
+            </div>
           </div>
 
           {/* Guardar corrida */}
