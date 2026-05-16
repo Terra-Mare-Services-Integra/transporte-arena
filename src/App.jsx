@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, ReferenceLine, Cell,
 } from "recharts";
 import {
-  DEFAULT_PARAMS, MESES, FUENTES,
+  DEFAULT_PARAMS, MESES, FUENTES, CAMPOS_ESPEJO,
   calcEtapa1, calcEtapa2, calcEtapa3, calcEtapa4, calcTotal,
   getPctInop, velPromedioPonderada, checkEspejo,
   runMonteCarlo, runMCMensual, CLIMA_ZARATE, CLIMA_BB,
@@ -17,6 +17,8 @@ import { supabase } from "./lib/supabase";
 // 🔲 Fórmula         → gris
 // 🟩 Estadístico     → verde apagado
 const T = {
+  usuario: { bg:"#FEFCE8", border:"#D4B84A", text:"#7A6210", label:"#9A7A20" },
+  estadistico: { bg:"#F0FDF4", border:"#86BFAB", text:"#166534", label:"#15803D" },
   input:  { bg:"#FEFCE8", border:"#D4B84A", text:"#7A6210", label:"#9A7A20" },
   formula:{ bg:"#F4F4F5", border:"#C4C4C8", text:"#3F3F46", label:"#71717A" },
   stat:   { bg:"#F0FDF4", border:"#86BFAB", text:"#166534", label:"#15803D" },
@@ -142,7 +144,7 @@ const FuenteLink = ({ fuente }) => (
 );
 
 const Campo = ({ label, value, onChange, tipo="usuario", unit, min, max, step=1, formula, nota, mesGrid }) => {
-  const st = T[tipo];
+  const st = T[tipo] || T.formula;
   return (
     <div className="campo" style={mesGrid ? {flex:"1 1 80px"} : {}}>
       <div className="campo-label" style={{color:st.label}}>
@@ -164,7 +166,7 @@ const Campo = ({ label, value, onChange, tipo="usuario", unit, min, max, step=1,
 };
 
 const Toggle = ({ label, options, value, onChange, tipo="usuario" }) => {
-  const st = T[tipo];
+  const st = T[tipo] || T.formula;
   return (
     <div style={{marginBottom:10}}>
       <div className="campo-label" style={{color:st.label}}>{label}<TipoBadge tipo={tipo}/></div>
@@ -197,14 +199,14 @@ const TTip = { contentStyle:{background:"#213363",border:"1px solid #1a3356",col
 
 // ─── ESPEJO CHECK ──────────────────────────────────────────────────────────
 const EspejoCheck = ({p}) => {
-  const checks = checkEspejo(p) || [];
-  const hasDiff = checks.some(c=>c && c.difiere);
+  const checks = checkEspejo(p);
+  const hasDiff = checks.some(c=>c.difiere);
   if(!hasDiff) return <div className="espejo-ok">✓ Todos los campos espejo (carga ↔ descarga) son iguales.</div>;
   return (
     <div className="espejo-warn">
       ⚠️ Campos que difieren entre Carga y Descarga:
-      {checks.filter(c=>c && c.difiere).map((c,i)=>(
-        <div key={i} style={{marginTop:4}}>
+      {checks.filter(c=>c.difiere).map(c=>(
+        <div key={c.label} style={{marginTop:4}}>
           <strong>{c.label}</strong>: Carga = {c.valCap} · Descarga = {c.valDes}
         </div>
       ))}
