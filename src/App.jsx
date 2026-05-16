@@ -461,7 +461,7 @@ function TabCarga({p,set,tnEntregadas}) {
                   {l:"Vel. ideal",      eq:`${p.cap_gruas}×${p.cap_grampada}×${p.cap_densidadArena}×${p.cap_movGrampa}`, v:e1.velIdeal_TnMin.toFixed(4)+" Tn/min", hover:e1.hoverVel},
                   {l:"Vel. / hora",     eq:"velMin × 60",  v:e1.velIdeal_TnHr.toFixed(2)+" Tn/hr",  hover:`${e1.velIdeal_TnMin.toFixed(4)} × 60 = ${e1.velIdeal_TnHr.toFixed(2)} Tn/hr`},
                   {l:"T ideal (hs)",    eq:"capacidad / vel_hr", v:e1.tIdeal_hr.toFixed(2)+" hs",   hover:`${p.cap_capacidadBarco} ÷ ${e1.velIdeal_TnHr.toFixed(2)} = ${e1.tIdeal_hr.toFixed(2)} hs`},
-                  {l:"T ideal (días)",  eq:"horas / horasDía", v:e1.tIdeal_dias.toFixed(4)+" días", hover:e1.hoverTIdeal},
+                  {l:"T ideal (días)",  eq:"horas / horastrabajadasDía", v:e1.tIdeal_dias.toFixed(4)+" días", hover:e1.hoverTIdeal},
                   {l:"Días inop.",      eq:"tIdeal×pInop÷(1−pInop)", v:e1.diasInop.toFixed(4)+" días", hover:e1.hoverInop},
                   {l:"T real carga",    eq:"tIdeal + inop + espera", v:e1.tReal_dias.toFixed(4)+" días", hover:e1.hoverTReal},
                   {l:"Merma (Tn)",      eq:`${p.cap_capacidadBarco}×${(p.cap_pctMerma*100).toFixed(2)}%`, v:e1.mermaTn.toFixed(0)+" Tn", hover:e1.hoverMerma},
@@ -644,7 +644,7 @@ function TabDescarga({p,set,tnEntregadas}) {
                 {[
                   {l:"Tn entrada",      eq:"cap. − merma carga",                         v:`${e3.tnEntrada.toFixed(0)} Tn`,       hover:`${p.cap_capacidadBarco} − ${e1.mermaTn.toFixed(0)} = ${e3.tnEntrada.toFixed(0)} Tn`},
                   {l:"Vel. descarga",   eq:`${p.des_gruas}×${p.des_grampada}×${p.cap_densidadArena}×${p.des_movGrampa}`, v:`${e3.velIdeal_TnMin.toFixed(4)} Tn/min`, hover:e3.hoverVel},
-                  {l:"T ideal (días)",  eq:"tnEntrada / vel_hr / horasDía",              v:`${e3.tIdeal_dias.toFixed(4)} días`,   hover:`${e3.tnEntrada.toFixed(0)} ÷ ${e3.velIdeal_TnHr.toFixed(2)} ÷ ${p.des_horasDia} = ${e3.tIdeal_dias.toFixed(4)} días`},
+                  {l:"T ideal (días)",  eq:"tnEntrada / vel_hr / horastrabajadasDía",              v:`${e3.tIdeal_dias.toFixed(4)} días`,   hover:`${e3.tnEntrada.toFixed(0)} ÷ ${e3.velIdeal_TnHr.toFixed(2)} ÷ ${p.des_horasDia} = ${e3.tIdeal_dias.toFixed(4)} días`},
                   {l:"T real descarga", eq:"tIdeal + inop + esperaBB",                  v:`${e3.tReal_dias.toFixed(4)} días`,    hover:e3.hoverTReal},
                   {l:"Merma descarga",  eq:`${e3.tnEntrada.toFixed(0)}×${(p.des_pctMermaDescarga*100).toFixed(2)}%`,  v:`${e3.mermaDescarga_Tn.toFixed(0)} Tn`, hover:`${e3.tnEntrada.toFixed(0)} × ${(p.des_pctMermaDescarga*100).toFixed(2)}% = ${e3.mermaDescarga_Tn.toFixed(0)} Tn`},
                   {l:"Merma acopio",    eq:`${e3.tnAcopio.toFixed(0)}×${(p.des_pctMermaAcopio*100).toFixed(2)}%`,    v:`${e3.mermaAcopio_Tn.toFixed(0)} Tn`,  hover:`${e3.tnAcopio.toFixed(0)} × ${(p.des_pctMermaAcopio*100).toFixed(2)}% = ${e3.mermaAcopio_Tn.toFixed(0)} Tn`},
