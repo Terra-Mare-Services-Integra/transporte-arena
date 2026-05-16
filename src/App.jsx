@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   BarChart, Bar, LineChart, Line, ComposedChart, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -82,7 +82,7 @@ button{font-family:'Montserrat',sans-serif;cursor:pointer}
 .kpi-u{font-size:9px;color:#6381A7;margin-top:2px}
 
 .campo{margin-bottom:8px}
-.campo-label{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.campo-label{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-height:24px;align-content:center}
 .campo-input{width:100%;border-radius:6px;padding:5px 9px;font-size:12px;border-width:1px;border-style:solid;font-family:'Montserrat',sans-serif}
 .campo-formula{width:100%;border-radius:6px;padding:5px 9px;font-size:12px;font-family:'DM Mono',monospace;border-width:1px;border-style:solid}
 
@@ -690,7 +690,7 @@ function TabVuelta({p,set,tnEntregadas}) {
       </div>
       <div className="card">
         <div className="ct">Ruta Vuelta — Sea White → Zárate (mismos tramos en reversa)</div>
-        <MapaNavegacion tramos={[...p.nav_tramos].reverse()} onUpdate={()=>{}} vuelta={true}/>
+        <MapaNavegacion tramos={p.vta_tramos} onUpdate={arr=>set("vta_tramos",arr)} vuelta={false}/>
       </div>
       <div className="g2">
         <div className="card">
@@ -715,6 +715,8 @@ function TabVuelta({p,set,tnEntregadas}) {
 }
 
 // ─── TAB MC: MONTE CARLO ───────────────────────────────────────────────────
+
+// ─── TAB MC: MONTE CARLO ───────────────────────────────────────────────────
 function TabMC({p}) {
   const [n,setN]=useState(5000);
   const [mes,setMes]=useState(null);
@@ -722,17 +724,42 @@ function TabMC({p}) {
   const [mcMes,setMcMes]=useState(null);
   const [running,setR]=useState(false);
   const [runM,setRM]=useState(false);
+  const [savingMC,setSavingMC]=useState(false);
+  const [nomMC,setNomMC]=useState("");
+  const [msgMC,setMsgMC]=useState("");
   const det=calcTotal(p,mes??5);
 
   const run=useCallback(()=>{setR(true);setTimeout(()=>{setRes(runMonteCarlo(p,n,mes));setR(false);},60);},[p,n,mes]);
   const runMC=useCallback(()=>{setRM(true);setTimeout(()=>{setMcMes(runMCMensual(p,2000));setRM(false);},80);},[p]);
 
+  const guardarMC=async()=>{
+    if(!res){setMsgMC("Corré la simulación primero");return;}
+    if(!nomMC.trim()){setMsgMC("Ingresá un nombre");return;}
+    setSavingMC(true);
+    const stats=calcVLSFOStats(p.vlsfo_historico);
+    const{error}=await supabase.from("corridas_montecarlo").insert({
+      escenario_nombre:nomMC.trim(),
+      n_simulaciones:res.n,
+      mes_analizado:mes,
+      p10:res.p10,p25:res.p25,p50:res.p50,p75:res.p75,p90:res.p90,
+      mean_val:res.mean,std_val:res.std,
+      spread:parseFloat((res.p90-res.p10).toFixed(1)),
+      vlsfo_escenario:p.nav_escenarioVLSFO,
+      vlsfo_precio:getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico),
+      params:p,
+    });
+    if(error)setMsgMC("Error: "+error.message);
+    else{setMsgMC("✓ Corrida guardada");setNomMC("");}
+    setSavingMC(false);
+    setTimeout(()=>setMsgMC(""),3000);
+  };
+
   const pBadges=res?[
-    {l:"P10 — Optimista",   v:res.p10,bg:"#F0FDF4",bc:"#86EFAC",c:C.p10, d:"El 10% de los escenarios simulados resulta en un costo MEJOR que este. Es el límite superior del rango favorable."},
+    {l:"P10 — Optimista",   v:res.p10,bg:"#F0FDF4",bc:"#86EFAC",c:C.p10, d:"El 10% de los escenarios simulados resulta en un costo MEJOR que este. Representa condiciones favorables acumuladas."},
     {l:"P25",               v:res.p25,bg:"#F0FDF4",bc:"#86EFAC",c:"#1a7a3a",d:"El 25% de los escenarios es mejor. Cuartil optimista."},
     {l:"P50 — Más probable",v:res.p50,bg:"#FFFBEB",bc:"#D4B84A",c:C.p50, d:"La mediana. El 50% de los escenarios resulta por encima y el 50% por debajo. Es el caso más representativo."},
     {l:"P75",               v:res.p75,bg:"#FEF3C7",bc:"#D4B84A",c:C.orange,d:"El 75% de los escenarios es mejor. Cuartil pesimista."},
-    {l:"P90 — Pesimista",   v:res.p90,bg:"#FEE2E2",bc:"#FECACA",c:C.p90, d:"Solo el 10% de los escenarios resulta peor que este. Es el límite del rango adverso."},
+    {l:"P90 — Pesimista",   v:res.p90,bg:"#FEE2E2",bc:"#FECACA",c:C.p90, d:"Solo el 10% de los escenarios resulta peor que este. Representa condiciones adversas acumuladas."},
   ]:[];
 
   return (
@@ -743,30 +770,8 @@ function TabMC({p}) {
           El modelo determinístico produce <strong>un solo número</strong> para cada configuración. Pero en la realidad, variables como el precio del combustible, el clima o los tiempos de espera <strong>no son fijos</strong> — fluctúan aleatoriamente.
         </p>
         <p style={{fontSize:12,color:"#0369A1",lineHeight:1.7}}>
-          El Monte Carlo corre el modelo <strong>N veces</strong>, y en cada corrida sortea un valor aleatorio para cada variable (basado en su distribución histórica o estimada). El resultado es una <strong>distribución de probabilidad</strong> del costo final: en lugar de "$68/Tn", obtenés "$65–$72/Tn con 80% de confianza".
+          El Monte Carlo corre el modelo <strong>N veces</strong>, sorteando en cada corrida un valor aleatorio para cada variable según su distribución histórica o estimada. El resultado es una <strong>distribución de probabilidad</strong> del costo final: en lugar de "$68/Tn", obtenés "$65–$72/Tn con 80% de confianza".
         </p>
-      </div>
-
-      <div className="card">
-        <div className="ct">Variables modeladas estadísticamente</div>
-        <p style={{fontSize:11,color:C.muted,marginBottom:8}}>
-          Las variables marcadas como <TipoBadge tipo="estadistico"/> usan distribuciones basadas en datos históricos. Las marcadas como <TipoBadge tipo="usuario"/> usan el valor ingresado con una variabilidad estimada.
-        </p>
-        {res&&(
-          <>
-            <div className="mc-var-row" style={{fontWeight:700,fontSize:8,color:C.muted,background:"transparent",textTransform:"uppercase",letterSpacing:.5}}>
-              <span>Variable</span><span>Valor base</span><span>Distribución en simulación</span><span>Tipo</span>
-            </div>
-            {res.vars.map((v,i)=>(
-              <div key={i} className="mc-var-row">
-                <span style={{fontWeight:600,color:C.navy}}>{v.label}</span>
-                <span style={{fontFamily:"DM Mono,monospace",fontSize:10,color:v.tipo==="usuario"?T.usuario.text:T.stat.text}}>{v.base}</span>
-                <span style={{fontSize:9,color:C.muted}}>{v.dist}</span>
-                <TipoBadge tipo={v.tipo}/>
-              </div>
-            ))}
-          </>
-        )}
       </div>
 
       <div className="card">
@@ -788,7 +793,7 @@ function TabMC({p}) {
             </select>
           </div>
           <button className="run" onClick={run} disabled={running}>{running?"Calculando...":"▶ Correr Simulación"}</button>
-          <span style={{fontSize:11,color:C.muted}}>Base det.: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}USD/Tn</strong></span>
+          <span style={{fontSize:11,color:C.muted}}>Base det.: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
         </div>
       </div>
 
@@ -808,6 +813,23 @@ function TabMC({p}) {
               <div className="pbadge-d" style={{color:C.muted}}>σ=${res.std.toFixed(1)} · {res.n.toLocaleString()} sims</div>
             </div>
           </div>
+
+          {/* Guardar corrida */}
+          <div className="card" style={{background:"#F0FDF4",borderColor:"#86EFAC"}}>
+            <div className="ct" style={{color:C.green}}>Guardar esta corrida</div>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <input className="campo-input" value={nomMC} onChange={e=>setNomMC(e.target.value)}
+                placeholder="Ej: Junio 2026 — VLSFO hoy — 5000 sims"
+                style={{flex:2,minWidth:200,background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}/>
+              <button className="run" onClick={guardarMC} disabled={savingMC}
+                style={{background:C.green}}>{savingMC?"Guardando...":"💾 Guardar corrida"}</button>
+              {msgMC&&<span style={{fontSize:11,color:msgMC.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msgMC}</span>}
+            </div>
+            <div style={{fontSize:10,color:C.green,marginTop:6}}>
+              Se guarda: P10=${res.p10} P50=${res.p50} P90=${res.p90} · Spread=${(res.p90-res.p10).toFixed(1)} · VLSFO escenario: {VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}
+            </div>
+          </div>
+
           <div className="card">
             <div className="ct">Distribución de Probabilidad</div>
             <ResponsiveContainer width="100%" height={240}>
@@ -828,13 +850,28 @@ function TabMC({p}) {
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          <div className="card">
+            <div className="ct">Variables en la Simulación</div>
+            <div className="mc-var-row" style={{fontWeight:700,fontSize:8,color:C.muted,background:"transparent",textTransform:"uppercase",letterSpacing:.5}}>
+              <span>Variable</span><span>Valor base</span><span>Distribución</span><span>Tipo</span>
+            </div>
+            {res.vars.map((v,i)=>(
+              <div key={i} className="mc-var-row">
+                <span style={{fontWeight:600,color:C.navy}}>{v.label}</span>
+                <span style={{fontFamily:"DM Mono,monospace",fontSize:10,color:v.tipo==="usuario"?T.usuario.text:T.stat.text}}>{v.base}</span>
+                <span style={{fontSize:9,color:C.muted}}>{v.dist}</span>
+                <TipoBadge tipo={v.tipo}/>
+              </div>
+            ))}
+          </div>
         </>
       )}
 
       <div className="card">
         <div className="ct">Análisis de Estacionalidad — USD/Tn por Mes</div>
         <p style={{fontSize:11,color:C.muted,lineHeight:1.6,marginBottom:10}}>
-          Corre 2.000 simulaciones por mes (24.000 total). Muestra cómo varía el costo según la época del año por efecto del clima, la espera en BB y la estacionalidad del combustible. Los tres gráficos muestran el <strong>caso optimista (P10)</strong>, el <strong>caso probable (P50)</strong> y el <strong>caso pesimista (P90)</strong>.
+          Corre 2.000 simulaciones por mes (24.000 total). Muestra cómo varía el costo según la época del año por efecto del clima, espera en BB y estacionalidad del combustible.
         </p>
         <button className="run" onClick={runMC} disabled={runM} style={{marginBottom:12}}>
           {runM?"Calculando 24.000 simulaciones...":"▶ Correr Análisis Estacional"}
@@ -842,16 +879,15 @@ function TabMC({p}) {
 
         {mcMes&&(
           <>
-            {/* Tres gráficos separados */}
             {[
-              {key:"p10",label:"P10 — Caso Optimista",color:C.p10,desc:"Solo el 10% de los viajes de ese mes costará menos que esto. Representa las condiciones más favorables (buen clima, poca espera, combustible bajo)."},
-              {key:"p50",label:"P50 — Caso Más Probable",color:C.p50,desc:"La mediana de la distribución. El resultado más representativo de lo que probablemente ocurra en un viaje típico de ese mes."},
-              {key:"p90",label:"P90 — Caso Pesimista",color:C.p90,desc:"Solo el 10% de los viajes de ese mes costará más que esto. Representa condiciones adversas acumuladas (mal clima, demoras, combustible caro)."},
+              {key:"p10",label:"P10 — Caso Optimista",color:C.p10,desc:"Solo el 10% de los viajes de ese mes costará menos. Condiciones más favorables: buen clima, poca espera, combustible bajo."},
+              {key:"p50",label:"P50 — Caso Más Probable",color:C.p50,desc:"La mediana mensual. El resultado más representativo de lo que probablemente ocurra en un viaje típico de ese mes."},
+              {key:"p90",label:"P90 — Caso Pesimista",color:C.p90,desc:"Solo el 10% de los viajes costará más. Condiciones adversas acumuladas: mal clima, demoras, combustible caro."},
             ].map(({key,label,color,desc})=>(
               <div key={key} style={{marginBottom:16}}>
-                <div style={{fontSize:10,fontWeight:700,color,marginBottom:4}}>{label}</div>
+                <div style={{fontSize:10,fontWeight:700,color,marginBottom:3}}>{label}</div>
                 <div style={{fontSize:10,color:C.muted,marginBottom:6}}>{desc}</div>
-                <ResponsiveContainer width="100%" height={160}>
+                <ResponsiveContainer width="100%" height={150}>
                   <BarChart data={mcMes} margin={{top:5,right:10,left:0,bottom:5}}>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
                     <XAxis dataKey="mes" tick={{fill:C.muted,fontSize:10}}/>
@@ -870,12 +906,11 @@ function TabMC({p}) {
               </div>
             ))}
 
-            {/* Tabla resumen */}
             <div style={{overflowX:"auto",marginTop:8}}>
               <table className="cost-table">
                 <thead><tr><th>Mes</th><th>P10</th><th>P25</th><th style={{color:"#FCD34D"}}>P50</th><th>P75</th><th>P90</th><th>Det.</th><th>Spread</th></tr></thead>
                 <tbody>
-                  {mcMes.map((r,i)=>(
+                  {mcMes.map((r)=>(
                     <tr key={r.mes}>
                       <td style={{fontWeight:700}}>{r.mes}</td>
                       {[r.p10,r.p25,r.p50,r.p75,r.p90,r.det].map((v,j)=>(
@@ -905,6 +940,7 @@ function TabMC({p}) {
   );
 }
 
+
 // ─── TAB EV: EVALUACIÓN TOTAL ──────────────────────────────────────────────
 function TabEvaluacion({p,tnEntregadas}) {
   const [mes,setMes]=useState(5);
@@ -913,8 +949,7 @@ function TabEvaluacion({p,tnEntregadas}) {
 
   const etapas=[
     {
-      label:"ETAPA 1 — CARGA (ZÁRATE)",
-      color:"#235C96",
+      label:"ETAPA 1 — CARGA (ZÁRATE)", color:"#235C96",
       rows:[
         {label:"Costo arena",        total:e1.costoArena,   hover:[e1.hoverTotal[0]]},
         {label:"Costo merma carga",  total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
@@ -923,22 +958,18 @@ function TabEvaluacion({p,tnEntregadas}) {
         {label:"Time Charter",       total:e1.fleteEtapa,   hover:[e1.hoverTotal[4]]},
         {label:"Agencia Zárate",     total:e1.agencia,      hover:[e1.hoverTotal[5]]},
       ],
-      subtotal:e1.costoTotal,
-      dias:e1.tReal_dias,
+      subtotal:e1.costoTotal, dias:e1.tReal_dias,
     },
     {
-      label:"ETAPA 2 — NAVEGACIÓN IDA",
-      color:"#166534",
+      label:"ETAPA 2 — NAVEGACIÓN IDA", color:"#166534",
       rows:[
         {label:"Combustible navegación",total:e2.combNav,  hover:e2.hoverComb},
-        {label:"Time Charter",          total:e2.fleteNav, hover:[e2.hoverTotal[1]]},
+        {label:"Time Charter ida",      total:e2.fleteNav, hover:[e2.hoverTotal[1]]},
       ],
-      subtotal:e2.costoTotal,
-      dias:e2.diasNav,
+      subtotal:e2.costoTotal, dias:e2.diasNav,
     },
     {
-      label:"ETAPA 3 — DESCARGA (SEA WHITE)",
-      color:"#5B21B6",
+      label:"ETAPA 3 — DESCARGA (SEA WHITE)", color:"#5B21B6",
       rows:[
         {label:"Opex descarga",      total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
         {label:"Camiones directo",   total:e3.costoCamiones,hover:[e3.hoverTotal[1]]},
@@ -947,18 +978,15 @@ function TabEvaluacion({p,tnEntregadas}) {
         {label:"Time Charter",       total:e3.fleteEtapa,   hover:[e3.hoverTotal[4]]},
         {label:"Agencia BB",         total:e3.agencia,      hover:[e3.hoverTotal[5]]},
       ],
-      subtotal:e3.costoTotal,
-      dias:e3.tReal_dias,
+      subtotal:e3.costoTotal, dias:e3.tReal_dias,
     },
     {
-      label:"ETAPA 4 — VUELTA EN LASTRE",
-      color:"#92400E",
+      label:"ETAPA 4 — VUELTA EN LASTRE", color:"#92400E",
       rows:[
         {label:"Combustible lastre",total:e4.combLastre,hover:e4.hoverComb},
-        {label:"Time Charter",      total:e4.fleteNav,  hover:[e4.hoverTotal[1]]},
+        {label:"Time Charter vuelta",total:e4.fleteNav, hover:[e4.hoverTotal[1]]},
       ],
-      subtotal:e4.costoTotal,
-      dias:e4.diasNav,
+      subtotal:e4.costoTotal, dias:e4.diasNav,
     },
   ];
 
@@ -968,25 +996,21 @@ function TabEvaluacion({p,tnEntregadas}) {
         <div style={{fontSize:9,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
         <MesSelector value={mes} onChange={setMes}/>
       </div>
-
       <div className="kpis">
-        <KPI label="USD/Tn final" value={`$${tot.usdTn.toFixed(1)}`} color={C.gold}/>
-        <KPI label="Tn entregadas" value={tot.tnEntregadas.toFixed(0)} color={C.green}/>
-        <KPI label="Días totales" value={`${tot.diasTotales.toFixed(1)}d`} color={C.navy}/>
-        <KPI label="Costo total" value={`$${(tot.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
-        <KPI label="VLSFO activo" value={`$${e1.vlsfo}/T`} color={C.orange}/>
+        <KPI label="USD/Tn final"   value={`$${tot.usdTn.toFixed(1)}`}              color={C.gold}/>
+        <KPI label="Tn entregadas"  value={tot.tnEntregadas.toFixed(0)}              color={C.green}/>
+        <KPI label="Días totales"   value={`${tot.diasTotales.toFixed(1)}d`}         color={C.navy}/>
+        <KPI label="Costo total"    value={`$${(tot.costoTotal/1000).toFixed(0)}k`}  color={C.navy}/>
+        <KPI label="VLSFO activo"   value={`$${e1.vlsfo}/T`}                         color={C.orange}/>
       </div>
-
       <div className="card">
         <div className="ct">Tabla Consolidada — Todas las Etapas</div>
         <table className="eval-table">
-          <thead>
-            <tr><th>Concepto</th><th>Días</th><th>USD/Tn</th><th>Total USD</th></tr>
-          </thead>
+          <thead><tr><th>Concepto</th><th>Días</th><th>USD/Tn</th><th>Total USD</th></tr></thead>
           <tbody>
             {etapas.map(etapa=>(
-              <>
-                <tr key={etapa.label} className="etapa-hdr">
+              <React.Fragment key={etapa.label}>
+                <tr className="etapa-hdr">
                   <td colSpan={4} style={{borderLeft:`4px solid ${etapa.color}`}}>{etapa.label}</td>
                 </tr>
                 {etapa.rows.map((r,i)=>(
@@ -1006,7 +1030,7 @@ function TabEvaluacion({p,tnEntregadas}) {
                   <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tnEntregadas).toFixed(1)}</td>
                   <td className="mono" style={{textAlign:"right",color:etapa.color}}>${etapa.subtotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
                 </tr>
-              </>
+              </React.Fragment>
             ))}
             <tr className="grand-total">
               <td>TOTAL — USD / TN ENTREGADA</td>
@@ -1017,12 +1041,12 @@ function TabEvaluacion({p,tnEntregadas}) {
           </tbody>
         </table>
       </div>
-
-      {/* Waterfall */}
       <div className="card">
         <div className="ct">Waterfall — Contribución por Etapa (USD/Tn)</div>
         <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/tnEntregadas).toFixed(1)),color:e.color}))} margin={{top:10,right:10,left:0,bottom:10}}>
+          <BarChart
+            data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/tnEntregadas).toFixed(1)),color:e.color}))}
+            margin={{top:10,right:10,left:0,bottom:10}}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
             <XAxis dataKey="name" tick={{fill:C.muted,fontSize:9}}/>
             <YAxis tick={{fill:C.muted,fontSize:9}}/>
@@ -1041,6 +1065,7 @@ function TabEvaluacion({p,tnEntregadas}) {
 function TabClima({p,set}) {
   const inopZ=getPctInopFromDB(p.clima_zarate,p.cap_inopLluvia,p.cap_inopViento);
   const inopB=getPctInopFromDB(p.clima_bb,p.des_inopLluvia,p.des_inopViento);
+
   const updateClima=(puerto,mesIdx,field,val)=>{
     const key=puerto==="zarate"?"clima_zarate":"clima_bb";
     const arr=[...p[key]];arr[mesIdx]={...arr[mesIdx],[field]:parseFloat(val)||0};set(key,arr);
@@ -1076,9 +1101,9 @@ function TabClima({p,set}) {
       <div className="card" style={{background:C.warn,borderColor:C.warnBorder}}>
         <div style={{fontSize:11,color:C.orange,fontWeight:700,marginBottom:4}}>⚠️ Fuentes para reemplazar los estimados</div>
         <div style={{fontSize:11,color:C.orange,lineHeight:1.7}}>
-          • <strong>SMN San Fernando / Ezeiza:</strong> <a href="https://www.smn.gob.ar/descarga-de-datos" target="_blank" rel="noreferrer" style={{color:C.navy}}>smn.gob.ar ↗</a> — estadísticas climatológicas mensuales históricas<br/>
+          • <strong>SMN San Fernando / Ezeiza:</strong> <a href="https://www.smn.gob.ar/descarga-de-datos" target="_blank" rel="noreferrer" style={{color:C.navy}}>smn.gob.ar ↗</a><br/>
           • <strong>SMN Bahía Blanca:</strong> misma URL, estación 87750<br/>
-          • μ = media del valor diario para ese mes en el histórico disponible. σ = desviación estándar de esos valores diarios.
+          • μ = media del valor diario para ese mes en el histórico. σ = desviación estándar de esos valores diarios.
         </div>
       </div>
       <ClimaSec puerto="zarate" titulo="Zárate — Lluvia y Viento" climaDB={p.clima_zarate} inop={inopZ} fuente={FUENTES.climaZarate}/>
@@ -1095,13 +1120,8 @@ function TabCombustible({p,set}) {
     const arr=[...p.vlsfo_historico];arr[idx]={...arr[idx],precio:parseFloat(val)||0};set("vlsfo_historico",arr);
   };
   const resetHistorico=()=>set("vlsfo_historico",VLSFO_HISTORICO_DEFAULT);
-
   const años=[...new Set(p.vlsfo_historico.map(h=>h.año))];
-
-  // Para el gráfico
-  const chartData=p.vlsfo_historico.map(h=>({
-    name:`${MESES[h.mes]}'${String(h.año).slice(2)}`,precio:h.precio
-  }));
+  const chartData=p.vlsfo_historico.map(h=>({name:`${MESES[h.mes]}'${String(h.año).slice(2)}`,precio:h.precio}));
 
   return (
     <div>
@@ -1109,13 +1129,13 @@ function TabCombustible({p,set}) {
         <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>VLSFO 0.5%S Rotterdam — Resumen estadístico</div>
         <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
           {[
-            {l:"Valor más reciente",v:`$${stats.actual}/T`,c:"#fff",sub:"⚠️ Pico histórico"},
-            {l:"Promedio 12 meses",  v:`$${stats.prom12m.toFixed(0)}/T`,c:"#93C5FD"},
-            {l:"Promedio 5 años",    v:`$${stats.prom5a.toFixed(0)}/T`,c:"#93C5FD"},
-            {l:"Mínimo 5 años",      v:`$${stats.min5a}/T`,c:"#86EFAC"},
-            {l:"Máximo 5 años",      v:`$${stats.max5a}/T`,c:"#FCA5A5"},
-            {l:"vs Prom. 12M",       v:`${stats.pctVsPromedio12m>0?"+":""}${stats.pctVsPromedio12m.toFixed(1)}%`,c:stats.pctVsPromedio12m>10?"#FCA5A5":"#86EFAC"},
-            {l:"σ últimos 12M",      v:`$${stats.sigma12m.toFixed(0)}/T`,c:"#FCD34D",sub:"usado en MC"},
+            {l:"Valor más reciente",v:`$${stats.actual}/T`,       c:"#fff",   sub:"⚠️ Pico histórico"},
+            {l:"Promedio 12 meses", v:`$${stats.prom12m.toFixed(0)}/T`,c:"#93C5FD"},
+            {l:"Promedio 5 años",   v:`$${stats.prom5a.toFixed(0)}/T`, c:"#93C5FD"},
+            {l:"Mínimo 5 años",     v:`$${stats.min5a}/T`,         c:"#86EFAC"},
+            {l:"Máximo 5 años",     v:`$${stats.max5a}/T`,         c:"#FCA5A5"},
+            {l:"vs Prom. 12M",      v:`${stats.pctVsPromedio12m>0?"+":""}${stats.pctVsPromedio12m.toFixed(1)}%`,c:stats.pctVsPromedio12m>10?"#FCA5A5":"#86EFAC"},
+            {l:"σ últimos 12M",     v:`$${stats.sigma12m.toFixed(0)}/T`,c:"#FCD34D",sub:"usado en MC"},
           ].map(({l,v,c,sub})=>(
             <div key={l}>
               <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>{l}</div>
@@ -1125,9 +1145,7 @@ function TabCombustible({p,set}) {
           ))}
         </div>
       </div>
-
       <div className="warn-note">⚠️ Datos ESTIMADOS (placeholder). Reemplazar con datos reales de <a href="https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Rotterdam ↗</a></div>
-
       <div className="card">
         <div className="ct">Histórico VLSFO — Gráfico</div>
         <ResponsiveContainer width="100%" height={220}>
@@ -1148,16 +1166,13 @@ function TabCombustible({p,set}) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-
       <div className="card">
         <div className="ct">Tabla de Precios Históricos — Editable <TipoBadge tipo="usuario"/>
           <button onClick={resetHistorico} style={{marginLeft:"auto",padding:"2px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:8,fontWeight:700,cursor:"pointer"}}>Resetear</button>
         </div>
         <div style={{overflowX:"auto"}}>
           <table className="clima-table">
-            <thead>
-              <tr><th>Mes</th>{años.map(a=><th key={a}>{a}</th>)}</tr>
-            </thead>
+            <thead><tr><th>Mes</th>{años.map(a=><th key={a}>{a}</th>)}</tr></thead>
             <tbody>
               {MESES.map((m,mi)=>(
                 <tr key={m}>
@@ -1186,23 +1201,38 @@ function TabCombustible({p,set}) {
 // ─── TAB SC: ESCENARIOS ────────────────────────────────────────────────────
 function TabEscenarios({p}) {
   const [esc,setEsc]=useState([]);
+  const [corridas,setCorridas]=useState([]);
   const [nom,setNom]=useState("");
   const [desc,setDesc]=useState("");
   const [sav,setSav]=useState(false);
   const [load,setLoad]=useState(false);
   const [msg,setMsg]=useState("");
+  const [vistaActiva,setVistaActiva]=useState("escenarios");
   const det=calcTotal(p);
 
-  const cargar=async()=>{setLoad(true);const{data}=await supabase.from("escenarios_arena").select("*").order("created_at",{ascending:false});setEsc(data||[]);setLoad(false);};
+  const cargar=async()=>{
+    setLoad(true);
+    const[{data:escData},{data:corrData}]=await Promise.all([
+      supabase.from("escenarios_arena").select("*").order("created_at",{ascending:false}),
+      supabase.from("corridas_montecarlo").select("*").order("created_at",{ascending:false}),
+    ]);
+    setEsc(escData||[]);setCorridas(corrData||[]);
+    setLoad(false);
+  };
+
   const guardar=async()=>{
     if(!nom.trim()){setMsg("Ingresá un nombre");return;}
     setSav(true);
-    const{error}=await supabase.from("escenarios_arena").insert({nombre:nom.trim(),descripcion:desc.trim(),params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))});
+    const{error}=await supabase.from("escenarios_arena").insert({
+      nombre:nom.trim(),descripcion:desc.trim(),params:p,
+      usd_tn:parseFloat(det.usdTn.toFixed(1))
+    });
     if(error)setMsg("Error: "+error.message);
     else{setMsg("✓ Guardado");setNom("");setDesc("");cargar();}
     setSav(false);setTimeout(()=>setMsg(""),3000);
   };
-  const eliminar=async(id)=>{await supabase.from("escenarios_arena").delete().eq("id",id);cargar();};
+
+  const eliminar=async(tabla,id)=>{await supabase.from(tabla).delete().eq("id",id);cargar();};
 
   return (
     <div>
@@ -1212,33 +1242,104 @@ function TabEscenarios({p}) {
           <Campo label="Nombre" value={nom} onChange={v=>setNom(v)} tipo="usuario" nota="Ej: Caso base junio 2026 VLSFO hoy"/>
           <Campo label="Descripción" value={desc} onChange={v=>setDesc(v)} tipo="usuario"/>
         </div>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar"}</button>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar escenario"}</button>
           <span style={{fontSize:11,color:C.muted}}>USD/Tn: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}</strong></span>
           <span style={{fontSize:11,color:C.muted}}>VLSFO: <strong style={{color:C.orange}}>${calcVLSFOStats(p.vlsfo_historico).actual}/T ({VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})</strong></span>
           {msg&&<span style={{fontSize:11,color:msg.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msg}</span>}
         </div>
       </div>
+
       <div className="card">
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div className="ct" style={{margin:0}}>Escenarios Guardados</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{display:"flex",gap:6}}>
+            {[{id:"escenarios",l:"Escenarios guardados"},{id:"corridas",l:"Corridas Monte Carlo"}].map(v=>(
+              <button key={v.id} className={`tbtn ${vistaActiva===v.id?"on":""}`} onClick={()=>setVistaActiva(v.id)}>{v.l}</button>
+            ))}
+          </div>
           <button className="run" style={{padding:"5px 12px",fontSize:10}} onClick={cargar}>{load?"...":"↻ Actualizar"}</button>
         </div>
-        {esc.length===0?(
-          <div style={{textAlign:"center",padding:"24px",color:C.muted,fontSize:12}}>No hay escenarios guardados.</div>
-        ):esc.map(e=>(
-          <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:12,fontWeight:700,color:C.navy}}>{e.nombre}</div>
-              {e.descripcion&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>{e.descripcion}</div>}
-              <div style={{fontSize:8,color:C.muted,marginTop:3,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")}</div>
+
+        {vistaActiva==="escenarios"&&(
+          esc.length===0?(
+            <div style={{textAlign:"center",padding:"24px",color:C.muted,fontSize:12}}>No hay escenarios guardados.</div>
+          ):esc.map(e=>(
+            <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:C.navy}}>{e.nombre}</div>
+                {e.descripcion&&<div style={{fontSize:10,color:C.muted,marginTop:1}}>{e.descripcion}</div>}
+                <div style={{fontSize:8,color:C.muted,marginTop:3,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:16,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
+                <button onClick={()=>eliminar("escenarios_arena",e.id)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600}}>Eliminar</button>
+              </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:16,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)}USD/Tn</div>
-              <button onClick={()=>eliminar(e.id)} style={{padding:"3px 8px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600}}>Eliminar</button>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
+
+        {vistaActiva==="corridas"&&(
+          corridas.length===0?(
+            <div style={{textAlign:"center",padding:"24px",color:C.muted,fontSize:12}}>No hay corridas guardadas. Corré el Monte Carlo y guardalo desde la pestaña 5.</div>
+          ):(
+            <>
+              {/* Tabla comparativa */}
+              <div style={{overflowX:"auto",marginBottom:12}}>
+                <table className="cost-table">
+                  <thead>
+                    <tr>
+                      <th>Nombre</th><th>Mes</th><th>N sims</th><th>VLSFO</th>
+                      <th style={{color:"#86EFAC"}}>P10</th>
+                      <th style={{color:"#FCD34D"}}>P50</th>
+                      <th style={{color:"#FCA5A5"}}>P90</th>
+                      <th>Spread</th><th>Fecha</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {corridas.map(c=>(
+                      <tr key={c.id}>
+                        <td style={{fontWeight:600,color:C.navy,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.escenario_nombre}</td>
+                        <td className="mono" style={{textAlign:"right"}}>{c.mes_analizado!==null?MESES[c.mes_analizado]:"Anual"}</td>
+                        <td className="mono" style={{textAlign:"right"}}>{c.n_simulaciones?.toLocaleString()}</td>
+                        <td className="mono" style={{textAlign:"right",color:C.orange}}>${c.vlsfo_precio}<span style={{fontSize:9,color:C.muted,marginLeft:3}}>{c.vlsfo_escenario}</span></td>
+                        <td className="mono" style={{textAlign:"right",color:C.p10}}>${c.p10?.toFixed(1)}</td>
+                        <td className="mono" style={{textAlign:"right",color:C.p50}}>${c.p50?.toFixed(1)}</td>
+                        <td className="mono" style={{textAlign:"right",color:C.p90}}>${c.p90?.toFixed(1)}</td>
+                        <td className="mono" style={{textAlign:"right",color:C.orange}}>${c.spread?.toFixed(1)}</td>
+                        <td style={{fontSize:9,color:C.muted}}>{new Date(c.created_at).toLocaleDateString("es-AR")}</td>
+                        <td><button onClick={()=>eliminar("corridas_montecarlo",c.id)} style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600,cursor:"pointer"}}>×</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Gráfico comparativo de P50 */}
+              {corridas.length>1&&(
+                <div>
+                  <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>Comparativa P50 entre corridas</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart
+                      data={corridas.slice(0,10).map(c=>({
+                        name:c.escenario_nombre.slice(0,15)+"...",
+                        p10:c.p10,p50:c.p50,p90:c.p90,
+                      })).reverse()}
+                      margin={{top:5,right:10,left:0,bottom:40}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
+                      <XAxis dataKey="name" tick={{fill:C.muted,fontSize:9}} angle={-25} textAnchor="end"/>
+                      <YAxis tick={{fill:C.muted,fontSize:9}} domain={["auto","auto"]}/>
+                      <Tooltip {...TTip} formatter={v=>[`$${v?.toFixed(1)} USD/Tn`]}/>
+                      <Legend wrapperStyle={{fontSize:10}}/>
+                      <Bar dataKey="p10" name="P10" fill={`${C.p10}88`} radius={[3,3,0,0]}/>
+                      <Bar dataKey="p50" name="P50" fill={C.p50} radius={[3,3,0,0]}/>
+                      <Bar dataKey="p90" name="P90" fill={`${C.p90}88`} radius={[3,3,0,0]}/>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </>
+          )
+        )}
       </div>
     </div>
   );

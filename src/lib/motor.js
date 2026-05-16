@@ -163,6 +163,7 @@ export const DEFAULT_PARAMS = {
   des_opexUSDTn:             8,
   des_costoAcopioUSDTn:      2.5,
   des_costoCamionesDirUSDTn: 37.14,
+  vta_tramos:                [...TRAMOS_DEFAULT].reverse(),
   vta_consumoLastre:         12.5,
   vta_esperaZarateDias:      0.5,
   clima_zarate:              CLIMA_DB_DEFAULT.zarate,
@@ -370,7 +371,7 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
 export function calcEtapa4(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const nav=velPromedioPonderada(p.nav_tramos);
+  const nav=velPromedioPonderada(p.vta_tramos||p.nav_tramos);
   const combLastre=nav.diasNav*p.vta_consumoLastre*vlsfo;
   const fleteNav  =nav.diasNav*p.nav_timeCharter;
   const costoTotal=combLastre+fleteNav;
@@ -411,15 +412,11 @@ function randn(){
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-function sampleInop(climaDB, mesIdx, umbralL, umbralV) {
-  const d = climaDB[mesIdx];
-  // Usamos la probabilidad esperada del mes con variabilidad del 20%
-  const pL = probSuperaUmbral(d.lluviaProm, d.lluviaSigma, umbralL);
-  const pV = probSuperaUmbral(d.vientoProm, d.vientoSigma, umbralV);
-  const pBase = Math.min(pL + pV - pL * pV, 0.95);
-  // Variamos el porcentaje mensual con σ = 20% relativo, no el valor puntual del día
-  const pSample = Math.max(0, Math.min(0.85, pBase + randn() * pBase * 0.2));
-  return pSample;
+function sampleInop(climaDB,mesIdx,umbralL,umbralV){
+  const d=climaDB[mesIdx];
+  const ll=Math.max(0,d.lluviaProm+randn()*d.lluviaSigma);
+  const vi=Math.max(0,d.vientoProm+randn()*d.vientoSigma);
+  return Math.min((ll>umbralL?1:0)+(vi>umbralV?1:0)-((ll>umbralL?1:0)*(vi>umbralV?1:0)),1);
 }
 
 export function runMonteCarlo(p, n=5000, mesIdx=null) {
