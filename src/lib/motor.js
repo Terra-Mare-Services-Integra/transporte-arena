@@ -1,8 +1,12 @@
-// ─── DATOS HISTÓRICOS ──────────────────────────────────────────────────────
-// Fuente: estimación basada en climatología regional argentina.
-// Validar con SMN (smn.gob.ar) y CGPBB para datos reales.
-
+// ─── CONSTANTES ────────────────────────────────────────────────────────────
 export const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+export const FUENTES = {
+  climaZarate: { label: "SMN — Estación Zárate", url: "https://www.smn.gob.ar/descarga-de-datos" },
+  climaBB:     { label: "SMN — Estación Bahía Blanca", url: "https://www.smn.gob.ar/descarga-de-datos" },
+  esperaBB:    { label: "CGPBB — Estadísticas portuarias", url: "https://puertobahiablanca.com" },
+  vlsfo:       { label: "Ship & Bunker — Rotterdam VLSFO", url: "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" },
+};
 
 export const CLIMA_ZARATE = [
   { mes:"Ene", lluvia_p20:30, lluvia_p50:15, lluvia_p80:5, viento_p35:15, viento_p50:10, viento_p80:3 },
@@ -34,216 +38,252 @@ export const CLIMA_BB = [
   { mes:"Dic", lluvia_p20:13, lluvia_p50:7,  lluvia_p80:2, viento_p35:27, viento_p50:18, viento_p80:7 },
 ];
 
-// ─── DEFAULT PARAMS ────────────────────────────────────────────────────────
+export const TRAMOS_DEFAULT = [
+  { id:1, nombre:"Zárate → Confluencia",           tipo:"Hidrovía",  distancia:80,  velocidad:10,   condicion:"Corriente favorable" },
+  { id:2, nombre:"Confluencia → Río de la Plata",  tipo:"Hidrovía",  distancia:120, velocidad:11,   condicion:"Marea variable" },
+  { id:3, nombre:"Río de la Plata → Punta Indio",  tipo:"Estuario",  distancia:95,  velocidad:11.5, condicion:"Viento ENE frecuente" },
+  { id:4, nombre:"Punta Indio → Rada BB",           tipo:"Costero",   distancia:240, velocidad:13,   condicion:"Mar abierto" },
+  { id:5, nombre:"Rada BB → Muelle Sea White",      tipo:"Puerto",    distancia:28,  velocidad:7,    condicion:"Canal Belgrano — práctico" },
+];
+
+export const CAMPOS_ESPEJO = [
+  { cap:"cap_grampada",  des:"des_grampada",  label:"Grampada (m³)" },
+  { cap:"cap_gruas",     des:"des_gruas",      label:"Grúas" },
+  { cap:"cap_movGrampa", des:"des_movGrampa",  label:"Mov/min grúa" },
+];
+
 export const DEFAULT_PARAMS = {
-  // Barco
-  capacidadBarco: 28000,
-  densidadArena: 1.45,
-  grampada: 15,
-  gruas: 2,
-  movGrampa: 0.5,
-  velocidadBarco: 12,
-  distanciaZBB: 563,
-  timeCharter: 20000,
-  precioVLSFO: 990,
-  consumoNavegando: 15.6,
-  consumoPuerto: 4.6,
-  // Horas de trabajo
-  horasDiaZarate: 12,
-  horasDiaBB: 14,
-  // Arena
-  precioArenaOrigen: 13.5,
-  arenaFijaPorMes: false,
-  precioArenaMes: Array(12).fill(13.5),
-  // Agencias
-  agenciaZarate: 83948,
-  agenciaBB: 106204,
-  // Opex
-  opexCargaUSDTn: 1,
-  opexDescargaUSDTn: 8,
-  costoAcopioUSDTn: 2.5,
-  costoCamionesDirUSDTn: 37.14,
-  // Espera
-  esperaZarate: 0.5,
-  esperaBBMes: [3.2,2.8,2.1,1.9,1.5,1.2,0.9,1.1,1.4,2.0,2.5,3.0],
-  // Mermas
-  pctMermaCarga: 0.02,
-  pctMermaDescarga: 0.015,
-  pctMermaAcopio: 0.01,
-  // Split descarga
-  pctAcopio: 0.30,
-  // Umbrales inoperabilidad
-  inopZarateLluvia: 20,
-  inopZarateViento: 35,
-  inopBBLluvia: 20,
-  inopBBViento: 35,
+  cap_capacidadBarco:        28000,
+  cap_densidadArena:         1.45,
+  cap_grampada:              15,
+  cap_gruas:                 2,
+  cap_movGrampa:             0.5,
+  cap_horasDia:              12,
+  cap_esperaDias:            0.5,
+  cap_inopLluvia:            20,
+  cap_inopViento:            35,
+  cap_pctMerma:              0.02,
+  cap_opexUSDTn:             1,
+  cap_precioArenaOrigen:     13.5,
+  cap_arenaFijaPorMes:       false,
+  cap_precioArenaMes:        Array(12).fill(13.5),
+  nav_tramos:                TRAMOS_DEFAULT,
+  nav_timeCharter:           20000,
+  nav_precioVLSFO:           990,
+  nav_consumoNavegando:      15.6,
+  nav_consumoPuerto:         4.6,
+  nav_agenciaZarate:         83948,
+  nav_agenciaBB:             106204,
+  des_grampada:              15,
+  des_gruas:                 2,
+  des_movGrampa:             0.5,
+  des_horasDia:              14,
+  des_esperaBBMes:           [3.2,2.8,2.1,1.9,1.5,1.2,0.9,1.1,1.4,2.0,2.5,3.0],
+  des_inopLluvia:            20,
+  des_inopViento:            35,
+  des_pctMermaDescarga:      0.015,
+  des_pctMermaAcopio:        0.01,
+  des_pctAcopio:             0.30,
+  des_opexUSDTn:             8,
+  des_costoAcopioUSDTn:      2.5,
+  des_costoCamionesDirUSDTn: 37.14,
+  vta_consumoLastre:         12.5,
+  vta_esperaZarateDias:      0.5,
 };
 
-// ─── INOPERABILIDAD ────────────────────────────────────────────────────────
+// ─── HELPERS ───────────────────────────────────────────────────────────────
 export function getPctInop(climaData, umbralLluvia, umbralViento) {
   return climaData.map(d => {
-    let pLluvia = umbralLluvia <= 20 ? d.lluvia_p20 : umbralLluvia <= 50 ? d.lluvia_p50 : d.lluvia_p80;
-    let pViento = umbralViento <= 35 ? d.viento_p35 : umbralViento <= 50 ? d.viento_p50 : d.viento_p80;
-    const pInop = (pLluvia + pViento - pLluvia * pViento / 100) / 100;
-    return Math.min(pInop, 0.95);
+    const pL = umbralLluvia <= 20 ? d.lluvia_p20 : umbralLluvia <= 50 ? d.lluvia_p50 : d.lluvia_p80;
+    const pV = umbralViento <= 35 ? d.viento_p35 : umbralViento <= 50 ? d.viento_p50 : d.viento_p80;
+    return Math.min((pL + pV - pL * pV / 100) / 100, 0.95);
   });
 }
 
-// ─── MODELO IDEAL ──────────────────────────────────────────────────────────
-export function modeloIdeal(p) {
-  const velCarga_TnMin    = p.gruas * p.grampada * p.densidadArena * p.movGrampa;
-  const velCarga_TnHr     = velCarga_TnMin * 60;
-  const velDescarga_TnMin = velCarga_TnMin;
-  const velDescarga_TnHr  = velDescarga_TnMin * 60;
-  const tCarga_hr         = p.capacidadBarco / velCarga_TnHr;
-  const tCarga_dias       = tCarga_hr / p.horasDiaZarate;
-  const tDescarga_hr      = p.capacidadBarco / velDescarga_TnHr;
-  const tDescarga_dias    = tDescarga_hr / p.horasDiaBB;
-  const diasNav           = p.distanciaZBB / (p.velocidadBarco * 24);
+export function velPromedioPonderada(tramos) {
+  const totalMn  = tramos.reduce((a, t) => a + t.distancia, 0);
+  const totalHrs = tramos.reduce((a, t) => a + t.distancia / t.velocidad, 0);
+  return { velProm: totalMn / totalHrs, totalMn, totalHrs, diasNav: totalHrs / 24 };
+}
+
+export function checkEspejo(p) {
+  return CAMPOS_ESPEJO.map(c => ({
+    label: c.label, valCap: p[c.cap], valDes: p[c.des], difiere: p[c.cap] !== p[c.des],
+  }));
+}
+
+// ─── ETAPAS ────────────────────────────────────────────────────────────────
+export function calcEtapa1(p, mesIdx = 5) {
+  const velIdeal_TnMin = p.cap_gruas * p.cap_grampada * p.cap_densidadArena * p.cap_movGrampa;
+  const velIdeal_TnHr  = velIdeal_TnMin * 60;
+  const tIdeal_hr      = p.cap_capacidadBarco / velIdeal_TnHr;
+  const tIdeal_dias    = tIdeal_hr / p.cap_horasDia;
+  const inopZ          = getPctInop(CLIMA_ZARATE, p.cap_inopLluvia, p.cap_inopViento);
+  const pInop          = inopZ[mesIdx];
+  const diasInop       = tIdeal_dias * pInop / Math.max(0.01, 1 - pInop);
+  const tReal_dias     = tIdeal_dias + diasInop + p.cap_esperaDias;
+  const mermaTn        = p.cap_capacidadBarco * p.cap_pctMerma;
+  const tnPostCarga    = p.cap_capacidadBarco - mermaTn;
+  const precioArena    = p.cap_arenaFijaPorMes ? p.cap_precioArenaMes[mesIdx] : p.cap_precioArenaOrigen;
+  const costoArena     = precioArena * p.cap_capacidadBarco;
+  const costoMerma     = precioArena * mermaTn;
+  const costoOpex      = p.cap_opexUSDTn * p.cap_capacidadBarco;
+  const combPuerto     = tReal_dias * p.nav_consumoPuerto * p.nav_precioVLSFO;
+  const fleteEtapa     = tReal_dias * p.nav_timeCharter;
+  const costoTotal     = costoArena + costoMerma + costoOpex + combPuerto + fleteEtapa;
   return {
-    velCarga_TnMin, velCarga_TnHr,
-    velDescarga_TnMin, velDescarga_TnHr,
-    tCarga_hr, tCarga_dias,
-    tDescarga_hr, tDescarga_dias,
-    diasNav,
-    totalDias: tCarga_dias + tDescarga_dias + diasNav * 2,
+    velIdeal_TnMin, velIdeal_TnHr, tIdeal_hr, tIdeal_dias,
+    pInop, diasInop, tReal_dias, mermaTn, tnPostCarga,
+    precioArena, costoArena, costoMerma, costoOpex,
+    combPuerto, fleteEtapa, costoTotal,
   };
 }
 
-// ─── MODELO CON FRICCIONES ─────────────────────────────────────────────────
-export function calcularConFricciones(p, mesIdx = 5) {
-  const ideal  = modeloIdeal(p);
-  const inopZ  = getPctInop(CLIMA_ZARATE, p.inopZarateLluvia, p.inopZarateViento);
-  const inopB  = getPctInop(CLIMA_BB,     p.inopBBLluvia,    p.inopBBViento);
-  const pInopZ = inopZ[mesIdx];
-  const pInopB = inopB[mesIdx];
+export function calcEtapa2(p) {
+  const nav = velPromedioPonderada(p.nav_tramos);
+  const combNav    = nav.diasNav * p.nav_consumoNavegando * p.nav_precioVLSFO;
+  const fleteNav   = nav.diasNav * p.nav_timeCharter;
+  const agencias   = p.nav_agenciaZarate + p.nav_agenciaBB;
+  const costoTotal = combNav + fleteNav + agencias;
+  return { ...nav, combNav, fleteNav, agencias, costoTotal };
+}
 
-  const diasInopZ = ideal.tCarga_dias    * pInopZ / Math.max(0.01, 1 - pInopZ);
-  const diasInopB = ideal.tDescarga_dias * pInopB / Math.max(0.01, 1 - pInopB);
-  const esperaBB  = p.esperaBBMes[mesIdx];
-
-  const tCarga_real    = ideal.tCarga_dias    + diasInopZ + p.esperaZarate;
-  const tDescarga_real = ideal.tDescarga_dias + diasInopB + esperaBB;
-  const totalDias      = tCarga_real + tDescarga_real + ideal.diasNav * 2;
-
-  // Mermas
-  const mermaCarga_Tn    = p.capacidadBarco   * p.pctMermaCarga;
-  const tnPostCarga      = p.capacidadBarco   - mermaCarga_Tn;
-  const mermaDescarga_Tn = tnPostCarga        * p.pctMermaDescarga;
-  const tnPostDescarga   = tnPostCarga        - mermaDescarga_Tn;
-  const tnAcopio         = tnPostDescarga     * p.pctAcopio;
-  const tnDirecto        = tnPostDescarga     * (1 - p.pctAcopio);
-  const mermaAcopio_Tn   = tnAcopio          * p.pctMermaAcopio;
-  const tnEntregadas     = tnPostDescarga     - mermaAcopio_Tn;
-  const totalMermas_Tn   = mermaCarga_Tn + mermaDescarga_Tn + mermaAcopio_Tn;
-
-  // Precio arena
-  const precioArena = p.arenaFijaPorMes ? p.precioArenaMes[mesIdx] : p.precioArenaOrigen;
-
-  // Costos
-  const combNav       = ideal.diasNav * 2   * p.consumoNavegando * p.precioVLSFO;
-  const combPuerto    = (tCarga_real + tDescarga_real) * p.consumoPuerto * p.precioVLSFO;
-  const flete         = totalDias            * p.timeCharter;
-  const costoArena    = precioArena          * p.capacidadBarco;
-  const costoAgencias = p.agenciaZarate + p.agenciaBB;
-  const costoOpex     = p.opexCargaUSDTn    * p.capacidadBarco + p.opexDescargaUSDTn * tnPostCarga;
-  const costoCamiones = p.costoCamionesDirUSDTn * tnDirecto;
-  const costoAcopio   = p.costoAcopioUSDTn  * tnAcopio;
-  const costoMermas   = precioArena          * totalMermas_Tn;
-  const costoTotal    = combNav + combPuerto + flete + costoArena +
-                        costoAgencias + costoOpex + costoCamiones + costoAcopio + costoMermas;
-  const usdTn         = costoTotal / tnEntregadas;
-
+export function calcEtapa3(p, mesIdx = 5, tnEntrada = null) {
+  const tn             = tnEntrada ?? (p.cap_capacidadBarco * (1 - p.cap_pctMerma));
+  const velIdeal_TnMin = p.des_gruas * p.des_grampada * p.cap_densidadArena * p.des_movGrampa;
+  const velIdeal_TnHr  = velIdeal_TnMin * 60;
+  const tIdeal_hr      = tn / velIdeal_TnHr;
+  const tIdeal_dias    = tIdeal_hr / p.des_horasDia;
+  const inopB          = getPctInop(CLIMA_BB, p.des_inopLluvia, p.des_inopViento);
+  const pInop          = inopB[mesIdx];
+  const diasInop       = tIdeal_dias * pInop / Math.max(0.01, 1 - pInop);
+  const esperaBB       = p.des_esperaBBMes[mesIdx];
+  const tReal_dias     = tIdeal_dias + diasInop + esperaBB;
+  const mermaDescarga_Tn = tn * p.des_pctMermaDescarga;
+  const tnPostDescarga   = tn - mermaDescarga_Tn;
+  const tnAcopio         = tnPostDescarga * p.des_pctAcopio;
+  const tnDirecto        = tnPostDescarga * (1 - p.des_pctAcopio);
+  const mermaAcopio_Tn   = tnAcopio * p.des_pctMermaAcopio;
+  const tnEntregadas     = tnPostDescarga - mermaAcopio_Tn;
+  const costoOpex        = p.des_opexUSDTn * tn;
+  const costoCamiones    = p.des_costoCamionesDirUSDTn * tnDirecto;
+  const costoAcopio      = p.des_costoAcopioUSDTn * tnAcopio;
+  const combPuerto       = tReal_dias * p.nav_consumoPuerto * p.nav_precioVLSFO;
+  const fleteEtapa       = tReal_dias * p.nav_timeCharter;
+  const costoTotal       = costoOpex + costoCamiones + costoAcopio + combPuerto + fleteEtapa;
   return {
-    ideal, pInopZ, pInopB, diasInopZ, diasInopB, esperaBB,
-    tCarga_real, tDescarga_real, totalDias,
-    mermaCarga_Tn, mermaDescarga_Tn, mermaAcopio_Tn, totalMermas_Tn,
-    tnPostCarga, tnPostDescarga, tnAcopio, tnDirecto, tnEntregadas,
-    combNav, combPuerto, flete, costoArena, costoAgencias,
-    costoOpex, costoCamiones, costoAcopio, costoMermas,
-    costoTotal, usdTn, precioArena,
+    tnEntrada: tn, velIdeal_TnMin, velIdeal_TnHr, tIdeal_hr, tIdeal_dias,
+    pInop, diasInop, esperaBB, tReal_dias,
+    mermaDescarga_Tn, tnPostDescarga, tnAcopio, tnDirecto, mermaAcopio_Tn, tnEntregadas,
+    costoOpex, costoCamiones, costoAcopio, combPuerto, fleteEtapa, costoTotal,
   };
+}
+
+export function calcEtapa4(p) {
+  const nav        = velPromedioPonderada(p.nav_tramos);
+  const combLastre = nav.diasNav * p.vta_consumoLastre * p.nav_precioVLSFO;
+  const fleteNav   = nav.diasNav * p.nav_timeCharter;
+  const costoTotal = combLastre + fleteNav;
+  return { ...nav, combLastre, fleteNav, costoTotal };
+}
+
+export function calcTotal(p, mesIdx = 5) {
+  const e1 = calcEtapa1(p, mesIdx);
+  const e2 = calcEtapa2(p);
+  const e3 = calcEtapa3(p, mesIdx, e1.tnPostCarga);
+  const e4 = calcEtapa4(p);
+  const costoTotal  = e1.costoTotal + e2.costoTotal + e3.costoTotal + e4.costoTotal;
+  const usdTn       = costoTotal / e3.tnEntregadas;
+  const diasTotales = e1.tReal_dias + e2.diasNav + e3.tReal_dias + e4.diasNav;
+  return { e1, e2, e3, e4, costoTotal, usdTn, diasTotales, tnEntregadas: e3.tnEntregadas };
 }
 
 // ─── MONTE CARLO ───────────────────────────────────────────────────────────
 function randn() {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  let u=0,v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-export function runMonteCarlo(p, n = 5000, mesIdx = null) {
-  const inopZ = getPctInop(CLIMA_ZARATE, p.inopZarateLluvia, p.inopZarateViento);
-  const inopB = getPctInop(CLIMA_BB,     p.inopBBLluvia,    p.inopBBViento);
+export function runMonteCarlo(p, n=5000, mesIdx=null) {
+  const inopZ = getPctInop(CLIMA_ZARATE, p.cap_inopLluvia, p.cap_inopViento);
+  const inopB = getPctInop(CLIMA_BB, p.des_inopLluvia, p.des_inopViento);
   const results = [];
 
-  for (let i = 0; i < n; i++) {
-    const mes      = mesIdx !== null ? mesIdx : Math.floor(Math.random() * 12);
-    const pZ       = inopZ[mes];
-    const pB       = inopB[mes];
-    const velBarco = Math.max(8, p.velocidadBarco + randn() * 1.2);
-    const vlsfo    = Math.max(500, p.precioVLSFO   + randn() * 100);
-    const esperaBB = Math.max(0,  p.esperaBBMes[mes] + randn() * 0.6);
-    const esperaZ  = Math.max(0,  p.esperaZarate   + randn() * 0.2);
-    const inopZs   = Math.max(0,  pZ * (1 + randn() * 0.2));
-    const inopBs   = Math.max(0,  pB * (1 + randn() * 0.2));
-    const mC       = Math.max(0,  p.pctMermaCarga    + randn() * 0.005);
-    const mD       = Math.max(0,  p.pctMermaDescarga + randn() * 0.004);
-    const mA       = Math.max(0,  p.pctMermaAcopio   + randn() * 0.003);
+  for(let i=0;i<n;i++){
+    const mes   = mesIdx!==null ? mesIdx : Math.floor(Math.random()*12);
+    const vlsfo = Math.max(500, p.nav_precioVLSFO + randn()*100);
+    const tc    = Math.max(5000, p.nav_timeCharter + randn()*1500);
+    const pZ    = Math.max(0, inopZ[mes]*(1+randn()*0.2));
+    const pB    = Math.max(0, inopB[mes]*(1+randn()*0.2));
+    const espBB = Math.max(0, p.des_esperaBBMes[mes]+randn()*0.6);
+    const espZ  = Math.max(0, p.cap_esperaDias+randn()*0.2);
+    const mC    = Math.max(0, p.cap_pctMerma+randn()*0.005);
+    const mD    = Math.max(0, p.des_pctMermaDescarga+randn()*0.004);
+    const mA    = Math.max(0, p.des_pctMermaAcopio+randn()*0.003);
+    const vFact = Math.max(0.5, 1+randn()*0.08);
+    const pa    = p.cap_arenaFijaPorMes ? p.cap_precioArenaMes[mes] : p.cap_precioArenaOrigen;
 
-    const ideal    = modeloIdeal({ ...p, velocidadBarco: velBarco });
-    const dZ       = ideal.tCarga_dias    * inopZs / Math.max(0.01, 1 - inopZs);
-    const dB       = ideal.tDescarga_dias * inopBs / Math.max(0.01, 1 - inopBs);
-    const tC       = ideal.tCarga_dias    + dZ + esperaZ;
-    const tD       = ideal.tDescarga_dias + dB + esperaBB;
-    const totalD   = tC + tD + ideal.diasNav * 2;
+    const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
+    const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
+    const tR1  = tI1+tI1*pZ/Math.max(0.01,1-pZ)+espZ;
+    const mCTn = p.cap_capacidadBarco*mC;
+    const tnPC = p.cap_capacidadBarco-mCTn;
+    const c1   = pa*p.cap_capacidadBarco+pa*mCTn+p.cap_opexUSDTn*p.cap_capacidadBarco
+                 +tR1*p.nav_consumoPuerto*vlsfo+tR1*tc;
 
-    const mCTn  = p.capacidadBarco * mC;
-    const tnPC  = p.capacidadBarco - mCTn;
-    const mDTn  = tnPC * mD;
-    const tnPD  = tnPC - mDTn;
-    const tnAc  = tnPD * p.pctAcopio;
-    const tnDi  = tnPD * (1 - p.pctAcopio);
-    const mATn  = tnAc * mA;
-    const tnEnt = tnPD - mATn;
+    const { diasNav } = velPromedioPonderada(p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vFact})));
+    const c2 = diasNav*p.nav_consumoNavegando*vlsfo+diasNav*tc+p.nav_agenciaZarate+p.nav_agenciaBB;
 
-    const pa    = p.arenaFijaPorMes ? p.precioArenaMes[mes] : p.precioArenaOrigen;
-    const comb  = ideal.diasNav * 2 * p.consumoNavegando * vlsfo + (tC + tD) * p.consumoPuerto * vlsfo;
-    const total = comb + totalD * p.timeCharter + pa * p.capacidadBarco +
-                  p.agenciaZarate + p.agenciaBB +
-                  p.opexCargaUSDTn * p.capacidadBarco + p.opexDescargaUSDTn * tnPC +
-                  p.costoCamionesDirUSDTn * tnDi + p.costoAcopioUSDTn * tnAc +
-                  pa * (mCTn + mDTn + mATn);
+    const vH3  = p.des_gruas*p.des_grampada*p.cap_densidadArena*p.des_movGrampa*60;
+    const tI3  = tnPC/vH3/p.des_horasDia;
+    const tR3  = tI3+tI3*pB/Math.max(0.01,1-pB)+espBB;
+    const mDTn = tnPC*mD;
+    const tnPD = tnPC-mDTn;
+    const tnAc = tnPD*p.des_pctAcopio;
+    const tnDi = tnPD*(1-p.des_pctAcopio);
+    const mATn = tnAc*mA;
+    const tnEnt= tnPD-mATn;
+    const c3   = p.des_opexUSDTn*tnPC+p.des_costoCamionesDirUSDTn*tnDi
+                 +p.des_costoAcopioUSDTn*tnAc+tR3*p.nav_consumoPuerto*vlsfo+tR3*tc;
 
-    results.push(parseFloat((total / tnEnt).toFixed(3)));
+    const c4 = diasNav*p.vta_consumoLastre*vlsfo+diasNav*tc;
+    results.push(parseFloat(((c1+c2+c3+c4)/tnEnt).toFixed(3)));
   }
 
-  results.sort((a, b) => a - b);
-  const pct  = (q) => results[Math.floor(q * n)];
-  const mean = results.reduce((a, b) => a + b, 0) / n;
-  const std  = Math.sqrt(results.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
-
-  const mn = results[0], mx = results[n - 1];
-  const bins = 40, bs = (mx - mn) / bins;
-  const hist = Array.from({ length: bins }, (_, i) => ({
-    x: parseFloat((mn + i * bs + bs / 2).toFixed(2)), count: 0, pct: 0,
-  }));
-  results.forEach(v => {
-    const bi = Math.min(Math.floor((v - mn) / bs), bins - 1);
-    hist[bi].count++;
-  });
-  hist.forEach(h => h.pct = parseFloat(((h.count / n) * 100).toFixed(2)));
+  results.sort((a,b)=>a-b);
+  const pct  = q => results[Math.floor(q*n)];
+  const mean = results.reduce((a,b)=>a+b,0)/n;
+  const std  = Math.sqrt(results.reduce((a,b)=>a+(b-mean)**2,0)/n);
+  const mn=results[0], mx=results[n-1], bins=40, bs=(mx-mn)/bins;
+  const hist = Array.from({length:bins},(_,i)=>({x:parseFloat((mn+i*bs+bs/2).toFixed(2)),count:0,pct:0}));
+  results.forEach(v=>{const bi=Math.min(Math.floor((v-mn)/bs),bins-1);hist[bi].count++;});
+  hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(2)));
 
   return {
     hist, n,
-    mean:  parseFloat(mean.toFixed(2)),
-    std:   parseFloat(std.toFixed(2)),
-    p10:   pct(0.10),
-    p25:   pct(0.25),
-    p50:   pct(0.50),
-    p75:   pct(0.75),
-    p90:   pct(0.90),
-    min: mn, max: mx,
+    mean: parseFloat(mean.toFixed(2)), std: parseFloat(std.toFixed(2)),
+    p10:pct(0.10), p25:pct(0.25), p50:pct(0.50), p75:pct(0.75), p90:pct(0.90),
+    min:mn, max:mx,
+    vars: [
+      { label:"Velocidad barco",  base:`${p.nav_tramos.reduce((a,t)=>a+t.distancia,0)/p.nav_tramos.reduce((a,t)=>a+t.distancia/t.velocidad,0).toFixed(1)} kt`, dist:"±8% relativo",   tipo:"usuario" },
+      { label:"VLSFO",            base:`$${p.nav_precioVLSFO}`,  dist:"Normal σ=$100",   tipo:"usuario" },
+      { label:"Time Charter",     base:`$${p.nav_timeCharter}`,  dist:"Normal σ=$1.500", tipo:"usuario" },
+      { label:"Espera BB",        base:`${p.des_esperaBBMes[mesIdx??5]}d`, dist:"Normal σ=0.6d",  tipo:"estadistico" },
+      { label:"Inop. clima Z",    base:`${((getPctInop(CLIMA_ZARATE,p.cap_inopLluvia,p.cap_inopViento)[mesIdx??5])*100).toFixed(1)}%`, dist:"±20% relativo", tipo:"estadistico" },
+      { label:"Inop. clima BB",   base:`${((getPctInop(CLIMA_BB,p.des_inopLluvia,p.des_inopViento)[mesIdx??5])*100).toFixed(1)}%`, dist:"±20% relativo", tipo:"estadistico" },
+      { label:"Merma carga",      base:`${(p.cap_pctMerma*100).toFixed(2)}%`, dist:"Normal σ=0.5%", tipo:"usuario" },
+      { label:"Merma descarga",   base:`${(p.des_pctMermaDescarga*100).toFixed(2)}%`, dist:"Normal σ=0.4%", tipo:"usuario" },
+      { label:"Merma acopio",     base:`${(p.des_pctMermaAcopio*100).toFixed(2)}%`, dist:"Normal σ=0.3%", tipo:"usuario" },
+    ],
   };
+}
+
+export function runMCMensual(p, n=2000) {
+  return MESES.map((_,i)=>{
+    const r   = runMonteCarlo(p,n,i);
+    const det = calcTotal(p,i);
+    return { mes:MESES[i], p10:r.p10, p25:r.p25, p50:r.p50, p75:r.p75, p90:r.p90, det:parseFloat(det.usdTn.toFixed(2)) };
+  });
 }
