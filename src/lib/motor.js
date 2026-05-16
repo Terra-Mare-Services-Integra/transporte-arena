@@ -414,9 +414,10 @@ function randn(){
 
 function sampleInop(climaDB,mesIdx,umbralL,umbralV){
   const d=climaDB[mesIdx];
-  const ll=Math.max(0,d.lluviaProm+randn()*d.lluviaSigma);
-  const vi=Math.max(0,d.vientoProm+randn()*d.vientoSigma);
-  return Math.min((ll>umbralL?1:0)+(vi>umbralV?1:0)-((ll>umbralL?1:0)*(vi>umbralV?1:0)),1);
+  const pL=probSuperaUmbral(d.lluviaProm,d.lluviaSigma,umbralL);
+  const pV=probSuperaUmbral(d.vientoProm,d.vientoSigma,umbralV);
+  const pBase=Math.min(pL+pV-pL*pV, 0.90);
+  return Math.max(0, Math.min(0.50, pBase + randn() * pBase * 0.2));
 }
 
 export function runMonteCarlo(p, n=5000, mesIdx=null) {
