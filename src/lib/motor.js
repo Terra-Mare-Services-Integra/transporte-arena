@@ -411,11 +411,15 @@ function randn(){
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-function sampleInop(climaDB,mesIdx,umbralL,umbralV){
-  const d=climaDB[mesIdx];
-  const ll=Math.max(0,d.lluviaProm+randn()*d.lluviaSigma);
-  const vi=Math.max(0,d.vientoProm+randn()*d.vientoSigma);
-  return Math.min((ll>umbralL?1:0)+(vi>umbralV?1:0)-((ll>umbralL?1:0)*(vi>umbralV?1:0)),1);
+function sampleInop(climaDB, mesIdx, umbralL, umbralV) {
+  const d = climaDB[mesIdx];
+  // Usamos la probabilidad esperada del mes con variabilidad del 20%
+  const pL = probSuperaUmbral(d.lluviaProm, d.lluviaSigma, umbralL);
+  const pV = probSuperaUmbral(d.vientoProm, d.vientoSigma, umbralV);
+  const pBase = Math.min(pL + pV - pL * pV, 0.95);
+  // Variamos el porcentaje mensual con σ = 20% relativo, no el valor puntual del día
+  const pSample = Math.max(0, Math.min(0.85, pBase + randn() * pBase * 0.2));
+  return pSample;
 }
 
 export function runMonteCarlo(p, n=5000, mesIdx=null) {
