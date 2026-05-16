@@ -473,7 +473,7 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
   hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(1)));
 
   return {
-    hist,n,mean:parseFloat(mean.toFixed(1)),std:parseFloat(std.toFixed(1)),
+    hist,n,mean:parseFloat(mean.toFixed(4)),std:parseFloat(std.toFixed(4)),
     p10:pct(0.10),p25:pct(0.25),p50:pct(0.50),p75:pct(0.75),p90:pct(0.90),
     min:mn,max:mx,
     vars:[
