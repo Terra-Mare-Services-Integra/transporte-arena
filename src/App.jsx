@@ -264,7 +264,7 @@ function CostTable({ rows, tnEntregadas }) {
               <td style={{fontWeight:isTotal?800:500,color:isTotal?C.navy:undefined}}>{r.label}</td>
               <td className="ecuacion">{r.eq}</td>
               <td className="mono" style={{color:C.mid,textAlign:"right"}}>
-                {isTotal?<strong>${usdTn.toFixed(2)}</strong>:`$${usdTn.toFixed(2)}`}
+                {isTotal?<strong>${usdTn.toFixed(1)}</strong>:`$${usdTn.toFixed(1)}`}
               </td>
               <td style={{textAlign:"right"}}>
                 <HoverVal
@@ -333,7 +333,7 @@ function MapaNavegacion({ tramos, onUpdate, vuelta=false }) {
         <rect x={8} y={295} width={220} height={28} rx={5} fill="rgba(33,51,99,.85)"/>
         <text x={16} y={306} fontSize="8" fill="rgba(255,255,255,.5)" fontWeight="600">VELOCIDAD PROMEDIO PONDERADA</text>
         <text x={16} y={318} fontSize="12" fill="#fff" fontWeight="800" fontFamily="DM Mono,monospace">
-          {velProm.toFixed(2)}kt · {totalMn}mn · {totalHrs.toFixed(1)}hs
+          {velProm.toFixed(1)}kt · {totalMn}mn · {totalHrs.toFixed(1)}hs
         </text>
         {vuelta&&<text x={670} y={25} fontSize="10" fill="#6381A7" fontWeight="700">↩ VUELTA EN LASTRE</text>}
         {!vuelta&&<text x={680} y={25} fontSize="10" fill="#235C96" fontWeight="700">→ IDA CARGADO</text>}
@@ -375,9 +375,9 @@ function MapaNavegacion({ tramos, onUpdate, vuelta=false }) {
               <tr style={{background:"#EEF2F7",fontWeight:700}}>
                 <td style={{padding:"8px 9px",color:C.navy}} colSpan={2}>TOTAL / PROMEDIO</td>
                 <td style={{padding:"8px 9px",color:C.gold,fontFamily:"DM Mono,monospace"}}>{totalMn} mn</td>
-                <td style={{padding:"8px 9px",color:C.blue,fontFamily:"DM Mono,monospace",fontSize:14}}>{velProm.toFixed(2)} kt ⌀</td>
+                <td style={{padding:"8px 9px",color:C.blue,fontFamily:"DM Mono,monospace",fontSize:14}}>{velProm.toFixed(1)} kt ⌀</td>
                 <td style={{padding:"8px 9px",color:C.gold,fontFamily:"DM Mono,monospace"}}>{totalHrs.toFixed(1)} hs</td>
-                <td style={{padding:"8px 9px",color:C.mid,fontSize:10}}>{(totalHrs/24).toFixed(2)} días</td>
+                <td style={{padding:"8px 9px",color:C.mid,fontSize:10}}>{(totalHrs/24).toFixed(1)} días</td>
               </tr>
             </tbody>
           </table>
@@ -396,8 +396,8 @@ function TabCarga({p,set,tnEntregadas}) {
     {label:"Costo arena",      eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,    hover:[e1.hoverTotal[0]]},
     {label:"Costo merma",      eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                 total:e1.costoMerma,    hover:[e1.hoverTotal[1]]},
     {label:"Opex carga",       eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
-    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(2)}d×${p.nav_consumoPuerto}T/d×$${p.nav_precioVLSFO}`,total:e1.combPuerto, hover:[e1.hoverTotal[3]]},
-    {label:"Time Charter",     eq:`${e1.tReal_dias.toFixed(2)}d×$${p.nav_timeCharter}/d`,          total:e1.fleteEtapa,    hover:[e1.hoverTotal[4]]},
+    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.nav_consumoPuerto}T/d×$${p.nav_precioVLSFO}`,total:e1.combPuerto, hover:[e1.hoverTotal[3]]},
+    {label:"Time Charter",     eq:`${e1.tReal_dias.toFixed(1)}d×$${p.nav_timeCharter}/d`,          total:e1.fleteEtapa,    hover:[e1.hoverTotal[4]]},
     {label:"Agencia Zárate",   eq:"costo fijo por escala",                                          total:e1.agencia,       hover:[e1.hoverTotal[5]]},
     {label:"TOTAL ETAPA 1",    eq:"Σ costos etapa carga",                                           total:e1.costoTotal,    hover:e1.hoverTotal, isTotal:true},
   ];
@@ -410,12 +410,12 @@ function TabCarga({p,set,tnEntregadas}) {
       </div>
 
       <div className="kpis">
-        <KPI label="Vel. carga ideal" value={`${e1.velIdeal_TnMin.toFixed(2)} Tn/min`} color={T.formula.text}/>
-        <KPI label="Tiempo ideal" value={`${e1.tIdeal_dias.toFixed(3)} días`} color={T.formula.text}/>
-        <KPI label="Tiempo real" value={`${e1.tReal_dias.toFixed(3)} días`} color={C.gold}/>
-        <KPI label="Merma carga" value={`${e1.mermaTn.toFixed(0)} Tn`} unit={`${(p.cap_pctMerma*100).toFixed(2)}%`} color={C.red}/>
+        <KPI label="Vel. carga ideal" value={`${e1.velIdeal_TnMin.toFixed(1)} Tn/min`} color={T.formula.text}/>
+        <KPI label="Tiempo ideal" value={`${e1.tIdeal_dias.toFixed(1)} días`} color={T.formula.text}/>
+        <KPI label="Tiempo real" value={`${e1.tReal_dias.toFixed(1)} días`} color={C.gold}/>
+        <KPI label="Merma carga" value={`${e1.mermaTn.toFixed(0)} Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
         <KPI label="Costo etapa 1" value={`$${(e1.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
-        <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(2)}`} color={C.gold}/>
+        <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
 
       <div className="g2">
@@ -444,8 +444,8 @@ function TabCarga({p,set,tnEntregadas}) {
               <Campo label="Viento inoperable desde" value={p.cap_inopViento} onChange={v=>set("cap_inopViento",v)} tipo="usuario" unit="km/h" min={20} max={100} step={5}/>
             </div>
             <div className="g2">
-              <Campo tipo="formula" label="% días inhábiles" value={`${(e1.pInop*100).toFixed(2)}%`}/>
-              <Campo tipo="formula" label="Días extra por clima" value={`${e1.diasInop.toFixed(3)} días`}/>
+              <Campo tipo="formula" label="% días inhábiles" value={`${(e1.pInop*100).toFixed(1)}%`}/>
+              <Campo tipo="formula" label="Días extra por clima" value={`${e1.diasInop.toFixed(1)} días`}/>
             </div>
             <div className="warn-note">⚠️ Datos estimados — pendiente validación con SMN. Ver pestaña Base Clima.</div>
           </div>
@@ -458,13 +458,13 @@ function TabCarga({p,set,tnEntregadas}) {
               <thead><tr><th>Variable</th><th>Ecuación</th><th colSpan={2}>Resultado</th></tr></thead>
               <tbody>
                 {[
-                  {l:"Vel. ideal",      eq:`${p.cap_gruas}×${p.cap_grampada}×${p.cap_densidadArena}×${p.cap_movGrampa}`, v:e1.velIdeal_TnMin.toFixed(4)+" Tn/min", hover:e1.hoverVel},
-                  {l:"Vel. / hora",     eq:"velMin × 60",  v:e1.velIdeal_TnHr.toFixed(2)+" Tn/hr",  hover:`${e1.velIdeal_TnMin.toFixed(4)} × 60 = ${e1.velIdeal_TnHr.toFixed(2)} Tn/hr`},
-                  {l:"T ideal (hs)",    eq:"capacidad / vel_hr", v:e1.tIdeal_hr.toFixed(2)+" hs",   hover:`${p.cap_capacidadBarco} ÷ ${e1.velIdeal_TnHr.toFixed(2)} = ${e1.tIdeal_hr.toFixed(2)} hs`},
-                  {l:"T ideal (días)",  eq:"horas / horastrabajadasDía", v:e1.tIdeal_dias.toFixed(4)+" días", hover:e1.hoverTIdeal},
-                  {l:"Días inop.",      eq:"tIdeal×pInop÷(1−pInop)", v:e1.diasInop.toFixed(4)+" días", hover:e1.hoverInop},
-                  {l:"T real carga",    eq:"tIdeal + inop + espera", v:e1.tReal_dias.toFixed(4)+" días", hover:e1.hoverTReal},
-                  {l:"Merma (Tn)",      eq:`${p.cap_capacidadBarco}×${(p.cap_pctMerma*100).toFixed(2)}%`, v:e1.mermaTn.toFixed(0)+" Tn", hover:e1.hoverMerma},
+                  {l:"Vel. ideal",      eq:`${p.cap_gruas}×${p.cap_grampada}×${p.cap_densidadArena}×${p.cap_movGrampa}`, v:e1.velIdeal_TnMin.toFixed(1)+" Tn/min", hover:e1.hoverVel},
+                  {l:"Vel. / hora",     eq:"velMin × 60",  v:e1.velIdeal_TnHr.toFixed(1)+" Tn/hr",  hover:`${e1.velIdeal_TnMin.toFixed(1)} × 60 = ${e1.velIdeal_TnHr.toFixed(1)} Tn/hr`},
+                  {l:"T ideal (hs)",    eq:"capacidad / vel_hr", v:e1.tIdeal_hr.toFixed(1)+" hs",   hover:`${p.cap_capacidadBarco} ÷ ${e1.velIdeal_TnHr.toFixed(1)} = ${e1.tIdeal_hr.toFixed(1)} hs`},
+                  {l:"T ideal (días)",  eq:"horas / horastrabajadasDía", v:e1.tIdeal_dias.toFixed(1)+" días", hover:e1.hoverTIdeal},
+                  {l:"Días inop.",      eq:"tIdeal×pInop÷(1−pInop)", v:e1.diasInop.toFixed(1)+" días", hover:e1.hoverInop},
+                  {l:"T real carga",    eq:"tIdeal + inop + espera", v:e1.tReal_dias.toFixed(1)+" días", hover:e1.hoverTReal},
+                  {l:"Merma (Tn)",      eq:`${p.cap_capacidadBarco}×${(p.cap_pctMerma*100).toFixed(1)}%`, v:e1.mermaTn.toFixed(0)+" Tn", hover:e1.hoverMerma},
                   {l:"Tn post-carga",   eq:"capacidad − merma", v:e1.tnPostCarga.toFixed(0)+" Tn",  hover:`${p.cap_capacidadBarco} − ${e1.mermaTn.toFixed(0)} = ${e1.tnPostCarga.toFixed(0)} Tn`},
                 ].map((r,i)=>(
                   <tr key={i}>
@@ -494,20 +494,20 @@ function TabNavegacion({p,set,tnEntregadas}) {
   const e2 = calcEtapa2(p);
 
   const costRows = [
-    {label:"Combustible ida",  eq:`${e2.diasNav.toFixed(3)}d×${p.nav_consumoNavegando}T/d×$${p.nav_precioVLSFO}`, total:e2.combNav,    hover:[e2.hoverTotal[0]]},
-    {label:"Time Charter ida", eq:`${e2.diasNav.toFixed(3)}d×$${p.nav_timeCharter}/d`,                            total:e2.fleteNav,   hover:[e2.hoverTotal[1]]},
+    {label:"Combustible ida",  eq:`${e2.diasNav.toFixed(1)}d×${p.nav_consumoNavegando}T/d×$${p.nav_precioVLSFO}`, total:e2.combNav,    hover:[e2.hoverTotal[0]]},
+    {label:"Time Charter ida", eq:`${e2.diasNav.toFixed(1)}d×$${p.nav_timeCharter}/d`,                            total:e2.fleteNav,   hover:[e2.hoverTotal[1]]},
     {label:"TOTAL ETAPA 2",    eq:"Σ costos navegación ida",                                                        total:e2.costoTotal, hover:e2.hoverTotal, isTotal:true},
   ];
 
   return (
     <div>
       <div className="kpis">
-        <KPI label="Vel. promedio" value={`${e2.velProm.toFixed(2)} kt`} color={T.formula.text}/>
+        <KPI label="Vel. promedio" value={`${e2.velProm.toFixed(1)} kt`} color={T.formula.text}/>
         <KPI label="Distancia" value={`${e2.totalMn} mn`} color={T.input.text}/>
-        <KPI label="Días navegación" value={`${e2.diasNav.toFixed(3)} días`} color={T.formula.text}/>
+        <KPI label="Días navegación" value={`${e2.diasNav.toFixed(1)} días`} color={T.formula.text}/>
         <KPI label="Combustible ida" value={`$${(e2.combNav/1000).toFixed(1)}k`} color={C.gold}/>
         <KPI label="Costo etapa 2" value={`$${(e2.costoTotal/1000).toFixed(1)}k`} color={C.navy}/>
-        <KPI label="USD/Tn etapa" value={`$${(e2.costoTotal/tnEntregadas).toFixed(2)}`} color={C.gold}/>
+        <KPI label="USD/Tn etapa" value={`$${(e2.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
 
       <div className="card">
@@ -529,7 +529,7 @@ function TabNavegacion({p,set,tnEntregadas}) {
           <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
           <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
           <div style={{marginTop:10,padding:"8px 12px",background:"#EEF2F7",borderRadius:8,fontSize:11,color:C.muted}}>
-            Vel. promedio ponderada = <HoverVal value={`${e2.velProm.toFixed(4)} kt`} title="Velocidad Promedio" lines={[e2.hoverVelProm]}/>
+            Vel. promedio ponderada = <HoverVal value={`${e2.velProm.toFixed(1)} kt`} title="Velocidad Promedio" lines={[e2.hoverVelProm]}/>
           </div>
         </div>
       </div>
@@ -547,8 +547,8 @@ function TabDescarga({p,set,tnEntregadas}) {
     {label:"Opex descarga",     eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                       total:e3.costoOpex,     hover:[e3.hoverTotal[0]]},
     {label:"Camiones directo",  eq:`$${p.des_costoCamionesDirUSDTn}/Tn×${e3.tnDirecto.toFixed(0)}Tn`,           total:e3.costoCamiones, hover:[e3.hoverTotal[1]]},
     {label:"Acopio BB",         eq:`$${p.des_costoAcopioUSDTn}/Tn×${e3.tnAcopio.toFixed(0)}Tn`,                 total:e3.costoAcopio,   hover:[e3.hoverTotal[2]]},
-    {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(2)}d×${p.nav_consumoPuerto}T/d×$${p.nav_precioVLSFO}`, total:e3.combPuerto, hover:[e3.hoverTotal[3]]},
-    {label:"Time Charter",      eq:`${e3.tReal_dias.toFixed(2)}d×$${p.nav_timeCharter}/d`,                       total:e3.fleteEtapa,    hover:[e3.hoverTotal[4]]},
+    {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.nav_consumoPuerto}T/d×$${p.nav_precioVLSFO}`, total:e3.combPuerto, hover:[e3.hoverTotal[3]]},
+    {label:"Time Charter",      eq:`${e3.tReal_dias.toFixed(1)}d×$${p.nav_timeCharter}/d`,                       total:e3.fleteEtapa,    hover:[e3.hoverTotal[4]]},
     {label:"Agencia BB",        eq:"costo fijo por escala",                                                        total:e3.agencia,       hover:[e3.hoverTotal[5]]},
     {label:"TOTAL ETAPA 3",     eq:"Σ costos etapa descarga",                                                      total:e3.costoTotal,    hover:e3.hoverTotal, isTotal:true},
   ];
@@ -563,11 +563,11 @@ function TabDescarga({p,set,tnEntregadas}) {
 
       <div className="kpis">
         <KPI label="Tn entrada" value={e3.tnEntrada.toFixed(0)} unit="post merma carga" color={T.formula.text}/>
-        <KPI label="T. ideal descarga" value={`${e3.tIdeal_dias.toFixed(3)} días`} color={T.formula.text}/>
-        <KPI label="T. real descarga" value={`${e3.tReal_dias.toFixed(3)} días`} color={C.gold}/>
+        <KPI label="T. ideal descarga" value={`${e3.tIdeal_dias.toFixed(1)} días`} color={T.formula.text}/>
+        <KPI label="T. real descarga" value={`${e3.tReal_dias.toFixed(1)} días`} color={C.gold}/>
         <KPI label="Tn entregadas" value={e3.tnEntregadas.toFixed(0)} color={C.green}/>
         <KPI label="Costo etapa 3" value={`$${(e3.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
-        <KPI label="USD/Tn etapa" value={`$${(e3.costoTotal/tnEntregadas).toFixed(2)}`} color={C.gold}/>
+        <KPI label="USD/Tn etapa" value={`$${(e3.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
 
       <div className="g2">
@@ -594,7 +594,7 @@ function TabDescarga({p,set,tnEntregadas}) {
                 <span style={{fontSize:15,fontWeight:800,color:C.green,fontFamily:"DM Mono,monospace"}}>{((1-p.des_pctAcopio)*100).toFixed(0)}%</span>
               </div>
               <input type="range" min={0} max={1} step={0.05} value={1-p.des_pctAcopio}
-                onChange={e=>set("des_pctAcopio",parseFloat((1-e.target.value).toFixed(2)))}
+                onChange={e=>set("des_pctAcopio",parseFloat((1-e.target.value).toFixed(1)))}
                 style={{accentColor:C.green}}/>
               <div className="g3" style={{marginTop:8}}>
                 {[{l:"Directo",v:`${e3.tnDirecto.toFixed(0)} Tn`,c:C.green},{l:"Acopio",v:`${e3.tnAcopio.toFixed(0)} Tn`,c:C.gold},{l:"Entregadas",v:`${e3.tnEntregadas.toFixed(0)} Tn`,c:C.navy}].map(({l,v,c})=>(
@@ -614,8 +614,8 @@ function TabDescarga({p,set,tnEntregadas}) {
               <Campo label="Viento inoperable desde" value={p.des_inopViento} onChange={v=>set("des_inopViento",v)} tipo="usuario" unit="km/h" min={20} max={100} step={5}/>
             </div>
             <div className="g2">
-              <Campo tipo="formula" label="% días inhábiles" value={`${(e3.pInop*100).toFixed(2)}%`}/>
-              <Campo tipo="formula" label="Días extra clima" value={`${e3.diasInop.toFixed(3)} días`}/>
+              <Campo tipo="formula" label="% días inhábiles" value={`${(e3.pInop*100).toFixed(1)}%`}/>
+              <Campo tipo="formula" label="Días extra clima" value={`${e3.diasInop.toFixed(1)} días`}/>
             </div>
             <div style={{marginTop:10}}>
               <div style={{fontSize:10,fontWeight:700,color:C.muted,marginBottom:6}}>ESPERA BB POR MES (días) <TipoBadge tipo="estadistico"/></div>
@@ -643,11 +643,11 @@ function TabDescarga({p,set,tnEntregadas}) {
               <tbody>
                 {[
                   {l:"Tn entrada",      eq:"cap. − merma carga",                         v:`${e3.tnEntrada.toFixed(0)} Tn`,       hover:`${p.cap_capacidadBarco} − ${e1.mermaTn.toFixed(0)} = ${e3.tnEntrada.toFixed(0)} Tn`},
-                  {l:"Vel. descarga",   eq:`${p.des_gruas}×${p.des_grampada}×${p.cap_densidadArena}×${p.des_movGrampa}`, v:`${e3.velIdeal_TnMin.toFixed(4)} Tn/min`, hover:e3.hoverVel},
-                  {l:"T ideal (días)",  eq:"tnEntrada / vel_hr / horastrabajadasDía",              v:`${e3.tIdeal_dias.toFixed(4)} días`,   hover:`${e3.tnEntrada.toFixed(0)} ÷ ${e3.velIdeal_TnHr.toFixed(2)} ÷ ${p.des_horasDia} = ${e3.tIdeal_dias.toFixed(4)} días`},
-                  {l:"T real descarga", eq:"tIdeal + inop + esperaBB",                  v:`${e3.tReal_dias.toFixed(4)} días`,    hover:e3.hoverTReal},
-                  {l:"Merma descarga",  eq:`${e3.tnEntrada.toFixed(0)}×${(p.des_pctMermaDescarga*100).toFixed(2)}%`,  v:`${e3.mermaDescarga_Tn.toFixed(0)} Tn`, hover:`${e3.tnEntrada.toFixed(0)} × ${(p.des_pctMermaDescarga*100).toFixed(2)}% = ${e3.mermaDescarga_Tn.toFixed(0)} Tn`},
-                  {l:"Merma acopio",    eq:`${e3.tnAcopio.toFixed(0)}×${(p.des_pctMermaAcopio*100).toFixed(2)}%`,    v:`${e3.mermaAcopio_Tn.toFixed(0)} Tn`,  hover:`${e3.tnAcopio.toFixed(0)} × ${(p.des_pctMermaAcopio*100).toFixed(2)}% = ${e3.mermaAcopio_Tn.toFixed(0)} Tn`},
+                  {l:"Vel. descarga",   eq:`${p.des_gruas}×${p.des_grampada}×${p.cap_densidadArena}×${p.des_movGrampa}`, v:`${e3.velIdeal_TnMin.toFixed(1)} Tn/min`, hover:e3.hoverVel},
+                  {l:"T ideal (días)",  eq:"tnEntrada / vel_hr / horastrabajadasDía",              v:`${e3.tIdeal_dias.toFixed(1)} días`,   hover:`${e3.tnEntrada.toFixed(0)} ÷ ${e3.velIdeal_TnHr.toFixed(1)} ÷ ${p.des_horasDia} = ${e3.tIdeal_dias.toFixed(1)} días`},
+                  {l:"T real descarga", eq:"tIdeal + inop + esperaBB",                  v:`${e3.tReal_dias.toFixed(1)} días`,    hover:e3.hoverTReal},
+                  {l:"Merma descarga",  eq:`${e3.tnEntrada.toFixed(0)}×${(p.des_pctMermaDescarga*100).toFixed(1)}%`,  v:`${e3.mermaDescarga_Tn.toFixed(0)} Tn`, hover:`${e3.tnEntrada.toFixed(0)} × ${(p.des_pctMermaDescarga*100).toFixed(1)}% = ${e3.mermaDescarga_Tn.toFixed(0)} Tn`},
+                  {l:"Merma acopio",    eq:`${e3.tnAcopio.toFixed(0)}×${(p.des_pctMermaAcopio*100).toFixed(1)}%`,    v:`${e3.mermaAcopio_Tn.toFixed(0)} Tn`,  hover:`${e3.tnAcopio.toFixed(0)} × ${(p.des_pctMermaAcopio*100).toFixed(1)}% = ${e3.mermaAcopio_Tn.toFixed(0)} Tn`},
                   {l:"Tn entregadas",   eq:"tnPostDesc − mermaAcopio",                  v:`${e3.tnEntregadas.toFixed(0)} Tn`,    hover:`${e3.tnPostDescarga.toFixed(0)} − ${e3.mermaAcopio_Tn.toFixed(0)} = ${e3.tnEntregadas.toFixed(0)} Tn`},
                 ].map((r,i)=>(
                   <tr key={i}><td style={{fontWeight:600,color:C.navy}}>{r.l}</td><td className="ecuacion">{r.eq}</td>
@@ -671,18 +671,18 @@ function TabDescarga({p,set,tnEntregadas}) {
 function TabVuelta({p,set,tnEntregadas}) {
   const e4 = calcEtapa4(p);
   const costRows = [
-    {label:"Combustible lastre", eq:`${e4.diasNav.toFixed(3)}d×${p.vta_consumoLastre}T/d×$${p.nav_precioVLSFO}`, total:e4.combLastre, hover:[e4.hoverTotal[0]]},
-    {label:"Time Charter vuelta",eq:`${e4.diasNav.toFixed(3)}d×$${p.nav_timeCharter}/d`,                          total:e4.fleteNav,   hover:[e4.hoverTotal[1]]},
+    {label:"Combustible lastre", eq:`${e4.diasNav.toFixed(1)}d×${p.vta_consumoLastre}T/d×$${p.nav_precioVLSFO}`, total:e4.combLastre, hover:[e4.hoverTotal[0]]},
+    {label:"Time Charter vuelta",eq:`${e4.diasNav.toFixed(1)}d×$${p.nav_timeCharter}/d`,                          total:e4.fleteNav,   hover:[e4.hoverTotal[1]]},
     {label:"TOTAL ETAPA 4",      eq:"Σ costos vuelta en lastre",                                                    total:e4.costoTotal, hover:e4.hoverTotal, isTotal:true},
   ];
   return (
     <div>
       <div className="kpis">
-        <KPI label="Días vuelta" value={`${e4.diasNav.toFixed(3)} días`} color={T.formula.text}/>
+        <KPI label="Días vuelta" value={`${e4.diasNav.toFixed(1)} días`} color={T.formula.text}/>
         <KPI label="Consumo lastre" value={`${p.vta_consumoLastre} T/día`} color={T.input.text}/>
         <KPI label="Combustible vuelta" value={`$${(e4.combLastre/1000).toFixed(1)}k`} color={C.gold}/>
         <KPI label="Costo etapa 4" value={`$${(e4.costoTotal/1000).toFixed(1)}k`} color={C.navy}/>
-        <KPI label="USD/Tn etapa" value={`$${(e4.costoTotal/tnEntregadas).toFixed(2)}`} color={C.gold}/>
+        <KPI label="USD/Tn etapa" value={`$${(e4.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
       <div className="card">
         <div className="ct">Ruta Vuelta — Sea White → Zárate (mismos tramos en reversa)</div>
@@ -698,7 +698,7 @@ function TabVuelta({p,set,tnEntregadas}) {
             <HoverVal
               value={`$${((p.nav_consumoNavegando-p.vta_consumoLastre)*e4.diasNav*p.nav_precioVLSFO).toFixed(0)} USD`}
               title="Ahorro combustible"
-              lines={[`(${p.nav_consumoNavegando} − ${p.vta_consumoLastre}) T/d × ${e4.diasNav.toFixed(3)}d × $${p.nav_precioVLSFO} = $${((p.nav_consumoNavegando-p.vta_consumoLastre)*e4.diasNav*p.nav_precioVLSFO).toFixed(0)}`]}
+              lines={[`(${p.nav_consumoNavegando} − ${p.vta_consumoLastre}) T/d × ${e4.diasNav.toFixed(1)}d × $${p.nav_precioVLSFO} = $${((p.nav_consumoNavegando-p.vta_consumoLastre)*e4.diasNav*p.nav_precioVLSFO).toFixed(0)}`]}
             />
           </div>
         </div>
@@ -760,7 +760,7 @@ function TabMC({p}) {
             </select>
           </div>
           <button className="run" onClick={run} disabled={running}>{running?"Calculando...":"▶ Correr"}</button>
-          <span style={{fontSize:12,color:C.muted}}>Base det.: <strong style={{color:C.gold}}>${det.usdTn.toFixed(2)} USD/Tn</strong></span>
+          <span style={{fontSize:12,color:C.muted}}>Base det.: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
         </div>
       </div>
 
@@ -785,14 +785,14 @@ function TabMC({p}) {
             {pBadges.map(({l,v,bg,bc,c,d})=>(
               <div key={l} className="pbadge" style={{background:bg,borderColor:bc}}>
                 <div className="pbadge-l" style={{color:c}}>{l}</div>
-                <div className="pbadge-v" style={{color:c}}>${v.toFixed(2)}</div>
+                <div className="pbadge-v" style={{color:c}}>${v.toFixed(1)}</div>
                 <div className="pbadge-d" style={{color:c}}>USD/Tn · {d}</div>
               </div>
             ))}
             <div className="pbadge" style={{background:"#EEF2F7",borderColor:C.border}}>
               <div className="pbadge-l" style={{color:C.muted}}>Spread P10–P90</div>
-              <div className="pbadge-v" style={{color:C.navy}}>${(res.p90-res.p10).toFixed(2)}</div>
-              <div className="pbadge-d" style={{color:C.muted}}>σ = ${res.std.toFixed(2)}</div>
+              <div className="pbadge-v" style={{color:C.navy}}>${(res.p90-res.p10).toFixed(1)}</div>
+              <div className="pbadge-d" style={{color:C.muted}}>σ = ${res.std.toFixed(1)}</div>
             </div>
           </div>
 
@@ -831,7 +831,7 @@ function TabMC({p}) {
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
                 <XAxis dataKey="mes" tick={{fill:C.muted,fontSize:11}}/>
                 <YAxis tick={{fill:C.muted,fontSize:10}} domain={["auto","auto"]}/>
-                <Tooltip {...TTip} formatter={(v,n)=>[`$${v.toFixed(2)} USD/Tn`,n]}/>
+                <Tooltip {...TTip} formatter={(v,n)=>[`$${v.toFixed(1)} USD/Tn`,n]}/>
                 <Legend wrapperStyle={{fontSize:11}}/>
                 <Bar dataKey="p90" name="P90" fill="#FCA5A544" radius={[3,3,0,0]}/>
                 <Bar dataKey="p50" name="P50" fill="#FCD34D44" radius={[3,3,0,0]}/>
@@ -849,20 +849,20 @@ function TabMC({p}) {
                     <tr key={r.mes}>
                       <td style={{fontWeight:700}}>{r.mes}</td>
                       {[r.p10,r.p25,r.p50,r.p75,r.p90,r.det].map((v,j)=>(
-                        <td key={j} className="mono" style={{textAlign:"right",color:j===2?C.gold:j===5?C.blue:C.navy}}>${v.toFixed(2)}</td>
+                        <td key={j} className="mono" style={{textAlign:"right",color:j===2?C.gold:j===5?C.blue:C.navy}}>${v.toFixed(1)}</td>
                       ))}
-                      <td className="mono" style={{textAlign:"right",color:C.orange}}>${(r.p90-r.p10).toFixed(2)}</td>
+                      <td className="mono" style={{textAlign:"right",color:C.orange}}>${(r.p90-r.p10).toFixed(1)}</td>
                     </tr>
                   ))}
                   <tr className="total">
                     <td>PROMEDIO</td>
                     {["p10","p25","p50","p75","p90","det"].map(k=>(
                       <td key={k} className="mono" style={{textAlign:"right",color:k==="p50"?C.gold:k==="det"?C.blue:C.navy}}>
-                        ${(mcMes.reduce((a,r)=>a+r[k],0)/12).toFixed(2)}
+                        ${(mcMes.reduce((a,r)=>a+r[k],0)/12).toFixed(1)}
                       </td>
                     ))}
                     <td className="mono" style={{textAlign:"right",color:C.orange}}>
-                      ${(mcMes.reduce((a,r)=>a+(r.p90-r.p10),0)/12).toFixed(2)}
+                      ${(mcMes.reduce((a,r)=>a+(r.p90-r.p10),0)/12).toFixed(1)}
                     </td>
                   </tr>
                 </tbody>
@@ -978,7 +978,7 @@ function TabEscenarios({p}) {
   const guardar = async()=>{
     if(!nom.trim()){setMsg("Ingresá un nombre");return;}
     setSav(true);
-    const{error}=await supabase.from("escenarios_arena").insert({nombre:nom.trim(),descripcion:desc.trim(),params:p,usd_tn:parseFloat(det.usdTn.toFixed(2))});
+    const{error}=await supabase.from("escenarios_arena").insert({nombre:nom.trim(),descripcion:desc.trim(),params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))});
     if(error)setMsg("Error: "+error.message);
     else{setMsg("✓ Guardado");setNom("");setDesc("");cargar();}
     setSav(false);setTimeout(()=>setMsg(""),3000);
@@ -995,7 +995,7 @@ function TabEscenarios({p}) {
         </div>
         <div style={{display:"flex",gap:12,alignItems:"center"}}>
           <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar"}</button>
-          <span style={{fontSize:12,color:C.muted}}>USD/Tn actual: <strong style={{color:C.gold}}>${det.usdTn.toFixed(2)}</strong></span>
+          <span style={{fontSize:12,color:C.muted}}>USD/Tn actual: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}</strong></span>
           {msg&&<span style={{fontSize:12,color:msg.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msg}</span>}
         </div>
       </div>
@@ -1014,7 +1014,7 @@ function TabEscenarios({p}) {
               <div style={{fontSize:9,color:C.muted,marginTop:3,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")}</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{fontSize:18,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(2)} USD/Tn</div>
+              <div style={{fontSize:18,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
               <button onClick={()=>eliminar(e.id)} style={{padding:"3px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:10,fontWeight:600}}>Eliminar</button>
             </div>
           </div>
@@ -1051,7 +1051,7 @@ export default function App() {
         </div>
         <div className="hdr-kpis">
           {[
-            {l:"USD/Tn final",  v:`$${tot.usdTn.toFixed(2)}`},
+            {l:"USD/Tn final",  v:`$${tot.usdTn.toFixed(1)}`},
             {l:"Tn entregadas", v:tot.tnEntregadas.toFixed(0)},
             {l:"Días totales",  v:tot.diasTotales.toFixed(1)},
             {l:"Costo total",   v:`$${(tot.costoTotal/1000).toFixed(0)}k`},
