@@ -280,7 +280,7 @@ export function calcEtapa1(p, mesIdx=5) {
       `⚠️ Estimado — validar SMN. Ver Base Clima.`,
     ],
     hoverTReal:`${tIdeal_dias.toFixed(1)}+${diasInop.toFixed(1)}+${p.cap_esperaDias} = ${tReal_dias.toFixed(1)}días`,
-    hoverMerma:`${p.cap_capacidadBarco}×${(p.cap_pctMerma*100).toFixed(1)}% = ${mermaTn.toFixed(0)}Tn`,
+    hoverMerma:`Merma carga (bruta): ${p.cap_capacidadBarco.toLocaleString()}Tn × ${(p.cap_pctMerma*100).toFixed(1)}% = ${mermaTn.toFixed(0)}Tn extra desde origen. Barco zarpa con ${p.cap_capacidadBarco.toLocaleString()}Tn.`,
     hoverComb:[
       `Escenario VLSFO: ${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}`,
       `Precio: $${vlsfo}/T | Hoy: $${vlsfoStats.actual} | Prom12M: $${vlsfoStats.prom12m.toFixed(0)}`,
