@@ -255,7 +255,7 @@ export function calcEtapa1(p, mesIdx=5) {
   const tReal_dias=tIdeal_dias+diasInop+p.cap_esperaDias;
 
   const mermaTn    =p.cap_capacidadBarco*p.cap_pctMerma;
-  const tnPostCarga=p.cap_capacidadBarco-mermaTn;
+  const tnPostCarga=p.cap_capacidadBarco; // zarpa siempre lleno
   const precioArena=p.cap_arenaFijaPorMes?p.cap_precioArenaMes[mesIdx]:p.cap_precioArenaOrigen;
 
   const costoArena =precioArena*p.cap_capacidadBarco;
