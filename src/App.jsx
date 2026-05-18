@@ -556,10 +556,10 @@ function SeccionFormulas({tipo,e,p,gruas,grampada,movGrampa,horasDia,pctMerma,ca
             {l:"Días inop.",    eq:"tIdeal×pInop÷(1−pInop)",                                     v:`${e.diasInop.toFixed(1)}días`,          hover:e.hoverInop},
             {l:"T real",        eq:esCarga?"tIdeal+inop+esperaZ":"tIdeal+inop+esperaBB+esperaZ",v:`${e.tReal_dias.toFixed(1)}días`,        hover:e.hoverTReal},
             esCarga?
-              {l:"Merma (Tn)",  eq:`${capacidad}×${(pctMerma*100).toFixed(1)}%`,                 v:`${e.mermaTn.toFixed(0)}Tn`,             hover:e.hoverMerma}:
+              {l:"Merma Carga (Bruta)",eq:`${capacidad}×${(pctMerma*100).toFixed(1)}% costo extra en origen`, v:`${e.mermaTn.toFixed(0)}Tn`, hover:e.hoverMerma}:
               {l:"Merma desc.", eq:`${e.tnEntrada.toFixed(0)}×${(p.des_pctMermaDescarga*100).toFixed(1)}%`,v:`${e.mermaDescarga_Tn.toFixed(0)}Tn`,hover:`${e.tnEntrada.toFixed(0)}×${(p.des_pctMermaDescarga*100).toFixed(1)}%=${e.mermaDescarga_Tn.toFixed(0)}Tn`},
             esCarga?
-              {l:"Tn post-carga",eq:"capacidad−merma",                                            v:`${e.tnPostCarga.toFixed(0)}Tn`,         hover:`${capacidad}−${e.mermaTn.toFixed(0)}=${e.tnPostCarga.toFixed(0)}Tn`}:
+              {l:"Carga Neta",   eq:"capacidad del barco (zarpa siempre lleno)",                  v:`${e.tnPostCarga.toFixed(0)}Tn`,         hover:`Bruta: ${capacidad}Tn + ${e.mermaTn.toFixed(0)}Tn merma → Neta embarcada: ${e.tnPostCarga.toFixed(0)}Tn`}:
               {l:"Tn entregadas",eq:"tnPostDesc−mermaAcopio",                                     v:`${e.tnEntregadas.toFixed(0)}Tn`,        hover:`${e.tnPostDescarga.toFixed(0)}−${e.mermaAcopio_Tn.toFixed(0)}=${e.tnEntregadas.toFixed(0)}Tn`},
           ].map((r,i)=>(
             <tr key={i}><td style={{fontWeight:600,color:C.navy,fontSize:10}}>{r.l}</td>
