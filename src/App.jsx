@@ -362,13 +362,26 @@ function VLSFOWidget({p,set}) {
 // ─── MAPA SVG ──────────────────────────────────────────────────────────────
 // ─── MAPA LEAFLET ──────────────────────────────────────────────────────────
 // Coordenadas reales de los puntos de la ruta
+// Puntos principales (marcadores visibles — uno por tramo)
 const PUNTOS_RUTA = [
   {lat:-34.098, lng:-59.033, n:"Zárate",          s:"Km 102 — Río Paraná de las Palmas"},
   {lat:-33.943, lng:-59.238, n:"Confluencia",      s:"Paraná / Uruguay"},
   {lat:-34.480, lng:-58.350, n:"Río de la Plata",  s:"Entrada al estuario"},
-  {lat:-35.270, lng:-57.190, n:"Punta Indio",      s:"Canal Principal"},
-  {lat:-38.800, lng:-62.100, n:"Rada BB",          s:"Rada exterior"},
+  {lat:-35.450, lng:-57.100, n:"Punta Indio",      s:"Canal Principal"},
+  {lat:-38.600, lng:-61.500, n:"Rada BB",          s:"Rada exterior"},
   {lat:-38.720, lng:-62.270, n:"Sea White",        s:"Bahía Blanca"},
+];
+
+// Waypoints intermedios para que la ruta siga el agua (no cruce tierra)
+// Entre Punta Indio y Rada BB el barco sale al Atlántico y baja por la costa
+const WAYPOINTS_COSTERO = [
+  [-35.450, -57.100],  // Punta Indio
+  [-36.000, -56.500],  // Sale al Atlántico
+  [-36.800, -56.000],  // Costa atlántica
+  [-37.500, -56.200],  // Costa atlántica
+  [-38.100, -57.500],  // Acercándose a BB
+  [-38.400, -59.500],  // Frente a la costa bonaerense
+  [-38.600, -61.500],  // Rada BB exterior
 ];
 
 function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
@@ -422,7 +435,7 @@ function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
     const puntosRuta = esLastre ? [...PUNTOS_RUTA].reverse() : PUNTOS_RUTA;
     const tramosOrden = esLastre ? [...tramos].slice().reverse() : tramos;
 
-    // Trazar tramos
+    // Trazar tramos — el tramo costero (idx 3) usa waypoints para seguir el agua
     tramosOrden.forEach((t, i) => {
       const a = puntosRuta[i];
       const b = puntosRuta[i+1];
@@ -431,7 +444,13 @@ function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
       const tipo = esLastre ? "lastre" : "cargado";
       const consumoDia = interpolarConsumo(DEFAULT_PARAMS.barco_tablaVelConsumo, t.velocidad, tipo);
 
-      const line = L.polyline([[a.lat, a.lng],[b.lat, b.lng]], {
+      // Tramo costero (Punta Indio → Rada BB): usar waypoints reales
+      const esCostero = t.tipo === "Costero";
+      const coords = esCostero
+        ? (esLastre ? [...WAYPOINTS_COSTERO].reverse() : WAYPOINTS_COSTERO).map(c => [c[0], c[1]])
+        : [[a.lat, a.lng],[b.lat, b.lng]];
+
+      const line = L.polyline(coords, {
         color, weight: 3, opacity: 0.85,
       }).addTo(map);
 
