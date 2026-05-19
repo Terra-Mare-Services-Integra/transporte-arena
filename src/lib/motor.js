@@ -110,13 +110,66 @@ export const CLIMA_DB_DEFAULT = {
 };
 
 // ─── TRAMOS ────────────────────────────────────────────────────────────────
-export const TRAMOS_DEFAULT = [
-  {id:1,nombre:"Zárate → Confluencia",          tipo:"Hidrovía",distancia:80, velocidad:10,  condicion:"Corriente favorable"},
-  {id:2,nombre:"Confluencia → Río de la Plata", tipo:"Hidrovía",distancia:120,velocidad:11,  condicion:"Marea variable"},
-  {id:3,nombre:"Río de la Plata → Punta Indio", tipo:"Estuario",distancia:95, velocidad:11.5,condicion:"Viento ENE frecuente"},
-  {id:4,nombre:"Punta Indio → Rada BB",          tipo:"Costero", distancia:240,velocidad:13,  condicion:"Mar abierto"},
-  {id:5,nombre:"Rada BB → Muelle Sea White",     tipo:"Puerto",  distancia:28, velocidad:7,   condicion:"Canal Belgrano — práctico"},
+// ─── WAYPOINTS NÁUTICOS REALES ─────────────────────────────────────────────
+// Ruta Zárate → Sea White — optimizada para bulk carriers y supply vessels
+// Fuente: cartas SHN Argentina + análisis operacional AIS
+export const WAYPOINTS_RUTA = [
+  {id:1,  lat:-34.09, lng:-59.02, nombre:"Zárate (PIAPSA)",         tipo:"Hidrovía", operacional:true},
+  {id:2,  lat:-34.30, lng:-58.90, nombre:"Canal Mitre Km 49",        tipo:"Hidrovía", operacional:true},
+  {id:3,  lat:-34.45, lng:-58.55, nombre:"Paraná Guazú Sur",         tipo:"Hidrovía", operacional:true},
+  {id:4,  lat:-34.78, lng:-57.80, nombre:"Canal Intermedio",         tipo:"Hidrovía", operacional:true},
+  {id:5,  lat:-35.02, lng:-56.70, nombre:"El Codillo",               tipo:"Hidrovía", operacional:true},
+  {id:6,  lat:-35.03, lng:-55.85, nombre:"Pontón Recalada",          tipo:"Estuario", operacional:true},
+  {id:7,  lat:-35.30, lng:-55.60, nombre:"Giro SE",                  tipo:"Estuario", operacional:false},
+  {id:8,  lat:-36.00, lng:-56.90, nombre:"Ext. Samborombón",         tipo:"Costero",  operacional:false},
+  {id:9,  lat:-36.55, lng:-57.20, nombre:"Frente Mar del Tuyú",      tipo:"Costero",  operacional:false},
+  {id:10, lat:-37.10, lng:-57.35, nombre:"Frente Pinamar",           tipo:"Costero",  operacional:false},
+  {id:11, lat:-38.10, lng:-57.40, nombre:"Frente Mar del Plata",     tipo:"Costero",  operacional:true},
+  {id:12, lat:-38.85, lng:-58.45, nombre:"Frente Necochea",          tipo:"Costero",  operacional:false},
+  {id:13, lat:-39.20, lng:-59.20, nombre:"Frente Claromecó",         tipo:"Costero",  operacional:false},
+  {id:14, lat:-39.20, lng:-60.10, nombre:"Frente 60°W",              tipo:"Costero",  operacional:false},
+  {id:15, lat:-39.05, lng:-61.10, nombre:"Frente Monte Hermoso",     tipo:"Costero",  operacional:false},
+  {id:16, lat:-39.00, lng:-61.50, nombre:"Recalada BB",              tipo:"Costero",  operacional:true},
+  {id:17, lat:-38.95, lng:-61.90, nombre:"Canal Externo BB",         tipo:"Puerto",   operacional:true},
+  {id:18, lat:-38.76, lng:-61.90, nombre:"Puerto Rosales",           tipo:"Puerto",   operacional:true},
+  {id:19, lat:-38.75, lng:-62.05, nombre:"Puerto Belgrano",          tipo:"Puerto",   operacional:true},
+  {id:20, lat:-38.72, lng:-62.27, nombre:"Sea White",                tipo:"Puerto",   operacional:true},
 ];
+
+// Haversine — distancia en millas náuticas entre dos puntos
+export function haversine(lat1, lon1, lat2, lon2) {
+  const R = 3440.065;
+  const phi1 = lat1 * Math.PI/180, phi2 = lat2 * Math.PI/180;
+  const dphi = (lat2-lat1) * Math.PI/180;
+  const dlambda = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(dphi/2)**2 + Math.cos(phi1)*Math.cos(phi2)*Math.sin(dlambda/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Calcula distancia total de un conjunto de waypoints
+export function calcDistanciaWaypoints(waypoints) {
+  let total = 0;
+  for (let i = 0; i < waypoints.length-1; i++) {
+    total += haversine(waypoints[i].lat, waypoints[i].lng, waypoints[i+1].lat, waypoints[i+1].lng);
+  }
+  return total;
+}
+
+// Tramos: agrupan waypoints y tienen velocidad editable
+// La distancia se calcula automáticamente de los waypoints
+export const TRAMOS_DEFAULT = [
+  {id:1, nombre:"Zárate → Confluencia",        tipo:"Hidrovía", velocidad:10,   wpIds:[1,2,3,4,5,6],    condicion:"Hidrovía dragada — corriente favorable"},
+  {id:2, nombre:"Confluencia → Punta Indio",   tipo:"Estuario", velocidad:11,   wpIds:[6,7],             condicion:"Estuario — marea variable"},
+  {id:3, nombre:"Punta Indio → Rada BB",        tipo:"Costero",  velocidad:12.5, wpIds:[7,8,9,10,11,12,13,14,15,16], condicion:"Mar abierto — costa bonaerense"},
+  {id:4, nombre:"Rada BB → Pto. Rosales",       tipo:"Puerto",   velocidad:8,    wpIds:[16,17,18],        condicion:"Canal principal BB — 98km, práctico"},
+  {id:5, nombre:"Pto. Rosales → Sea White",     tipo:"Puerto",   velocidad:7,    wpIds:[18,19,20],        condicion:"Canal interior — ing. White"},
+];
+
+// Calcula distancia de un tramo usando sus wpIds
+export function calcDistanciaTramo(tramo) {
+  const wps = tramo.wpIds.map(id => WAYPOINTS_RUTA.find(w => w.id === id)).filter(Boolean);
+  return calcDistanciaWaypoints(wps);
+}
 
 export const CAMPOS_ESPEJO = [
   {cap:"cap_grampada", des:"des_grampada", label:"Grampada (m³)"},
@@ -229,9 +282,14 @@ export function getInopDetalle(climaDB, umbralLluvia, umbralViento, mesIdx) {
 }
 
 export function velPromedioPonderada(tramos) {
-  const totalMn =tramos.reduce((a,t)=>a+t.distancia,0);
-  const totalHrs=tramos.reduce((a,t)=>a+t.distancia/t.velocidad,0);
-  return {velProm:totalMn/totalHrs,totalMn,totalHrs,diasNav:totalHrs/24};
+  // Distancia calculada de waypoints (Haversine) o del campo distancia si existe
+  const tramosConDist = tramos.map(t => ({
+    ...t,
+    distanciaCalc: t.wpIds ? calcDistanciaTramo(t) : (t.distancia || 0),
+  }));
+  const totalMn  = tramosConDist.reduce((a,t)=>a+t.distanciaCalc, 0);
+  const totalHrs = tramosConDist.reduce((a,t)=>a+t.distanciaCalc/t.velocidad, 0);
+  return {velProm:totalMn/totalHrs, totalMn:parseFloat(totalMn.toFixed(1)), totalHrs, diasNav:totalHrs/24, tramosConDist};
 }
 
 export function checkEspejo(p) {
