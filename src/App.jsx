@@ -374,14 +374,19 @@ const PUNTOS_RUTA = [
 
 // Waypoints intermedios para que la ruta siga el agua (no cruce tierra)
 // Entre Punta Indio y Rada BB el barco sale al Atlántico y baja por la costa
+// Waypoints reales de la ruta costera:
+// Sale del Río de la Plata, baja por el Atlántico frente a la costa bonaerense
+// y entra a la Ría de Bahía Blanca por el canal exterior
 const WAYPOINTS_COSTERO = [
-  [-35.450, -57.100],  // Punta Indio
-  [-36.000, -56.500],  // Sale al Atlántico
-  [-36.800, -56.000],  // Costa atlántica
-  [-37.500, -56.200],  // Costa atlántica
-  [-38.100, -57.500],  // Acercándose a BB
-  [-38.400, -59.500],  // Frente a la costa bonaerense
-  [-38.600, -61.500],  // Rada BB exterior
+  [-35.450, -57.100],  // Punta Indio — Canal Principal
+  [-35.800, -56.600],  // Boca del Río de la Plata — sale al Atlántico
+  [-36.500, -56.300],  // Atlántico — frente a Pinamar
+  [-37.200, -56.900],  // Atlántico — frente a Mar del Plata
+  [-38.000, -57.500],  // Atlántico — frente a Necochea
+  [-38.500, -59.000],  // Atlántico — gira hacia el oeste rumbo BB
+  [-38.700, -60.500],  // Aproximación exterior Ría BB
+  [-38.720, -61.500],  // Rada exterior BB — fondeadero
+  [-38.720, -62.270],  // Sea White — muelle
 ];
 
 function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
@@ -444,10 +449,21 @@ function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
       const tipo = esLastre ? "lastre" : "cargado";
       const consumoDia = interpolarConsumo(DEFAULT_PARAMS.barco_tablaVelConsumo, t.velocidad, tipo);
 
-      // Tramo costero (Punta Indio → Rada BB): usar waypoints reales
+      // Tramos con waypoints:
+      // - Costero (Punta Indio → Rada BB): ruta atlántica costera
+      // - Puerto (Rada BB → Sea White): canal Belgrano, entrada a la ría
+      const WAYPOINTS_CANAL_BB = [
+        [-38.720, -61.500],  // Rada exterior
+        [-38.730, -61.800],  // Entrada canal exterior
+        [-38.740, -62.000],  // Canal Belgrano
+        [-38.720, -62.270],  // Sea White
+      ];
       const esCostero = t.tipo === "Costero";
+      const esPuerto  = t.tipo === "Puerto";
       const coords = esCostero
-        ? (esLastre ? [...WAYPOINTS_COSTERO].reverse() : WAYPOINTS_COSTERO).map(c => [c[0], c[1]])
+        ? (esLastre ? [...WAYPOINTS_COSTERO].reverse() : WAYPOINTS_COSTERO).map(c=>[c[0],c[1]])
+        : esPuerto
+        ? (esLastre ? [...WAYPOINTS_CANAL_BB].reverse() : WAYPOINTS_CANAL_BB).map(c=>[c[0],c[1]])
         : [[a.lat, a.lng],[b.lat, b.lng]];
 
       const line = L.polyline(coords, {
