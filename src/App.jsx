@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   BarChart, Bar, LineChart, Line, ComposedChart, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -360,41 +360,169 @@ function VLSFOWidget({p,set}) {
 }
 
 // ─── MAPA SVG ──────────────────────────────────────────────────────────────
-function MapaNavegacion({tramos,onUpdate,titulo="IDA CARGADO"}) {
-  const {velProm,totalMn,totalHrs}=velPromedioPonderada(tramos);
-  const puntos=[
-    {x:55,y:72,n:"Zárate",s:"Km 102"},{x:175,y:112,n:"Confluencia",s:"Paraná/Uruguay"},
-    {x:305,y:155,n:"Río de la Plata",s:"Estuario"},{x:455,y:197,n:"Punta Indio",s:"Canal Ppal."},
-    {x:635,y:255,n:"Rada BB",s:"Exterior"},{x:735,y:280,n:"Sea White",s:"Bahía Blanca"},
-  ];
-  const cols={"Hidrovía":"#235C96","Estuario":"#0D7490","Costero":"#166534","Puerto":"#5B21B6"};
+// ─── MAPA LEAFLET ──────────────────────────────────────────────────────────
+// Coordenadas reales de los puntos de la ruta
+const PUNTOS_RUTA = [
+  {lat:-34.098, lng:-59.033, n:"Zárate",          s:"Km 102 — Río Paraná de las Palmas"},
+  {lat:-33.943, lng:-59.238, n:"Confluencia",      s:"Paraná / Uruguay"},
+  {lat:-34.480, lng:-58.350, n:"Río de la Plata",  s:"Entrada al estuario"},
+  {lat:-35.270, lng:-57.190, n:"Punta Indio",      s:"Canal Principal"},
+  {lat:-38.800, lng:-62.100, n:"Rada BB",          s:"Rada exterior"},
+  {lat:-38.720, lng:-62.270, n:"Sea White",        s:"Bahía Blanca"},
+];
+
+function MapaNavegacion({tramos, onUpdate, titulo="IDA CARGADO"}) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const layersRef = useRef([]);
+  const {velProm,totalMn,totalHrs} = velPromedioPonderada(tramos);
+  const cols = {"Hidrovía":"#235C96","Estuario":"#0D7490","Costero":"#166534","Puerto":"#5B21B6"};
+  const esLastre = titulo.includes("LASTRE");
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) return; // ya inicializado
+
+    // Cargar Leaflet dinámicamente
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+
+    import('leaflet').then(L => {
+      const map = L.default.map(mapRef.current, {
+        center: [-36.5, -59.5],
+        zoom: 6,
+        zoomControl: true,
+        scrollWheelZoom: false,
+      });
+
+      L.default.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 13,
+      }).addTo(map);
+
+      mapInstanceRef.current = { map, L: L.default };
+      renderLayers(map, L.default);
+    });
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.map.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  const renderLayers = (map, L) => {
+    // Limpiar capas anteriores
+    layersRef.current.forEach(l => map.removeLayer(l));
+    layersRef.current = [];
+
+    const puntosRuta = esLastre ? [...PUNTOS_RUTA].reverse() : PUNTOS_RUTA;
+    const tramosOrden = esLastre ? [...tramos].slice().reverse() : tramos;
+
+    // Trazar tramos
+    tramosOrden.forEach((t, i) => {
+      const a = puntosRuta[i];
+      const b = puntosRuta[i+1];
+      if (!a || !b) return;
+      const color = cols[t.tipo] || "#235C96";
+      const tipo = esLastre ? "lastre" : "cargado";
+      const consumoDia = interpolarConsumo(DEFAULT_PARAMS.barco_tablaVelConsumo, t.velocidad, tipo);
+
+      const line = L.polyline([[a.lat, a.lng],[b.lat, b.lng]], {
+        color, weight: 3, opacity: 0.85,
+      }).addTo(map);
+
+      line.bindPopup(`
+        <div style="font-family:Montserrat,sans-serif;font-size:12px;min-width:180px">
+          <div style="font-weight:700;color:#213363;margin-bottom:4px">${t.nombre}</div>
+          <div style="color:#6381A7;font-size:10px;text-transform:uppercase;letter-spacing:.5px">${t.tipo}</div>
+          <hr style="margin:5px 0;border-color:#EEF2F7"/>
+          <div>Distancia: <strong>${t.distancia} mn</strong></div>
+          <div>Velocidad: <strong>${t.velocidad} kt</strong></div>
+          <div>Horas: <strong>${(t.distancia/t.velocidad).toFixed(1)} hs</strong></div>
+          <div>Consumo: <strong>${consumoDia.toFixed(1)} T/día</strong></div>
+        </div>
+      `);
+      layersRef.current.push(line);
+
+      // Label velocidad en el medio del tramo
+      const midLat = (a.lat + b.lat) / 2;
+      const midLng = (a.lng + b.lng) / 2;
+      const label = L.marker([midLat, midLng], {
+        icon: L.divIcon({
+          html: `<div style="background:${color};color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;font-family:DM Mono,monospace;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.2)">${t.velocidad}kt</div>`,
+          className: '',
+          iconAnchor: [20, 10],
+        }),
+      }).addTo(map);
+      layersRef.current.push(label);
+    });
+
+    // Marcadores de puntos
+    puntosRuta.forEach((pt, i) => {
+      const isOrigen = i === 0;
+      const isDestino = i === puntosRuta.length - 1;
+      const bgColor = isOrigen ? "#213363" : isDestino ? "#166534" : "#235C96";
+      const marker = L.marker([pt.lat, pt.lng], {
+        icon: L.divIcon({
+          html: `<div style="width:14px;height:14px;background:${bgColor};border:2px solid #fff;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>`,
+          className: '',
+          iconAnchor: [7, 7],
+        }),
+      }).addTo(map);
+      marker.bindTooltip(`<strong>${pt.n}</strong><br/><span style="font-size:10px;color:#666">${pt.s}</span>`, {
+        permanent: false, direction: 'top',
+      });
+      layersRef.current.push(marker);
+    });
+  };
+
+  // Re-renderizar capas cuando cambian los tramos
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const { map, L } = mapInstanceRef.current;
+    renderLayers(map, L);
+  }, [tramos, titulo]);
+
   return (
     <div>
-      <svg viewBox="0 0 800 320" className="mapa-svg" style={{minHeight:160}}>
-        <defs><linearGradient id="agua2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#DBEAFE"/><stop offset="100%" stopColor="#BFDBFE"/></linearGradient></defs>
-        <rect width="800" height="320" fill="url(#agua2)" rx="8"/>
-        <path d="M0,52 Q80,42 180,92 Q280,132 380,162 Q500,193 650,235 Q720,259 800,275 L800,320 L0,320 Z" fill="#D1FAE5" stroke="#6EE7B7" strokeWidth="1"/>
-        {tramos.map((t,i)=>{
-          const a=puntos[i],b=puntos[i+1];if(!a||!b)return null;
-          const c=cols[t.tipo]||C.blue,mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-          return (<g key={t.id}>
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={c} strokeWidth={2.5} opacity={.85}/>
-            <rect x={mx-18} y={my-10} width={36} height={16} rx={3} fill={c} opacity={.9}/>
-            <text x={mx} y={my+2} textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff" fontFamily="DM Mono,monospace">{t.velocidad}kt</text>
-          </g>);
-        })}
-        {puntos.map((pt,i)=>(
-          <g key={i}>
-            <circle cx={pt.x} cy={pt.y} r={6} fill={i===0?"#213363":i===5?"#166534":"#235C96"} stroke="#fff" strokeWidth={2}/>
-            <text x={pt.x} y={pt.y-11} textAnchor="middle" fontSize="8" fontWeight="700" fill="#213363">{pt.n}</text>
-            <text x={pt.x} y={pt.y-3}  textAnchor="middle" fontSize="6" fill="#6381A7">{pt.s}</text>
-          </g>
-        ))}
-        <rect x={6} y={288} width={200} height={25} rx={4} fill="rgba(33,51,99,.85)"/>
-        <text x={13} y={298} fontSize="7" fill="rgba(255,255,255,.5)" fontWeight="600">VEL. PROM. PONDERADA — {titulo}</text>
-        <text x={13} y={309} fontSize="11" fill="#fff" fontWeight="800" fontFamily="DM Mono,monospace">{velProm.toFixed(1)}kt · {totalMn}mn · {totalHrs.toFixed(1)}hs</text>
-      </svg>
-      <div style={{marginTop:8,overflowX:"auto"}}>
+      {/* Mapa Leaflet */}
+      <div ref={mapRef} style={{height:320,borderRadius:8,border:"1px solid #D6E0ED",marginBottom:10,zIndex:0}}/>
+      <div style={{padding:"8px 12px",background:"rgba(33,51,99,.9)",borderRadius:6,marginBottom:10,display:"flex",gap:20,flexWrap:"wrap"}}>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1}}>
+          VEL. PROM. PONDERADA — {titulo}
+          <span style={{color:"#fff",fontSize:12,fontWeight:800,fontFamily:"DM Mono,monospace",marginLeft:8}}>
+            {velProm.toFixed(1)}kt
+          </span>
+        </div>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1}}>
+          DISTANCIA
+          <span style={{color:"#fff",fontSize:12,fontWeight:800,fontFamily:"DM Mono,monospace",marginLeft:8}}>
+            {totalMn}mn
+          </span>
+        </div>
+        <div style={{color:"rgba(255,255,255,.5)",fontSize:8,textTransform:"uppercase",letterSpacing:1}}>
+          HORAS NAVEGACIÓN
+          <span style={{color:"#fff",fontSize:12,fontWeight:800,fontFamily:"DM Mono,monospace",marginLeft:8}}>
+            {totalHrs.toFixed(1)}hs
+          </span>
+        </div>
+        {/* Leyenda tipos */}
+        <div style={{display:"flex",gap:8,marginLeft:"auto",flexWrap:"wrap"}}>
+          {Object.entries(cols).map(([tipo,color])=>(
+            <div key={tipo} style={{display:"flex",alignItems:"center",gap:4}}>
+              <div style={{width:12,height:3,background:color,borderRadius:2}}/>
+              <span style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>{tipo}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabla editable de tramos */}
+      <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr style={{background:C.navy}}>{["Tramo","Tipo","Dist (mn)","Vel (kt)","Consumo","Horas"].map(h=>(
             <th key={h} style={{padding:"5px 7px",color:"rgba(255,255,255,.6)",fontSize:8,textAlign:"left",fontWeight:600,textTransform:"uppercase"}}>{h}</th>
@@ -433,6 +561,7 @@ function MapaNavegacion({tramos,onUpdate,titulo="IDA CARGADO"}) {
     </div>
   );
 }
+
 
 // ─── TAB BARCO ─────────────────────────────────────────────────────────────
 function TabBarco({p,set}) {
