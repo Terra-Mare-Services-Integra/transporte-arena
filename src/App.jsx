@@ -1097,90 +1097,180 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
 // ─── TAB EV: EVALUACIÓN TOTAL ──────────────────────────────────────────────
 function TabEvaluacion({p,tnEntregadas}) {
   const [mes,setMes]=useState(5);
-  const tot=calcTotal(p,mes);
-  const {e1,e2,e3,e4}=tot;
+  const e1=calcEtapa1(p,mes);
+  const e2=calcEtapa2(p);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
+  const e4=calcEtapa4(p);
+  const tot={
+    costoTotal: e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal,
+    usdTn: (e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal)/e3.tnEntregadas,
+    diasTotales: e1.tReal_dias+e2.diasNav+e3.tReal_dias+e4.diasNav,
+    tnEntregadas: e3.tnEntregadas,
+  };
+
   const etapas=[
-    {label:"ETAPA 1 — CARGA (ZÁRATE)",color:"#235C96",rows:[
-      {label:"Costo arena",        total:e1.costoArena,   hover:[e1.hoverTotal[0]]},
-      {label:"Costo merma carga",  total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
-      {label:"Opex carga",         total:e1.costoOpex,    hover:[e1.hoverTotal[2]]},
-      {label:"Combustible puerto", total:e1.combPuerto,   hover:e1.hoverComb},
-      {label:"Time Charter+Trip.", total:e1.fleteEtapa,   hover:e1.hoverTC},
-      {label:"Agencia Zárate",     total:e1.agencia,      hover:[e1.hoverTotal[5]]},
-    ],subtotal:e1.costoTotal,dias:e1.tReal_dias},
-    {label:"ETAPA 2 — NAVEGACIÓN IDA",color:"#166534",rows:[
-      {label:"Combustible ida",    total:e2.combNav,  hover:e2.hoverComb},
-      {label:"Time Charter+Trip.", total:e2.fleteNav, hover:e2.hoverTC},
-    ],subtotal:e2.costoTotal,dias:e2.diasNav},
-    {label:"ETAPA 3 — DESCARGA (SEA WHITE)",color:"#5B21B6",rows:[
-      {label:"Opex descarga",      total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
-      {label:"Camiones directo",   total:e3.costoCamiones,hover:[e3.hoverTotal[1]]},
-      {label:"Acopio BB",          total:e3.costoAcopio,  hover:[e3.hoverTotal[2]]},
-      {label:"Combustible puerto", total:e3.combPuerto,   hover:e3.hoverComb},
-      {label:"Time Charter+Trip.", total:e3.fleteEtapa,   hover:e3.hoverTC},
-      {label:"Agencia BB",         total:e3.agencia,      hover:[e3.hoverTotal[5]]},
-    ],subtotal:e3.costoTotal,dias:e3.tReal_dias},
-    {label:"ETAPA 4 — VUELTA EN LASTRE",color:"#92400E",rows:[
-      {label:"Combustible lastre", total:e4.combLastre, hover:e4.hoverComb},
-      {label:"Time Charter+Trip.", total:e4.fleteNav,   hover:e4.hoverTC},
-    ],subtotal:e4.costoTotal,dias:e4.diasNav},
+    {
+      id:"e1", label:"CARGA — ZÁRATE", color:"#235C96",
+      kpis:[
+        {l:"T. real carga",  v:`${e1.tReal_dias.toFixed(1)}d`},
+        {l:"T. ideal",       v:`${e1.tIdeal_dias.toFixed(1)}d`},
+        {l:"Inop. clima",    v:`${(e1.pInop*100).toFixed(1)}%`},
+        {l:"Merma carga",    v:`${e1.mermaTn.toFixed(0)}Tn`},
+        {l:"Vel. ideal",     v:`${e1.velIdeal_TnMin.toFixed(1)}Tn/min`},
+      ],
+      rows:[
+        {label:"Costo arena",         eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`,                  total:e1.costoArena,   hover:[e1.hoverTotal[0]]},
+        {label:"Merma carga",         eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                                  total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
+        {label:"Opex carga",          eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,              total:e1.costoOpex,    hover:[e1.hoverTotal[2]]},
+        {label:"Combustible puerto",  eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,         total:e1.combPuerto,   hover:e1.hoverComb},
+        {label:"Time Charter+Trip.",  eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                                       total:e1.fleteEtapa,   hover:e1.hoverTC},
+        {label:"Agencia Zárate",      eq:"desde ítems Ag. Zárate",                                                         total:e1.agencia,      hover:[e1.hoverTotal[5]]},
+      ],
+      subtotal:e1.costoTotal, dias:e1.tReal_dias,
+    },
+    {
+      id:"e2", label:"NAVEGACIÓN IDA", color:"#166534",
+      kpis:[
+        {l:"Días",          v:`${e2.diasNav.toFixed(1)}d`},
+        {l:"Distancia",     v:`${e2.totalMn}mn`},
+        {l:"Vel. promedio", v:`${e2.velProm.toFixed(1)}kt`},
+        {l:"Combustible",   v:`${e2.combNavTotal.toFixed(1)}T`},
+      ],
+      rows:[
+        {label:"Combustible ida",     eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,  total:e2.combNav,  hover:e2.hoverComb},
+        {label:"Time Charter+Trip.",  eq:`${e2.diasNav.toFixed(1)}d×$${e2.tc}/d`,        total:e2.fleteNav, hover:e2.hoverTC},
+      ],
+      subtotal:e2.costoTotal, dias:e2.diasNav,
+    },
+    {
+      id:"e3", label:"DESCARGA — SEA WHITE / BAHÍA BLANCA", color:"#5B21B6",
+      kpis:[
+        {l:"T. real desc.",    v:`${e3.tReal_dias.toFixed(1)}d`},
+        {l:"T. ideal",         v:`${e3.tIdeal_dias.toFixed(1)}d`},
+        {l:"Inop. clima BB",   v:`${(e3.pInop*100).toFixed(1)}%`},
+        {l:"Tn entregadas",    v:e3.tnEntregadas.toFixed(0)},
+        {l:"Merma desc.",      v:`${e3.mermaDescarga_Tn.toFixed(0)}Tn`},
+        {l:"Precio eq. arena", v:`$${e3.precioArenaEq.toFixed(2)}/Tn`},
+      ],
+      rows:[
+        {label:"Opex descarga",       eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                           total:e3.costoOpex,          hover:[e3.hoverTotal[0]]},
+        {label:"Camiones directo",    eq:`$${p.des_costoCamionesDirUSDTn}/Tn×${e3.tnDirecto.toFixed(0)}Tn`,               total:e3.costoCamiones,      hover:[e3.hoverTotal[1]]},
+        {label:"Acopio BB",           eq:`$${p.des_costoAcopioUSDTn}/Tn×${e3.tnAcopio.toFixed(0)}Tn`,                     total:e3.costoAcopio,        hover:[e3.hoverTotal[2]]},
+        {label:"Combustible puerto",  eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,         total:e3.combPuerto,         hover:e3.hoverComb},
+        {label:"Time Charter+Trip.",  eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                       total:e3.fleteEtapa,         hover:e3.hoverTC},
+        {label:"Agencia BB",          eq:"desde ítems Ag. BB",                                                             total:e3.agencia,            hover:[e3.hoverTotal[5]]},
+        {label:"Merma descarga",      eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,   total:e3.costoMermaDescarga, hover:[e3.hoverTotal[6]]},
+      ],
+      subtotal:e3.costoTotal, dias:e3.tReal_dias,
+    },
+    {
+      id:"e4", label:"VUELTA EN LASTRE", color:"#92400E",
+      kpis:[
+        {l:"Días",        v:`${e4.diasNav.toFixed(1)}d`},
+        {l:"Distancia",   v:`${e4.totalMn}mn`},
+        {l:"Combustible", v:`${e4.combLastreTn?.toFixed(1)||"—"}T`},
+      ],
+      rows:[
+        {label:"Combustible lastre",  eq:`—`,                                           total:e4.combLastre, hover:e4.hoverComb},
+        {label:"Time Charter+Trip.",  eq:`${e4.diasNav.toFixed(1)}d×$${e4.tc}/d`,      total:e4.fleteNav,   hover:e4.hoverTC},
+      ],
+      subtotal:e4.costoTotal, dias:e4.diasNav,
+    },
   ];
   return (
     <div>
       <div style={{marginBottom:8}}>
-        <div style={{fontSize:8,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
+        <div style={{fontSize:8,color:C.mid,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
         <MesSelector value={mes} onChange={setMes}/>
       </div>
+
+      {/* KPIs globales */}
       <div className="kpis">
-        <KPI label="USD/Tn final"   value={`$${tot.usdTn.toFixed(1)}`}              color={C.gold}/>
-        <KPI label="Tn entregadas"  value={tot.tnEntregadas.toFixed(0)}              color={C.green}/>
-        <KPI label="Días totales"   value={`${tot.diasTotales.toFixed(1)}d`}         color={C.navy}/>
-        <KPI label="Costo total"    value={`$${(tot.costoTotal/1000).toFixed(0)}k`}  color={C.navy}/>
-        <KPI label="VLSFO activo"   value={`$${e1.vlsfo}/T`}                         color={C.orange}/>
-        <KPI label="TC+Trip."       value={`$${e1.tc.toLocaleString()}/d`}           color={C.mid}/>
+        <KPI label="USD/Tn final"  value={`$${tot.usdTn.toFixed(1)}`}             color={C.gold}/>
+        <KPI label="Tn entregadas" value={tot.tnEntregadas.toFixed(0)}             color={C.green}/>
+        <KPI label="Días totales"  value={`${tot.diasTotales.toFixed(1)}d`}        color={C.navy}/>
+        <KPI label="Costo total"   value={`$${(tot.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
+        <KPI label="VLSFO"         value={`$${e1.vlsfo}/T`}                        color={C.orange}/>
+        <KPI label="TC+Trip."      value={`$${e1.tc.toLocaleString()}/d`}          color={C.mid}/>
       </div>
-      <div className="card">
-        <div className="ct">Tabla Consolidada — Todas las Etapas</div>
-        <div style={{overflowX:"auto"}}>
-          <table className="eval-table">
-            <thead><tr><th>Concepto</th><th>Días</th><th>USD/Tn</th><th>Total USD</th></tr></thead>
+
+      {/* Bloque por etapa */}
+      {etapas.map(etapa=>(
+        <div key={etapa.id} className="card" style={{borderTop:`3px solid ${etapa.color}`}}>
+          <div className="ct" style={{color:etapa.color}}>{etapa.label}</div>
+
+          {/* KPIs del bloque */}
+          <div className="kpis" style={{marginBottom:10}}>
+            {etapa.kpis.map(k=>(
+              <div key={k.l} style={{flex:1,minWidth:80,background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
+                <div style={{fontSize:15,fontWeight:800,fontFamily:"DM Mono,monospace",color:etapa.color,lineHeight:1}}>{k.v}</div>
+                <div style={{fontSize:8,color:C.mid,textTransform:"uppercase",letterSpacing:.5,marginTop:3}}>{k.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabla de costos */}
+          <table className="cost-table">
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Fórmula</th>
+                <th style={{textAlign:"right"}}>USD/Tn</th>
+                <th style={{textAlign:"right"}}>Total USD</th>
+              </tr>
+            </thead>
             <tbody>
-              {etapas.map(etapa=>(
-                <React.Fragment key={etapa.label}>
-                  <tr className="etapa-hdr"><td colSpan={4} style={{borderLeft:`4px solid ${etapa.color}`}}>{etapa.label}</td></tr>
-                  {etapa.rows.map((r,i)=>(
-                    <tr key={i}>
-                      <td style={{paddingLeft:18,color:C.muted,fontSize:10}}>{r.label}</td>
-                      <td className="mono" style={{textAlign:"right",color:C.muted,fontSize:10}}>—</td>
-                      <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/tnEntregadas).toFixed(1)}</td>
-                      <td style={{textAlign:"right"}}><HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/></td>
-                    </tr>
-                  ))}
-                  <tr className="subtotal">
-                    <td style={{paddingLeft:18}}>Subtotal {etapa.label.split("—")[0].trim()}</td>
-                    <td className="mono" style={{textAlign:"right",color:etapa.color}}>{etapa.dias.toFixed(1)}d</td>
-                    <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tnEntregadas).toFixed(1)}</td>
-                    <td className="mono" style={{textAlign:"right",color:etapa.color}}>${etapa.subtotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
-                  </tr>
-                </React.Fragment>
+              {etapa.rows.map((r,i)=>(
+                <tr key={i}>
+                  <td style={{color:C.mid,fontSize:10}}>{r.label}</td>
+                  <td className="eq">{r.eq}</td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/tot.tnEntregadas).toFixed(1)}</td>
+                  <td style={{textAlign:"right"}}>
+                    <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/>
+                  </td>
+                </tr>
               ))}
-              <tr className="grand-total">
-                <td>TOTAL — USD/TN ENTREGADA</td>
-                <td className="mono" style={{textAlign:"right"}}>{tot.diasTotales.toFixed(1)}d</td>
-                <td className="mono" style={{textAlign:"right",color:"#FCD34D",fontSize:15}}>${tot.usdTn.toFixed(1)}</td>
-                <td className="mono" style={{textAlign:"right"}}>${tot.costoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+              <tr className="total">
+                <td colSpan={2} style={{textAlign:"right"}}>SUBTOTAL</td>
+                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tot.tnEntregadas).toFixed(1)}</td>
+                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${etapa.subtotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
               </tr>
             </tbody>
           </table>
         </div>
+      ))}
+
+      {/* Total consolidado */}
+      <div className="card" style={{background:C.navy,border:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,fontWeight:700}}>TOTAL — USD / TN ENTREGADA</div>
+            <div style={{fontSize:32,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D",lineHeight:1,marginTop:4}}>${tot.usdTn.toFixed(1)}</div>
+          </div>
+          <div style={{display:"flex",gap:16}}>
+            {[
+              {l:"Días totales",  v:`${tot.diasTotales.toFixed(1)}d`},
+              {l:"Tn entregadas", v:tot.tnEntregadas.toFixed(0)},
+              {l:"Costo total",   v:`$${(tot.costoTotal/1000).toFixed(0)}k`},
+            ].map(({l,v})=>(
+              <div key={l} style={{textAlign:"right"}}>
+                <div style={{fontSize:15,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>{v}</div>
+                <div style={{fontSize:8,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:.5}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Waterfall */}
       <div className="card">
-        <div className="ct">Waterfall — Contribución por Etapa (USD/Tn)</div>
+        <div className="ct">Contribución por Etapa (USD/Tn)</div>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/tnEntregadas).toFixed(1)),color:e.color}))} margin={{top:8,right:8,left:0,bottom:8}}>
+          <BarChart data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/tot.tnEntregadas).toFixed(1)),color:e.color}))} margin={{top:8,right:8,left:0,bottom:8}}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-            <XAxis dataKey="name" tick={{fill:C.muted,fontSize:9}}/>
-            <YAxis tick={{fill:C.muted,fontSize:9}}/>
+            <XAxis dataKey="name" tick={{fill:C.mid,fontSize:9}}/>
+            <YAxis tick={{fill:C.mid,fontSize:9}}/>
             <Tooltip {...TTip} formatter={v=>[`$${v} USD/Tn`]}/>
             <Bar dataKey="val" radius={[4,4,0,0]}>{etapas.map((e,i)=><Cell key={i} fill={e.color}/>)}</Bar>
           </BarChart>
