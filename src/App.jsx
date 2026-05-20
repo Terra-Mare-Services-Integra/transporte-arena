@@ -1199,10 +1199,10 @@ function TabEvaluacion({p,tnEntregadas}) {
       kpis:[
         {l:"Días",        v:`${e4.diasNav.toFixed(1)}d`},
         {l:"Distancia",   v:`${e4.totalMn}mn`},
-        {l:"Combustible", v:`${e4.combLastreTn?.toFixed(1)||"—"}T`},
+        {l:"Combustible", v:`${e4.combLastreTotal.toFixed(1)}T`},
       ],
       rows:[
-        {label:"Combustible lastre",  eq:`—`,                                           total:e4.combLastre, hover:e4.hoverComb},
+        {label:"Combustible lastre",  eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,           total:e4.combLastre, hover:e4.hoverComb},
         {label:"Time Charter+Trip.",  eq:`${e4.diasNav.toFixed(1)}d×$${e4.tc}/d`,      total:e4.fleteNav,   hover:e4.hoverTC},
       ],
       subtotal:e4.costoTotal, dias:e4.diasNav,
