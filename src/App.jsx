@@ -33,18 +33,18 @@ const C = {
 };
 
 const TABS = [
-  {id:"barco",label:"Contrato Barco",  icon:"🚢"},
-  {id:"e1",   label:"1. Carga",        icon:"⚓"},
-  {id:"e2",   label:"2. Nav. Ida",     icon:"🧭"},
-  {id:"e3",   label:"3. Descarga",     icon:"🏭"},
-  {id:"e4",   label:"4. Vuelta",       icon:"↩️"},
-  {id:"mc",   label:"5. Monte Carlo",  icon:"🎲"},
-  {id:"ev",   label:"6. Evaluación",   icon:"📊"},
-  {id:"az",   label:"Ag. Zárate",      icon:"🏗️"},
-  {id:"abb",  label:"Ag. Bahía Blanca",icon:"⚓"},
-  {id:"cl",   label:"7. Base Clima",   icon:"🌦️"},
-  {id:"cb",   label:"8. Combustible",  icon:"⛽"},
-  {id:"sc",   label:"9. Escenarios",   icon:"💾"},
+  {id:"barco",label:"Contrato Barco",   icon:"🚢"},
+  {id:"az",   label:"Ag. Zárate",       icon:"🏗️"},
+  {id:"e1",   label:"Carga",            icon:"⚓"},
+  {id:"e2",   label:"Nav. Ida",         icon:"🧭"},
+  {id:"abb",  label:"Ag. Bahía Blanca", icon:"⚓"},
+  {id:"e3",   label:"Descarga",         icon:"🏭"},
+  {id:"e4",   label:"Vuelta",           icon:"↩️"},
+  {id:"mc",   label:"Monte Carlo",      icon:"🎲"},
+  {id:"ev",   label:"Evaluación",       icon:"📊"},
+  {id:"cl",   label:"Base Clima",       icon:"🌦️"},
+  {id:"cb",   label:"Combustible",      icon:"⛽"},
+  {id:"sc",   label:"Escenarios",       icon:"💾"},
 ];
 
 // ─── CSS RESPONSIVE ────────────────────────────────────────────────────────
@@ -689,7 +689,6 @@ function TabCarga({p,set,tnEntregadas}) {
               <Campo label="Mov/min" value={p.cap_movGrampa} onChange={v=>set("cap_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
               <Campo label="Precio arena" value={p.cap_precioArenaOrigen} onChange={v=>set("cap_precioArenaOrigen",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
               <Campo label="Opex carga" value={p.cap_opexUSDTn} onChange={v=>set("cap_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Agencia Zárate" value={p.cap_agenciaZarate} onChange={v=>set("cap_agenciaZarate",v)} tipo="usuario" unit="USD" min={0} step={500}/>
               <Campo label="Espera Zárate" value={p.cap_esperaDias} onChange={v=>set("cap_esperaDias",v)} tipo="usuario" unit="días" min={0} max={5} step={0.25} nota="Puerto propio"/>
             </div>
             <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
