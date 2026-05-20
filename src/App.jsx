@@ -1421,7 +1421,7 @@ function TabCombustible({p,set}) {
 }
 
 // ─── TAB SC: ESCENARIOS ────────────────────────────────────────────────────
-function TabEscenarios({p}) {
+function TabEscenarios({p, onLoad}) {
   const [esc,setEsc]=useState([]);
   const [corridas,setCorridas]=useState([]);
   const [nom,setNom]=useState("");
@@ -1487,15 +1487,25 @@ function TabEscenarios({p}) {
         {vista==="escenarios"&&(
           esc.length===0?<div style={{textAlign:"center",padding:"20px",color:C.muted,fontSize:11}}>No hay escenarios.</div>
           :esc.map(e=>(
-            <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,
+              cursor:"pointer",transition:"border-color .15s"}}
+              onClick={()=>{
+                if(e.params && onLoad){
+                  onLoad({...DEFAULT_PARAMS,...e.params});
+                  setMsg(`✓ Cargado: ${e.nombre}`);
+                  setTimeout(()=>setMsg(""),3000);
+                }
+              }}
+              onMouseEnter={ev=>ev.currentTarget.style.borderColor=C.blue}
+              onMouseLeave={ev=>ev.currentTarget.style.borderColor=C.border}>
               <div>
                 <div style={{fontSize:11,fontWeight:700,color:C.navy}}>{e.nombre}</div>
                 {e.descripcion&&<div style={{fontSize:9,color:C.muted,marginTop:1}}>{e.descripcion}</div>}
-                <div style={{fontSize:8,color:C.muted,marginTop:2,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")}</div>
+                <div style={{fontSize:8,color:C.mid,marginTop:2,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")} · clic para cargar</div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{fontSize:15,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
-                <button onClick={()=>eliminar("escenarios_arena",e.id)} style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600}}>×</button>
+                <button onClick={ev=>{ev.stopPropagation();eliminar("escenarios_arena",e.id);}} style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600}}>×</button>
               </div>
             </div>
           ))
@@ -2084,7 +2094,7 @@ export default function App() {
     abb:  <TabAgenciaBB p={params} set={set}/>,
     cl:   <TabClima      p={params} set={set}/>,
     cb:   <TabCombustible p={params} set={set}/>,
-    sc:   <TabEscenarios p={params}/>,
+    sc:   <TabEscenarios p={params} onLoad={v=>setParams(v)}/>,
     faq:  <TabFAQ/>,
   };
 
