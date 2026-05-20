@@ -1458,6 +1458,9 @@ function TabEscenarios({p, onLoad}) {
   const [load,setLoad]=useState(false);
   const [msg,setMsg]=useState("");
   const [vista,setVista]=useState("escenarios");
+  const [editId,setEditId]=useState(null);       // id del escenario en edición
+  const [editNom,setEditNom]=useState("");
+  const [editDesc,setEditDesc]=useState("");
   const det=calcTotal(p);
 
   const cargar=async()=>{
@@ -1477,6 +1480,19 @@ function TabEscenarios({p, onLoad}) {
     setSav(false);setTimeout(()=>setMsg(""),3000);
   };
   const eliminar=async(tabla,id)=>{await supabase.from(tabla).delete().eq("id",id);cargar();};
+  const abrirEdit=(e)=>{setEditId(e.id);setEditNom(e.nombre);setEditDesc(e.descripcion||"");};
+  const cancelarEdit=()=>{setEditId(null);setEditNom("");setEditDesc("");};
+  const actualizarNombre=async(id)=>{
+    await supabase.from("escenarios_arena").update({nombre:editNom.trim(),descripcion:editDesc.trim()}).eq("id",id);
+    setMsg("✓ Nombre actualizado");setTimeout(()=>setMsg(""),3000);
+    cancelarEdit();cargar();
+  };
+  const sobreescribir=async(id,nombre)=>{
+    const det=calcTotal(p);
+    await supabase.from("escenarios_arena").update({params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))}).eq("id",id);
+    setMsg(`✓ Sobreescrito: ${nombre}`);setTimeout(()=>setMsg(""),3000);
+    cargar();
+  };
 
   return (
     <div>
@@ -1513,28 +1529,66 @@ function TabEscenarios({p, onLoad}) {
           <button className="run" style={{padding:"5px 10px",fontSize:9}} onClick={cargar}>{load?"...":"↻"}</button>
         </div>
         {vista==="escenarios"&&(
-          esc.length===0?<div style={{textAlign:"center",padding:"20px",color:C.muted,fontSize:11}}>No hay escenarios.</div>
+          esc.length===0?<div style={{textAlign:"center",padding:"20px",color:C.mid,fontSize:11}}>No hay escenarios.</div>
           :esc.map(e=>(
-            <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",marginBottom:7,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,
-              cursor:"pointer",transition:"border-color .15s"}}
-              onClick={()=>{
-                if(e.params && onLoad){
-                  onLoad({...DEFAULT_PARAMS,...e.params});
-                  setMsg(`✓ Cargado: ${e.nombre}`);
-                  setTimeout(()=>setMsg(""),3000);
-                }
-              }}
-              onMouseEnter={ev=>ev.currentTarget.style.borderColor=C.blue}
-              onMouseLeave={ev=>ev.currentTarget.style.borderColor=C.border}>
-              <div>
-                <div style={{fontSize:11,fontWeight:700,color:C.navy}}>{e.nombre}</div>
-                {e.descripcion&&<div style={{fontSize:9,color:C.muted,marginTop:1}}>{e.descripcion}</div>}
-                <div style={{fontSize:8,color:C.mid,marginTop:2,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")} · clic para cargar</div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{fontSize:15,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
-                <button onClick={ev=>{ev.stopPropagation();eliminar("escenarios_arena",e.id);}} style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600}}>×</button>
-              </div>
+            <div key={e.id} style={{background:"#EEF2F7",border:`1px solid ${editId===e.id?C.blue:C.border}`,borderRadius:8,padding:"9px 12px",marginBottom:7}}>
+              {editId===e.id ? (
+                /* ── Modo edición inline ── */
+                <div>
+                  <div className="g2" style={{marginBottom:8}}>
+                    <div className="campo">
+                      <div className="campo-label" style={{color:T.usuario.label}}>Nombre</div>
+                      <input className="campo-input" value={editNom} onChange={ev=>setEditNom(ev.target.value)}
+                        style={{background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}
+                        onKeyDown={ev=>ev.key==="Enter"&&actualizarNombre(e.id)}
+                        autoFocus/>
+                    </div>
+                    <div className="campo">
+                      <div className="campo-label" style={{color:T.usuario.label}}>Descripción</div>
+                      <input className="campo-input" value={editDesc} onChange={ev=>setEditDesc(ev.target.value)}
+                        style={{background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}
+                        onKeyDown={ev=>ev.key==="Enter"&&actualizarNombre(e.id)}/>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <button className="run" style={{fontSize:10,padding:"5px 12px"}}
+                      onClick={()=>actualizarNombre(e.id)}>✓ Guardar nombre</button>
+                    <button className="run" style={{fontSize:10,padding:"5px 12px",background:"#5B21B6"}}
+                      onClick={()=>sobreescribir(e.id,e.nombre)}
+                      title="Reemplaza los parámetros guardados con la configuración actual">
+                      ↻ Sobreescribir parámetros
+                    </button>
+                    <button onClick={cancelarEdit}
+                      style={{fontSize:10,padding:"5px 12px",borderRadius:7,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontWeight:600,cursor:"pointer"}}>
+                      Cancelar
+                    </button>
+                  </div>
+                  <div style={{fontSize:9,color:C.mid,marginTop:6}}>
+                    💡 "Sobreescribir parámetros" reemplaza los datos guardados con la configuración actual de la app — el nombre no cambia.
+                  </div>
+                </div>
+              ) : (
+                /* ── Vista normal ── */
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,
+                  cursor:"pointer"}}
+                  onClick={()=>{if(e.params&&onLoad){onLoad({...DEFAULT_PARAMS,...e.params});setMsg(`✓ Cargado: ${e.nombre}`);setTimeout(()=>setMsg(""),3000);}}}
+                  onMouseEnter={ev=>ev.currentTarget.style.background="#E5EBF5"}
+                  onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.navy}}>{e.nombre}</div>
+                    {e.descripcion&&<div style={{fontSize:9,color:C.mid,marginTop:1}}>{e.descripcion}</div>}
+                    <div style={{fontSize:8,color:C.mid,marginTop:2,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")} · clic para cargar</div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{fontSize:15,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
+                    <button onClick={ev=>{ev.stopPropagation();abrirEdit(e);}}
+                      title="Editar nombre / sobreescribir parámetros"
+                      style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontSize:11,cursor:"pointer",fontWeight:600}}>✏️</button>
+                    <button onClick={ev=>{ev.stopPropagation();eliminar("escenarios_arena",e.id);}}
+                      style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600,cursor:"pointer"}}>×</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
