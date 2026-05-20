@@ -45,6 +45,7 @@ const TABS = [
   {id:"cl",   label:"Base Clima",       icon:"🌦️"},
   {id:"cb",   label:"Combustible",      icon:"⛽"},
   {id:"sc",   label:"Escenarios",       icon:"💾"},
+  {id:"faq",  label:"FAQ",              icon:"❓"},
 ];
 
 // ─── CSS RESPONSIVE ────────────────────────────────────────────────────────
@@ -597,8 +598,37 @@ function SeccionInop({puerto,p,set,mesIdx,climaKey,umbralLluviaKey,umbralVientoK
         <FuenteLink fuente={puerto==="zarate"?FUENTES.climaZarate:FUENTES.climaBB}/>
       </div>
       <div className="g2">
-        <Campo label="Lluvia inoperable desde" value={p[umbralLluviaKey]} onChange={v=>set(umbralLluviaKey,v)} tipo="usuario" unit="mm/día" min={5} max={100} step={5}/>
-        <Campo label="Viento inoperable desde" value={p[umbralVientoKey]} onChange={v=>set(umbralVientoKey,v)} tipo="usuario" unit="km/h" min={20} max={100} step={5}/>
+        {/* Lluvia — selector con valores finos en rangos bajos */}
+        <div className="campo">
+          <div className="campo-label" style={{color:T.usuario.label}}>
+            LLUVIA INOPERABLE DESDE <span style={{fontSize:7,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,borderRadius:3,padding:"1px 4px",color:T.usuario.text,fontWeight:700}}>INPUT</span>
+          </div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:3}}>
+            {[0.5,1,2,3,5,10,15,20,30,40,50].map(v=>(
+              <button key={v}
+                onClick={()=>set(umbralLluviaKey,v)}
+                style={{
+                  padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
+                  border:`1px solid ${p[umbralLluviaKey]===v?T.usuario.border:C.border}`,
+                  background:p[umbralLluviaKey]===v?T.usuario.bg:"#fff",
+                  color:p[umbralLluviaKey]===v?T.usuario.text:C.mid,
+                  transition:"all .12s",
+                }}>
+                {v}mm
+              </button>
+            ))}
+          </div>
+          <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:9,color:C.mid}}>otro:</span>
+            <input type="number" value={p[umbralLluviaKey]} min={0.5} max={100} step={0.5}
+              onChange={e=>set(umbralLluviaKey,parseFloat(e.target.value)||0.5)}
+              style={{width:70,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,
+                      borderRadius:5,padding:"4px 7px",fontSize:12,fontFamily:"DM Mono,monospace",
+                      color:T.usuario.text,fontWeight:700}}/>
+            <span style={{fontSize:9,color:C.mid}}>mm/día</span>
+          </div>
+        </div>
+        <Campo label="Viento inoperable desde" value={p[umbralVientoKey]} onChange={v=>set(umbralVientoKey,v)} tipo="usuario" unit="km/h" min={5} max={100} step={5}/>
       </div>
       <div className="g2">
         <Campo tipo="formula" label="% días inhábiles (mes sel.)" value={`${(pInop*100).toFixed(1)}%`}/>
@@ -1813,6 +1843,226 @@ function TabAgenciaBB({p,set}) {
   );
 }
 
+// ─── TAB FAQ ───────────────────────────────────────────────────────────────
+const FAQ_ITEMS = [
+  {
+    id:"inop",
+    seccion:"Inoperabilidad Climática",
+    pregunta:"¿Cómo se calcula el % de días inhábiles y los días extra por clima?",
+    respuesta:`El modelo estima qué porcentaje de días de un mes son operativamente inútiles por lluvia o viento excesivo.
+
+Para cada mes, la base de datos tiene un promedio (μ) y desvío estándar (σ) de lluvia diaria y velocidad de viento. Con esos dos parámetros se modela una distribución normal y se calcula la probabilidad de superar el umbral que definís vos (ej. lluvia > 10mm/día o viento > 25km/h):
+
+  P(inop) = P(lluvia > umbral) + P(viento > umbral) − P(ambos)
+
+Ese porcentaje se aplica sobre el tiempo ideal de operación para estimar cuántos días extras genera el clima:
+
+  Días extra = T_ideal × P(inop) / (1 − P(inop))
+
+La lógica es: si el 12% de los días son inhábiles, necesitás 1/0.88 = 1.136 días de calendario por cada día de trabajo efectivo. Para 1.8 días ideales → 0.22 días extra.`,
+    nota:"Los datos de μ y σ son estimados. Reemplazarlos con datos reales del SMN mejora significativamente la precisión.",
+    links:[{label:"SMN — Descarga de datos históricos", url:"https://www.smn.gob.ar/descarga-de-datos"}],
+  },
+  {
+    id:"treal",
+    seccion:"Inoperabilidad Climática",
+    pregunta:"¿Por qué el impacto climático parece bajo si la operación dura solo 1-2 días?",
+    respuesta:`Exactamente por eso. El modelo calcula días extra como fracción del tiempo ideal de operación, no del mes completo.
+
+Si la carga dura 1.8 días ideales y la inoperabilidad es 12% del mes:
+  → Días extra = 1.8 × 12% / 88% ≈ 0.25 días
+
+Si en cambio la operación durase 5 días ideales:
+  → Días extra = 5 × 12% / 88% ≈ 0.68 días
+
+Una interpretación equivalente y más intuitiva: durante esos 1.8 días de trabajo hay un 12% de chance diaria de perder el día. Matemáticamente da casi el mismo resultado.
+
+El número parece chico porque la operación de carga/descarga es corta. El impacto climático es mucho más relevante en el cómputo de esperas portuarias (espera BB), que pueden durar varios días.`,
+    nota:"Si el tiempo real de carga en Zárate es mayor que el tiempo ideal calculado por el modelo (por ritmo portuario, disponibilidad de grúas, etc.), eso debería reflejarse en el parámetro Espera Zárate, no en el clima.",
+    links:[],
+  },
+  {
+    id:"precioeq",
+    seccion:"Merma de Descarga",
+    pregunta:"¿Qué es el 'precio equivalente de la arena' y por qué se usa para valuar la merma de descarga?",
+    respuesta:`La merma de carga (en Zárate) se valúa fácil: son toneladas que se pierden antes de embarcar, entonces su costo es simplemente precio_origen × toneladas_perdidas.
+
+La merma de descarga (en Bahía Blanca) es más compleja. Esas toneladas ya recorrieron todo el camino: fueron compradas, embarcadas, y transportadas hasta BB. Valorarlas solo al precio de origen subestimaría el costo real de perderlas.
+
+Por eso el modelo calcula:
+
+  Precio equivalente = (Costo Etapa 1 + Costo Etapa 2) / Toneladas cargadas
+
+Ese precio refleja lo que costó llevar cada tonelada hasta el puerto de llegada. La merma de descarga se multiplica por ese valor:
+
+  Costo merma descarga = Tn_perdidas × precio_equivalente
+
+Ejemplo: si el costo hasta llegada es $23/Tn y se pierden 420 Tn → $9.660 de costo real de merma.`,
+    nota:"Este valor aparece en la pestaña Ag. Bahía Blanca → sección Merma descarga — valorización.",
+    links:[],
+  },
+  {
+    id:"montecarlo",
+    seccion:"Monte Carlo",
+    pregunta:"¿Qué variables aleatoriza el Monte Carlo y cómo interpretar los percentiles?",
+    respuesta:`El Monte Carlo corre N simulaciones (por defecto 5.000) variando simultáneamente:
+
+  • Precio VLSFO: Normal(precio_base, σ=volatilidad 12 meses históricos)
+  • Time Charter: Normal(base, σ=$1.500/día)
+  • Velocidad del barco: factor Normal(1, σ=8%) — simula condiciones de mar
+  • Espera BB: Normal(base_mes, σ=0.6 días)
+  • Espera Zárate: Normal(base, σ=0.2 días)
+  • Inoperabilidad clima: muestreada del modelo probabilístico por mes
+  • Mermas (carga / descarga / acopio): Normal(base, σ~0.4%)
+
+Cada simulación calcula el costo total y lo divide por las toneladas entregadas → USD/Tn.
+
+Los percentiles se interpretan así:
+  • P10: en el 10% mejor de los escenarios, el costo es ≤ este valor
+  • P50: costo mediano esperado (más robusto que el promedio)
+  • P90: en el 10% peor de los escenarios, el costo es ≥ este valor
+
+Para presupuestar conservadoramente, usá P75 o P90. Para el caso base, P50.`,
+    nota:"Las variables no incluidas (tarifas portuarias, tipo de cambio, precio arena) se toman como fijas al valor configurado. El rango P10-P90 refleja solo la incertidumbre de las variables aleatorizadas.",
+    links:[],
+  },
+  {
+    id:"agencia",
+    seccion:"Agencias Marítimas",
+    pregunta:"¿Cómo funcionan los fees fijos vs. diarios en las pestañas de agencia?",
+    respuesta:`Cada ítem de agencia tiene un tipo:
+
+  • FIJO: se cobra una vez por escala, independientemente de cuántos días esté el barco.
+    Ejemplos: Canal dues, Pilotage, Towage, Agency fee.
+
+  • DIARIO: se multiplica por la cantidad de días reales que el barco permanece en puerto.
+    Ejemplos: Wharfage dues (muelle), Watchmen, Head Tally Clerk.
+
+Los días que se usan para los ítems diarios son el T_real de la etapa correspondiente: para Zárate es el tiempo real de carga (ideal + inoperabilidad + espera), para BB es el tiempo real de descarga.
+
+Podés activar "Redondear días" para que los ítems diarios se calculen sobre días enteros (Math.ceil), como suelen facturar las agencias.
+
+El total de cada agencia se actualiza automáticamente al cambiar cualquier parámetro operativo, porque T_real depende de velocidad de grúas, horas de trabajo, clima, etc.`,
+    nota:"Los valores pre-cargados vienen de las proformas de Argelan (BB) y PIAPSA/Campana (Zárate). Actualizarlos cuando lleguen las cuentas definitivas de cada escala.",
+    links:[],
+  },
+  {
+    id:"usdtn",
+    seccion:"Evaluación",
+    pregunta:"¿Cómo se llega al USD/Tn final y qué incluye?",
+    respuesta:`El USD/Tn es el costo total de la operación dividido las toneladas efectivamente entregadas al cliente:
+
+  USD/Tn = (E1 + E2 + E3 + E4) / Tn_entregadas
+
+Donde:
+  E1 — Carga Zárate: arena, merma carga, opex, combustible puerto, TC, agencia Zárate
+  E2 — Navegación ida: combustible, TC (días de navegación)
+  E3 — Descarga BB: opex, camiones, acopio, combustible puerto, TC, agencia BB, merma descarga valorizada
+  E4 — Vuelta lastre: combustible, TC (días de navegación en lastre)
+
+Las toneladas entregadas son menores a las cargadas por tres mermas sucesivas:
+  1. Merma de carga (derrames en Zárate) → el barco zarpa con capacidad nominal igual
+  2. Merma de descarga (derrames en BB)
+  3. Merma de acopio (pérdida en almacenamiento)
+
+El USD/Tn del header se calcula con el mes por defecto (junio). Para ver variación mensual, usá la pestaña Monte Carlo → Análisis Mensual.`,
+    nota:"El costo de la vuelta en lastre (E4) se divide entre las mismas toneladas entregadas, aunque el barco ya está vacío. Esto es correcto: es parte del costo del ciclo completo.",
+    links:[],
+  },
+];
+
+function TabFAQ() {
+  const [abierto, setAbierto] = useState(null);
+  const secciones = [...new Set(FAQ_ITEMS.map(f=>f.seccion))];
+
+  return (
+    <div>
+      <div className="card">
+        <div className="ct">❓ Preguntas Frecuentes — Metodología del Modelo</div>
+        <p style={{fontSize:11,color:C.mid,lineHeight:1.6,marginBottom:0}}>
+          Explicaciones de los conceptos, fórmulas y decisiones de diseño detrás de la herramienta.
+          Hacé clic en cada pregunta para expandir.
+        </p>
+      </div>
+
+      {secciones.map(sec=>(
+        <div key={sec} className="card">
+          <div className="ct">{sec}</div>
+          {FAQ_ITEMS.filter(f=>f.seccion===sec).map(item=>{
+            const isOpen = abierto===item.id;
+            return (
+              <div key={item.id} style={{
+                borderRadius:8, border:`1px solid ${isOpen?C.blue:C.border}`,
+                marginBottom:8, overflow:"hidden",
+                transition:"border-color .15s",
+              }}>
+                {/* Pregunta */}
+                <button
+                  onClick={()=>setAbierto(isOpen?null:item.id)}
+                  style={{
+                    width:"100%", display:"flex", justifyContent:"space-between",
+                    alignItems:"center", padding:"10px 14px", border:"none",
+                    background:isOpen?"#EEF2F7":"#fff", cursor:"pointer", textAlign:"left",
+                    gap:10,
+                  }}>
+                  <span style={{fontSize:12,fontWeight:700,color:isOpen?C.navy:C.mid,lineHeight:1.4}}>
+                    {item.pregunta}
+                  </span>
+                  <span style={{
+                    fontSize:16, color:isOpen?C.blue:C.mid, flexShrink:0,
+                    transform:isOpen?"rotate(180deg)":"none", transition:"transform .2s",
+                  }}>▾</span>
+                </button>
+
+                {/* Respuesta */}
+                {isOpen && (
+                  <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,background:"#fff"}}>
+                    {/* Texto con formato */}
+                    <div style={{
+                      fontSize:11, color:"#374151", lineHeight:1.8,
+                      whiteSpace:"pre-wrap", fontFamily:"inherit", marginBottom:10,
+                    }}>
+                      {item.respuesta}
+                    </div>
+
+                    {/* Nota */}
+                    {item.nota && (
+                      <div style={{
+                        background:"#FEF3C7", border:"1px solid #D4B84A", borderLeft:`3px solid #D4B84A`,
+                        borderRadius:6, padding:"7px 11px", fontSize:10, color:"#92400E",
+                        marginBottom:item.links.length?10:0,
+                      }}>
+                        ⚠️ {item.nota}
+                      </div>
+                    )}
+
+                    {/* Links */}
+                    {item.links.length>0 && (
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
+                        {item.links.map(l=>(
+                          <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
+                            style={{
+                              fontSize:10, fontWeight:700, color:C.blue,
+                              background:"#EEF2F7", border:`1px solid ${C.border}`,
+                              borderRadius:5, padding:"4px 10px", textDecoration:"none",
+                              display:"inline-flex", alignItems:"center", gap:4,
+                            }}>
+                            🔗 {l.label}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── MAIN ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab,setTab]=useState("barco");
@@ -1835,6 +2085,7 @@ export default function App() {
     cl:   <TabClima      p={params} set={set}/>,
     cb:   <TabCombustible p={params} set={set}/>,
     sc:   <TabEscenarios p={params}/>,
+    faq:  <TabFAQ/>,
   };
 
   return (
