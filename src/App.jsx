@@ -10,6 +10,7 @@ import {
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
   calcEtapa1, calcEtapa2, calcEtapa3, calcEtapa4, calcTotal,
+  calcAgenciaZarate, calcAgenciaBB,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo, runMCMensual,
 } from "./lib/motor";
@@ -39,6 +40,8 @@ const TABS = [
   {id:"e4",   label:"4. Vuelta",       icon:"↩️"},
   {id:"mc",   label:"5. Monte Carlo",  icon:"🎲"},
   {id:"ev",   label:"6. Evaluación",   icon:"📊"},
+  {id:"az",   label:"Ag. Zárate",      icon:"🏗️"},
+  {id:"abb",  label:"Ag. Bahía Blanca",icon:"⚓"},
   {id:"cl",   label:"7. Base Clima",   icon:"🌦️"},
   {id:"cb",   label:"8. Combustible",  icon:"⛽"},
   {id:"sc",   label:"9. Escenarios",   icon:"💾"},
@@ -656,7 +659,7 @@ function TabCarga({p,set,tnEntregadas}) {
     {label:"Opex carga",       eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoOpex,hover:[e1.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,total:e1.combPuerto,hover:e1.hoverComb},
     {label:"Time Charter+Trip.", eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                   total:e1.fleteEtapa,   hover:e1.hoverTC},
-    {label:"Agencia Zárate",   eq:"costo fijo por escala",                                        total:e1.agencia,      hover:[e1.hoverTotal[5]]},
+    {label:"Agencia Zárate",   eq:"desde items Ag. Zárate",                                      total:e1.agencia,      hover:[e1.hoverTotal[5]]},
     {label:"TOTAL ETAPA 1",    eq:"Σ costos carga",                                               total:e1.costoTotal,   hover:e1.hoverTotal,isTotal:true},
   ];
   return (
@@ -747,14 +750,17 @@ function TabNavegacion({p,set,tnEntregadas}) {
 function TabDescarga({p,set,tnEntregadas}) {
   const [mes,setMes]=useState(5);
   const e1=calcEtapa1(p,mes);
-  const e3=calcEtapa3(p,mes,e1.tnPostCarga);
+  const e2=calcEtapa2(p);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
   const costRows=[
     {label:"Opex descarga",    eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,            total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
     {label:"Camiones directo", eq:`$${p.des_costoCamionesDirUSDTn}/Tn×${e3.tnDirecto.toFixed(0)}Tn`,total:e3.costoCamiones,hover:[e3.hoverTotal[1]]},
     {label:"Acopio BB",        eq:`$${p.des_costoAcopioUSDTn}/Tn×${e3.tnAcopio.toFixed(0)}Tn`,      total:e3.costoAcopio,  hover:[e3.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,total:e3.combPuerto,hover:e3.hoverComb},
     {label:"Time Charter+Trip.",eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                       total:e3.fleteEtapa,   hover:e3.hoverTC},
-    {label:"Agencia BB",       eq:"costo fijo por escala",                                            total:e3.agencia,      hover:[e3.hoverTotal[5]]},
+    {label:"Agencia BB",       eq:"desde items Ag. BB",                                               total:e3.agencia,      hover:[e3.hoverTotal[5]]},
+    {label:"Merma descarga",   eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,total:e3.costoMermaDescarga,hover:[e3.hoverTotal[6]]},
     {label:"TOTAL ETAPA 3",    eq:"Σ costos descarga",                                               total:e3.costoTotal,   hover:e3.hoverTotal,isTotal:true},
   ];
   return (
@@ -1421,6 +1427,304 @@ function TabEscenarios({p}) {
   );
 }
 
+// ─── TAB AGENCIA ZÁRATE ────────────────────────────────────────────────────
+function TabAgenciaZarate({p,set}) {
+  const [mes,setMes]=useState(5);
+  const e1=calcEtapa1(p,mes);
+  const tReal=e1.tReal_dias;
+  const diasDisp=p.agz_redondearDias?Math.ceil(tReal):tReal;
+  const items=p.agz_items||[];
+  const totalActivo=calcAgenciaZarate(p,tReal);
+
+  function updItem(id,field,val){
+    const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
+    set("agz_items",upd);
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="ct">🏗️ Agencia Marítima Zárate — PIAPSA / Campana</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
+            <MesSelector value={mes} onChange={setMes}/>
+          </div>
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real carga</div>
+            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
+            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
+          </div>
+          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia Z.</div>
+            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
+            <input type="checkbox" checked={!!p.agz_redondearDias} onChange={e=>set("agz_redondearDias",e.target.checked)}/>
+            Redondear días (sin decimales)
+          </label>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table className="cost-table" style={{tableLayout:"auto"}}>
+            <thead>
+              <tr>
+                <th style={{width:28}}>✓</th>
+                <th>Concepto</th>
+                <th>Tipo</th>
+                <th style={{textAlign:"right"}}>USD unitario</th>
+                <th style={{textAlign:"right"}}>Días</th>
+                <th style={{textAlign:"right"}}>Total USD</th>
+                <th>Nota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(it=>{
+                const diasAplicados=it.tipo==="diario"?diasDisp:1;
+                const total=it.activo?(it.tipo==="diario"?it.usd*diasAplicados:it.usd):0;
+                return (
+                  <tr key={it.id} style={{opacity:it.activo?1:0.45}}>
+                    <td style={{textAlign:"center"}}>
+                      <input type="checkbox" checked={!!it.activo} onChange={e=>updItem(it.id,"activo",e.target.checked)} style={{cursor:"pointer"}}/>
+                    </td>
+                    <td>
+                      <input value={it.label} onChange={e=>updItem(it.id,"label",e.target.value)}
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:160}}/>
+                    </td>
+                    <td style={{textAlign:"center"}}>
+                      <select value={it.tipo} onChange={e=>updItem(it.id,"tipo",e.target.value)}
+                        style={{fontSize:9,padding:"2px 4px",borderRadius:4,border:`1px solid ${C.border}`,background:it.tipo==="diario"?"#FEF3C7":"#F0FDF4",
+                                color:it.tipo==="diario"?C.orange:C.green,fontWeight:700,cursor:"pointer"}}>
+                        <option value="fijo">FIJO</option>
+                        <option value="diario">DIARIO</option>
+                      </select>
+                    </td>
+                    <td style={{textAlign:"right"}}>
+                      <input type="number" value={it.usd} min={0} step={1}
+                        onChange={e=>updItem(it.id,"usd",parseFloat(e.target.value)||0)}
+                        style={{width:90,textAlign:"right",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:4,
+                                padding:"3px 6px",fontSize:12,fontFamily:"DM Mono,monospace",color:C.gold,fontWeight:700}}/>
+                    </td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:11,color:C.mid}}>
+                      {it.tipo==="diario"?diasAplicados.toFixed(2):"—"}
+                    </td>
+                    <td className="mono" style={{textAlign:"right",fontWeight:it.activo?700:400,color:it.activo?C.navy:C.mid}}>
+                      {it.activo?`$${total.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
+                    </td>
+                    <td>
+                      <input value={it.nota||""} onChange={e=>updItem(it.id,"nota",e.target.value)}
+                        placeholder="nota..."
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",
+                                color:C.mid,minWidth:120}}/>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="total">
+                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA ZÁRATE</td>
+                <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button className="run" style={{fontSize:10,padding:"5px 12px"}}
+            onClick={()=>{
+              const nuevo={id:`agz_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:""};
+              set("agz_items",[...items,nuevo]);
+            }}>+ Agregar fila</button>
+          <div className="warn-note" style={{flex:1}}>Los valores editados acá actualizan automáticamente el cálculo de Etapa 1 (Carga) y el Monte Carlo.</div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="ct">Resumen por tipo</div>
+        <div className="g3">
+          {[{t:"fijo",label:"Costos fijos",c:C.green},{t:"diario",label:"Costos diarios",c:C.orange}].map(({t,label,c})=>{
+            const tot=items.filter(it=>it.activo&&it.tipo===t).reduce((s,it)=>s+(t==="diario"?it.usd*diasDisp:it.usd),0);
+            const count=items.filter(it=>it.activo&&it.tipo===t).length;
+            return (
+              <div key={t} style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${c}`}}>
+                <div style={{fontSize:8,color:c,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
+                <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:c,marginTop:2}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+                <div style={{fontSize:9,color:C.mid,marginTop:2}}>{count} ítem{count!==1?"s":""} activo{count!==1?"s":""}</div>
+              </div>
+            );
+          })}
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${C.navy}`}}>
+            <div style={{fontSize:8,color:C.navy,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>USD / Tn (escala)</div>
+            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.navy,marginTop:2}}>
+              ${p.cap_capacidadBarco>0?(totalActivo/p.cap_capacidadBarco).toFixed(2):"—"}
+            </div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>sobre {p.cap_capacidadBarco.toLocaleString()} Tn</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB AGENCIA BAHÍA BLANCA ──────────────────────────────────────────────
+function TabAgenciaBB({p,set}) {
+  const [mes,setMes]=useState(5);
+  const e1=calcEtapa1(p,mes);
+  const e2=calcEtapa2(p);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
+  const tReal=e3.tReal_dias;
+  const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
+  const items=p.abb_items||[];
+  const totalActivo=calcAgenciaBB(p,tReal);
+
+  function updItem(id,field,val){
+    const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
+    set("abb_items",upd);
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="ct">⚓ Agencia Marítima Bahía Blanca — Argelan Ships Service</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
+            <MesSelector value={mes} onChange={setMes}/>
+          </div>
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real descarga</div>
+            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
+            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
+          </div>
+          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia BB</div>
+            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
+            <input type="checkbox" checked={!!p.abb_redondearDias} onChange={e=>set("abb_redondearDias",e.target.checked)}/>
+            Redondear días (sin decimales)
+          </label>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table className="cost-table" style={{tableLayout:"auto"}}>
+            <thead>
+              <tr>
+                <th style={{width:28}}>✓</th>
+                <th>Concepto</th>
+                <th>Tipo</th>
+                <th style={{textAlign:"right"}}>USD unitario</th>
+                <th style={{textAlign:"right"}}>Días</th>
+                <th style={{textAlign:"right"}}>Total USD</th>
+                <th>Nota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(it=>{
+                const diasAplicados=it.tipo==="diario"?diasDisp:1;
+                const total=it.activo?(it.tipo==="diario"?it.usd*diasAplicados:it.usd):0;
+                return (
+                  <tr key={it.id} style={{opacity:it.activo?1:0.45}}>
+                    <td style={{textAlign:"center"}}>
+                      <input type="checkbox" checked={!!it.activo} onChange={e=>updItem(it.id,"activo",e.target.checked)} style={{cursor:"pointer"}}/>
+                    </td>
+                    <td>
+                      <input value={it.label} onChange={e=>updItem(it.id,"label",e.target.value)}
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:160}}/>
+                    </td>
+                    <td style={{textAlign:"center"}}>
+                      <select value={it.tipo} onChange={e=>updItem(it.id,"tipo",e.target.value)}
+                        style={{fontSize:9,padding:"2px 4px",borderRadius:4,border:`1px solid ${C.border}`,background:it.tipo==="diario"?"#FEF3C7":"#F0FDF4",
+                                color:it.tipo==="diario"?C.orange:C.green,fontWeight:700,cursor:"pointer"}}>
+                        <option value="fijo">FIJO</option>
+                        <option value="diario">DIARIO</option>
+                      </select>
+                    </td>
+                    <td style={{textAlign:"right"}}>
+                      <input type="number" value={it.usd} min={0} step={1}
+                        onChange={e=>updItem(it.id,"usd",parseFloat(e.target.value)||0)}
+                        style={{width:90,textAlign:"right",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:4,
+                                padding:"3px 6px",fontSize:12,fontFamily:"DM Mono,monospace",color:C.gold,fontWeight:700}}/>
+                    </td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:11,color:C.mid}}>
+                      {it.tipo==="diario"?diasAplicados.toFixed(2):"—"}
+                    </td>
+                    <td className="mono" style={{textAlign:"right",fontWeight:it.activo?700:400,color:it.activo?C.navy:C.mid}}>
+                      {it.activo?`$${total.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
+                    </td>
+                    <td>
+                      <input value={it.nota||""} onChange={e=>updItem(it.id,"nota",e.target.value)}
+                        placeholder="nota..."
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",
+                                color:C.mid,minWidth:120}}/>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="total">
+                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA BB</td>
+                <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button className="run" style={{fontSize:10,padding:"5px 12px"}}
+            onClick={()=>{
+              const nuevo={id:`abb_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:""};
+              set("abb_items",[...items,nuevo]);
+            }}>+ Agregar fila</button>
+          <div className="warn-note" style={{flex:1}}>Los valores editados acá actualizan automáticamente el cálculo de Etapa 3 (Descarga) y el Monte Carlo.</div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="ct">Resumen por tipo</div>
+        <div className="g3">
+          {[{t:"fijo",label:"Costos fijos",c:C.green},{t:"diario",label:"Costos diarios",c:C.orange}].map(({t,label,c})=>{
+            const tot=items.filter(it=>it.activo&&it.tipo===t).reduce((s,it)=>s+(t==="diario"?it.usd*diasDisp:it.usd),0);
+            const count=items.filter(it=>it.activo&&it.tipo===t).length;
+            return (
+              <div key={t} style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${c}`}}>
+                <div style={{fontSize:8,color:c,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
+                <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:c,marginTop:2}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+                <div style={{fontSize:9,color:C.mid,marginTop:2}}>{count} ítem{count!==1?"s":""} activo{count!==1?"s":""}</div>
+              </div>
+            );
+          })}
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${C.navy}`}}>
+            <div style={{fontSize:8,color:C.navy,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>USD / Tn (escala)</div>
+            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.navy,marginTop:2}}>
+              ${e1.tnPostCarga>0?(totalActivo/e1.tnPostCarga).toFixed(2):"—"}
+            </div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>sobre {e1.tnPostCarga.toFixed(0)} Tn</div>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="ct">Merma descarga — valorización</div>
+        <div style={{fontSize:10,color:C.mid,marginBottom:8}}>
+          La merma de descarga se valúa al <strong>precio equivalente de la arena</strong>: costo total hasta llegada (Etapa 1 + Etapa 2) dividido las toneladas cargadas. Esto refleja lo que costó llevar cada tonelada hasta BB.
+        </div>
+        <div className="g3">
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Precio eq. arena/Tn</div>
+            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.navy,marginTop:2}}>${e3.precioArenaEq.toFixed(2)}</div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>(E1+E2) / tn cargadas</div>
+          </div>
+          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:8,color:C.red,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Merma desc.</div>
+            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.red,marginTop:2}}>{e3.mermaDescarga_Tn.toFixed(0)} Tn</div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{(p.des_pctMermaDescarga*100).toFixed(1)}% de tn entrada</div>
+          </div>
+          <div style={{background:"#FEF3C7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${C.warnBorder}`}}>
+            <div style={{fontSize:8,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Costo merma desc.</div>
+            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.orange,marginTop:2}}>${e3.costoMermaDescarga.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{e3.mermaDescarga_Tn.toFixed(0)}Tn × ${e3.precioArenaEq.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab,setTab]=useState("barco");
@@ -1438,6 +1742,8 @@ export default function App() {
     e4:   <TabVuelta     p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     mc:   <TabMC         p={params} resultado={mcResultado} setResultado={setMcResultado} mcMes={mcMensual} setMcMes={setMcMensual}/>,
     ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas}/>,
+    az:   <TabAgenciaZarate p={params} set={set}/>,
+    abb:  <TabAgenciaBB p={params} set={set}/>,
     cl:   <TabClima      p={params} set={set}/>,
     cb:   <TabCombustible p={params} set={set}/>,
     sc:   <TabEscenarios p={params}/>,

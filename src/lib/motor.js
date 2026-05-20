@@ -211,7 +211,38 @@ export const DEFAULT_PARAMS = {
   cap_movGrampa:             0.5,
   cap_horasDia:              12,
   cap_esperaDias:            0.5,
-  cap_agenciaZarate:         83948,
+  cap_agenciaZarate:         83948,  // calculado desde items abajo
+
+  // ─── AGENCIA ZÁRATE (PIAPSA / CAMPANA) ───────────────────────────────────
+  // tipo: "fijo" = USD fijo por escala | "diario" = USD/día × tReal_dias_carga
+  agz_items: [
+    { id:"agz_01", label:"Hidrovía Waterway Tolls (RECA→ZTE)", tipo:"fijo",    usd:28700, activo:true,  nota:"Ida: RECA-ZTE" },
+    { id:"agz_02", label:"Hidrovía Waterway Tolls (ZTE→RECA)", tipo:"fijo",    usd:28700, activo:true,  nota:"Vuelta: ZTE-RECA" },
+    { id:"agz_03", label:"Port Pilots (IN/OUT)",                tipo:"fijo",    usd:8750,  activo:true,  nota:"Prácticos entrada/salida" },
+    { id:"agz_04", label:"Wharfage",                           tipo:"diario",  usd:4455,  activo:true,  nota:"USD 0.33×NRT×día (NRT≈13.500)" },
+    { id:"agz_05", label:"Entrance Dues / Nav. Waters Tax",     tipo:"fijo",    usd:392,   activo:true,  nota:"" },
+    { id:"agz_06", label:"Free Pratique expenses",              tipo:"fijo",    usd:550,   activo:true,  nota:"" },
+    { id:"agz_07", label:"Migrations Taxes",                    tipo:"fijo",    usd:2500,  activo:true,  nota:"IN+OUT" },
+    { id:"agz_08", label:"SENASA tax",                          tipo:"fijo",    usd:50,    activo:true,  nota:"" },
+    { id:"agz_09", label:"Customs (Clearance)",                 tipo:"fijo",    usd:290,   activo:true,  nota:"" },
+    { id:"agz_10", label:"Customs O/T Week Days",               tipo:"fijo",    usd:1120,  activo:false, nota:"Solo si opera 19-07hs" },
+    { id:"agz_11", label:"Customs O/T Saturdays",               tipo:"fijo",    usd:2370,  activo:false, nota:"Solo sábados 24hs" },
+    { id:"agz_12", label:"Customs O/T Sundays",                 tipo:"fijo",    usd:2715,  activo:false, nota:"Solo domingos 24hs" },
+    { id:"agz_13", label:"Authorities Transportation",          tipo:"fijo",    usd:175,   activo:true,  nota:"" },
+    { id:"agz_14", label:"Watchmen services",                   tipo:"diario",  usd:460,   activo:true,  nota:"USD 460/turno × turnos (4 turnos/día ~ USD 1840/día)" },
+    { id:"agz_15", label:"Head Tally Clerk",                    tipo:"diario",  usd:568,   activo:true,  nota:"USD 568/turno × turnos (4 turnos/día ~ USD 2275/día)" },
+    { id:"agz_16", label:"Linemen services",                    tipo:"fijo",    usd:3200,  activo:true,  nota:"Normal time. Extra si nocturno/OT" },
+    { id:"agz_17", label:"CN Charge (Full Agents)",              tipo:"fijo",    usd:130,   activo:true,  nota:"" },
+    { id:"agz_18", label:"Lumpsum (Agency expenses)",           tipo:"fijo",    usd:350,   activo:true,  nota:"" },
+    { id:"agz_19", label:"Bank Charges/Commissions",            tipo:"fijo",    usd:1174,  activo:true,  nota:"~1.2% del total" },
+    { id:"agz_20", label:"Agency Fee",                          tipo:"fijo",    usd:2500,  activo:true,  nota:"" },
+    { id:"agz_21", label:"ISPS charge",                         tipo:"fijo",    usd:0,     activo:false, nota:"Consultar terminal" },
+    { id:"agz_22", label:"Oil boom",                            tipo:"fijo",    usd:0,     activo:false, nota:"Si aplica" },
+    { id:"agz_23", label:"Río de la Plata Pilotage",            tipo:"fijo",    usd:0,     activo:false, nota:"Solo si requiere" },
+    { id:"agz_24", label:"Paraná River Pilotage",               tipo:"fijo",    usd:0,     activo:false, nota:"Solo si requiere" },
+    { id:"agz_25", label:"Tugboats",                            tipo:"fijo",    usd:0,     activo:false, nota:"Consultar" },
+  ],
+  agz_redondearDias: false,  // si true → Math.ceil(tReal_dias)
   cap_inopLluvia:            20,
   cap_inopViento:            35,
   cap_pctMerma:              0.02,
@@ -232,7 +263,28 @@ export const DEFAULT_PARAMS = {
   des_horasDia:              14,
   des_esperaBBMes:           [3.2,2.8,2.1,1.9,1.5,1.2,0.9,1.1,1.4,2.0,2.5,3.0],
   des_esperaZarateDias:      0.5,   // espera vuelta a Zárate — acá en descarga
-  des_agenciaBB:             106204,
+  des_agenciaBB:             106204,  // calculado desde items abajo
+
+  // ─── AGENCIA BAHÍA BLANCA (ARGELAN) ──────────────────────────────────────
+  // tipo: "fijo" = USD fijo por escala | "diario" = USD/día × tReal_dias_descarga
+  abb_items: [
+    { id:"abb_01", label:"Pilotage (IN/OUT)",                   tipo:"fijo",    usd:22308, activo:true,  nota:"Prácticos IN+OUT" },
+    { id:"abb_02", label:"Towage (remolques obligatorios)",      tipo:"fijo",    usd:56000, activo:true,  nota:"IN+OUT obligatorio" },
+    { id:"abb_03", label:"Wharfage dues",                       tipo:"diario",  usd:9948,  activo:true,  nota:"USD 9.948/día" },
+    { id:"abb_04", label:"Canal dues (IN/OUT)",                  tipo:"fijo",    usd:100913,activo:true,  nota:"Peaje canal de acceso" },
+    { id:"abb_05", label:"Mooring / Unmooring",                 tipo:"fijo",    usd:4500,  activo:true,  nota:"" },
+    { id:"abb_06", label:"Tally",                               tipo:"fijo",    usd:14111, activo:true,  nota:"" },
+    { id:"abb_07", label:"Customs overtime",                    tipo:"fijo",    usd:0,     activo:false, nota:"USD 200/turno 6hs — obligatorio si opera" },
+    { id:"abb_08", label:"Migration dues",                      tipo:"fijo",    usd:1250,  activo:true,  nota:"Servicio de salida" },
+    { id:"abb_09", label:"SENASA inspection",                   tipo:"fijo",    usd:150,   activo:true,  nota:"" },
+    { id:"abb_10", label:"Sistema Mercuria",                    tipo:"fijo",    usd:200,   activo:true,  nota:"" },
+    { id:"abb_11", label:"Transportation (traslado autoridades)",tipo:"fijo",   usd:350,   activo:true,  nota:"" },
+    { id:"abb_12", label:"Watchmen (recomendado)",              tipo:"fijo",    usd:0,     activo:false, nota:"USD 24.298 aprox. — no obligatorio" },
+    { id:"abb_13", label:"ISPS charges",                        tipo:"fijo",    usd:300,   activo:true,  nota:"" },
+    { id:"abb_14", label:"Local taxes (Ley 25413 + gastos bancarios)", tipo:"fijo", usd:3098, activo:true, nota:"" },
+    { id:"abb_15", label:"Agency fee",                          tipo:"fijo",    usd:3500,  activo:true,  nota:"" },
+  ],
+  abb_redondearDias: false,  // si true → Math.ceil(tReal_dias)
   des_inopLluvia:            20,
   des_inopViento:            35,
   des_pctMermaDescarga:      0.015,
@@ -250,6 +302,29 @@ export const DEFAULT_PARAMS = {
   clima_bb:                  CLIMA_DB_DEFAULT.bb,
   vlsfo_historico:           VLSFO_HISTORICO_DEFAULT,
 };
+
+// ─── HELPERS AGENCIA ───────────────────────────────────────────────────────
+export function calcAgenciaZarate(p, tReal_dias) {
+  const dias = p.agz_redondearDias ? Math.ceil(tReal_dias) : tReal_dias;
+  return (p.agz_items||[]).reduce((sum, item) => {
+    if (!item.activo) return sum;
+    return sum + (item.tipo === "diario" ? item.usd * dias : item.usd);
+  }, 0);
+}
+export function calcAgenciaBB(p, tReal_dias) {
+  const dias = p.abb_redondearDias ? Math.ceil(tReal_dias) : tReal_dias;
+  return (p.abb_items||[]).reduce((sum, item) => {
+    if (!item.activo) return sum;
+    return sum + (item.tipo === "diario" ? item.usd * dias : item.usd);
+  }, 0);
+}
+// Precio equivalente de la arena en descarga = costo total hasta llegada / tn entregadas
+export function precioArenaEquivalenteDescarga(p, mesIdx=5) {
+  const e1 = calcEtapa1(p, mesIdx);
+  const e2 = calcEtapa2(p);
+  const costoHastaLlegada = e1.costoTotal + e2.costoTotal;
+  return e1.tnPostCarga > 0 ? costoHastaLlegada / e1.tnPostCarga : 0;
+}
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 function probSuperaUmbral(mu, sigma, umbral) {
@@ -321,7 +396,7 @@ export function calcEtapa1(p, mesIdx=5) {
   const costoOpex  =p.cap_opexUSDTn*p.cap_capacidadBarco;
   const combPuerto =tReal_dias*p.barco_consumoPuerto*vlsfo;
   const fleteEtapa =tReal_dias*tc;
-  const agencia    =p.cap_agenciaZarate;
+  const agencia    =calcAgenciaZarate(p, tReal_dias);
   const costoTotal =costoArena+costoMerma+costoOpex+combPuerto+fleteEtapa+agencia;
 
   return {
@@ -430,14 +505,22 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
   const costoAcopio  =p.des_costoAcopioUSDTn*tnAcopio;
   const combPuerto   =tReal_dias*p.barco_consumoPuerto*vlsfo;
   const fleteEtapa   =tReal_dias*tc;
-  const agencia      =p.des_agenciaBB;
-  const costoTotal   =costoOpex+costoCamiones+costoAcopio+combPuerto+fleteEtapa+agencia;
+  const agencia      =calcAgenciaBB(p, tReal_dias);
+  // Merma de descarga valorizada al precio equivalente de la arena (costo total hasta llegada / tn)
+  // precioArenaEq se calcula externamente desde App y se puede pasar; si no se puede, se aproxima
+  // con costo de etapa 1 ya calculado. Para evitar circularidad, se pasa costosHastaLlegada como parámetro opcional.
+  const precioArenaEq = (p._costoArenaEq != null && p._costoArenaEq > 0)
+    ? p._costoArenaEq
+    : (p.cap_precioArenaOrigen || 13.5); // fallback al precio origen como proxy
+  const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq;
+  const costoTotal   =costoOpex+costoCamiones+costoAcopio+combPuerto+fleteEtapa+agencia+costoMermaDescarga;
 
   return {
     tnEntrada:tn, velIdeal_TnMin, velIdeal_TnHr, tIdeal_hr, tIdeal_dias,
     pInop, diasInop, esperaBB, tReal_dias, vlsfo, vlsfoStats, tc,
     mermaDescarga_Tn, tnPostDescarga, tnAcopio, tnDirecto, mermaAcopio_Tn, tnEntregadas,
-    costoOpex, costoCamiones, costoAcopio, combPuerto, fleteEtapa, agencia, costoTotal,
+    costoOpex, costoCamiones, costoAcopio, combPuerto, fleteEtapa, agencia,
+    precioArenaEq, costoMermaDescarga, costoTotal,
     hoverVel:`${p.des_gruas}×${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${velIdeal_TnMin.toFixed(1)}Tn/min`,
     hoverTReal:`${tIdeal_dias.toFixed(1)}+${diasInop.toFixed(1)}+${esperaBB}+${p.des_esperaZarateDias}(Z) = ${tReal_dias.toFixed(1)}días`,
     hoverInop:[
@@ -464,6 +547,7 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
       `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `TC+Trip: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Agencia BB: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Merma desc: ${mermaDescarga_Tn.toFixed(0)}Tn × $${precioArenaEq.toFixed(1)}/Tn eq. = $${costoMermaDescarga.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
   };
 }
@@ -506,7 +590,10 @@ export function calcEtapa4(p) {
 export function calcTotal(p, mesIdx=5) {
   const e1=calcEtapa1(p,mesIdx);
   const e2=calcEtapa2(p);
-  const e3=calcEtapa3(p,mesIdx,e1.tnPostCarga);
+  // Inyectamos precio equivalente arena para que calcEtapa3 lo use sin circularidad
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const pConEq = {...p, _costoArenaEq: costoArenaEq};
+  const e3=calcEtapa3(pConEq,mesIdx,e1.tnPostCarga);
   const e4=calcEtapa4(p);
   const costoTotal =e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal;
   const usdTn      =costoTotal/e3.tnEntregadas;
@@ -556,7 +643,7 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     const mCTn=p.cap_capacidadBarco*mC;
     const tnPC=p.cap_capacidadBarco-mCTn;
     const c1=pa*p.cap_capacidadBarco+pa*mCTn+p.cap_opexUSDTn*p.cap_capacidadBarco
-             +tR1*p.barco_consumoPuerto*vlsfo+tR1*tc+p.cap_agenciaZarate;
+             +tR1*p.barco_consumoPuerto*vlsfo+tR1*tc+calcAgenciaZarate(p,tR1);
 
     // E2
     const tramosV=p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
@@ -571,8 +658,10 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     const mDTn=tnPC*mD;const tnPD=tnPC-mDTn;
     const tnAc=tnPD*p.des_pctAcopio;const tnDi=tnPD*(1-p.des_pctAcopio);
     const mATn=tnAc*mA;const tnEnt=tnPD-mATn;
+    const precEq=tnPC>0?c1/tnPC:pa; // precio eq. simplificado en MC (solo E1 para velocidad)
     const c3=p.des_opexUSDTn*tnPC+p.des_costoCamionesDirUSDTn*tnDi
-             +p.des_costoAcopioUSDTn*tnAc+tR3*p.barco_consumoPuerto*vlsfo+tR3*tc+p.des_agenciaBB;
+             +p.des_costoAcopioUSDTn*tnAc+tR3*p.barco_consumoPuerto*vlsfo+tR3*tc+calcAgenciaBB(p,tR3)
+             +mDTn*precEq;
 
     // E4
     const tramosVL=(p.vta_tramos||p.nav_tramos).map(t=>({...t,velocidad:t.velocidad*vF}));
