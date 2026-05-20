@@ -586,8 +586,11 @@ function TabBarco({p,set}) {
 }
 
 // ─── SECCIÓN INOP (compartida entre carga y descarga) ──────────────────────
-function SeccionInop({puerto,p,set,mesIdx,pInop,diasInop,inopDet,climaKey,umbralLluviaKey,umbralVientoKey}) {
+function SeccionInop({puerto,p,set,mesIdx,climaKey,umbralLluviaKey,umbralVientoKey,tIdeal_dias}) {
   const inopMes=getPctInopFromDB(p[climaKey],p[umbralLluviaKey],p[umbralVientoKey]);
+  const inopDet=getInopDetalle(p[climaKey],p[umbralLluviaKey],p[umbralVientoKey],mesIdx);
+  const pInop=inopDet.pInop;
+  const diasInop=tIdeal_dias!=null ? tIdeal_dias*pInop/Math.max(0.01,1-pInop) : 0;
   return (
     <div className="card">
       <div className="ct">Inoperabilidad Climática — {puerto==="zarate"?"Zárate":"Bahía Blanca"} <TipoBadge tipo="estadistico"/>
@@ -659,7 +662,6 @@ function TabCarga({p,set,tnEntregadas}) {
     {label:"Opex carga",       eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoOpex,hover:[e1.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,total:e1.combPuerto,hover:e1.hoverComb},
     {label:"Time Charter+Trip.", eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                   total:e1.fleteEtapa,   hover:e1.hoverTC},
-    {label:"Agencia Zárate",   eq:"desde items Ag. Zárate",                                      total:e1.agencia,      hover:[e1.hoverTotal[5]]},
     {label:"TOTAL ETAPA 1",    eq:"Σ costos carga",                                               total:e1.costoTotal,   hover:e1.hoverTotal,isTotal:true},
   ];
   return (
@@ -694,7 +696,7 @@ function TabCarga({p,set,tnEntregadas}) {
             <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
             <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
           </div>
-          <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mes} pInop={e1.pInop} diasInop={e1.diasInop}
+          <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mes} tIdeal_dias={e1.tIdeal_dias}
             climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
         </div>
         <div>
@@ -758,7 +760,6 @@ function TabDescarga({p,set,tnEntregadas}) {
     {label:"Acopio BB",        eq:`$${p.des_costoAcopioUSDTn}/Tn×${e3.tnAcopio.toFixed(0)}Tn`,      total:e3.costoAcopio,  hover:[e3.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,total:e3.combPuerto,hover:e3.hoverComb},
     {label:"Time Charter+Trip.",eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                       total:e3.fleteEtapa,   hover:e3.hoverTC},
-    {label:"Agencia BB",       eq:"desde items Ag. BB",                                               total:e3.agencia,      hover:[e3.hoverTotal[5]]},
     {label:"Merma descarga",   eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,total:e3.costoMermaDescarga,hover:[e3.hoverTotal[6]]},
     {label:"TOTAL ETAPA 3",    eq:"Σ costos descarga",                                               total:e3.costoTotal,   hover:e3.hoverTotal,isTotal:true},
   ];
@@ -789,8 +790,6 @@ function TabDescarga({p,set,tnEntregadas}) {
               <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
               <Campo label="Camiones directo" value={p.des_costoCamionesDirUSDTn} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={1}/>
               <Campo label="Acopio BB" value={p.des_costoAcopioUSDTn} onChange={v=>set("des_costoAcopioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Agencia BB" value={p.des_agenciaBB} onChange={v=>set("des_agenciaBB",v)} tipo="usuario" unit="USD" min={0} step={500}/>
-              <Campo label="Espera Zárate (vuelta)" value={p.des_esperaZarateDias} onChange={v=>set("des_esperaZarateDias",v)} tipo="usuario" unit="días" min={0} max={5} step={0.25} nota="Espera para nuevo ciclo"/>
             </div>
             <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
             <div className="g2">
@@ -827,7 +826,7 @@ function TabDescarga({p,set,tnEntregadas}) {
               ))}
             </div>
           </div>
-          <SeccionInop puerto="bb" p={p} set={set} mesIdx={mes} pInop={e3.pInop} diasInop={e3.diasInop}
+          <SeccionInop puerto="bb" p={p} set={set} mesIdx={mes} tIdeal_dias={e3.tIdeal_dias}
             climaKey="clima_bb" umbralLluviaKey="des_inopLluvia" umbralVientoKey="des_inopViento"/>
         </div>
         <div>
