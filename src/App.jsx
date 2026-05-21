@@ -6,10 +6,10 @@ import {
 } from "recharts";
 import {
   DEFAULT_PARAMS, MESES, FUENTES, CLIMA_DB_DEFAULT, VLSFO_HISTORICO_DEFAULT,
-  VLSFO_ESCENARIOS, TABLA_VEL_CONSUMO_DEFAULT,
+  VLSFO_ESCENARIOS, TABLA_VEL_CONSUMO_DEFAULT, TRAMOS_REPO_DEFAULT,
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
-  calcEtapa1, calcEtapa2, calcEtapa3, calcEtapa4, calcTotal,
+  calcEtapaRepo, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal,
   calcAgenciaZarate, calcAgenciaBB,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo, runMCMensual,
@@ -33,20 +33,20 @@ const C = {
 };
 
 const TABS = [
-  {id:"barco",label:"Contrato Barco",   icon:"🚢"},
-  {id:"az",   label:"Ag. Zárate",       icon:"🏗️"},
-  {id:"e1",   label:"Carga",            icon:"⚓"},
-  {id:"e2",   label:"Nav. Ida",         icon:"🧭"},
-  {id:"abb",  label:"Ag. Bahía Blanca", icon:"⚓"},
-  {id:"e3",   label:"Descarga",         icon:"🏭"},
-  {id:"e4",   label:"Vuelta",           icon:"↩️"},
-  {id:"mc",   label:"Monte Carlo",      icon:"🎲"},
-  {id:"ev",   label:"Evaluación",       icon:"📊"},
-  {id:"cl",   label:"Base Clima",       icon:"🌦️"},
-  {id:"cb",   label:"Combustible",      icon:"⛽"},
-  {id:"sc",   label:"Escenarios",       icon:"💾"},
-  {id:"faq",  label:"FAQ",              icon:"❓"},
-  {id:"sens", label:"Sensibilidades",   icon:"📐"},
+  {id:"barco", label:"Contrato Barco",         icon:"🚢"},
+  {id:"repo",  label:"Viaje a Puerto Carga",   icon:"🛳️"},
+  {id:"az",    label:"Ag. Zárate",             icon:"🏗️"},
+  {id:"e1",    label:"Carga",                  icon:"⚓"},
+  {id:"e2",    label:"Nav. a Puerto Descarga", icon:"🧭"},
+  {id:"abb",   label:"Ag. Bahía Blanca",       icon:"⚓"},
+  {id:"e3",    label:"Descarga",               icon:"🏭"},
+  {id:"mc",    label:"Monte Carlo",            icon:"🎲"},
+  {id:"ev",    label:"Evaluación",             icon:"📊"},
+  {id:"sens",  label:"Sensibilidades",         icon:"📐"},
+  {id:"cl",    label:"Base Clima",             icon:"🌦️"},
+  {id:"cb",    label:"Combustible",            icon:"⛽"},
+  {id:"sc",    label:"Escenarios",             icon:"💾"},
+  {id:"faq",   label:"FAQ",                    icon:"❓"},
 ];
 
 // ─── CSS RESPONSIVE ────────────────────────────────────────────────────────
@@ -522,8 +522,8 @@ function TabBarco({p,set}) {
   };
   const resetTabla=()=>set("barco_tablaVelConsumo",TABLA_VEL_CONSUMO_DEFAULT);
 
-  // Costo diario total
-  const costoTotalDia=p.barco_timeCharter+p.barco_tripulacion;
+  // Costo diario total incluyendo misc
+  const costoTotalDia=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
 
   return (
     <div>
@@ -553,8 +553,14 @@ function TabBarco({p,set}) {
             nota="Costo diario de tripulación. En 0 si está incluido en el TC."/>
           <Campo label="Consumo en puerto" value={p.barco_consumoPuerto} onChange={v=>set("barco_consumoPuerto",v)} tipo="usuario" unit="T/día" min={1} max={20} step={0.5}
             nota="Consumo VLSFO mientras el barco está en puerto (carga y descarga). Típico Handysize: 3–6 T/día."/>
+          <Campo label="Misceláneos / día" value={p.barco_miscPorDia||0} onChange={v=>set("barco_miscPorDia",v)} tipo="usuario" unit="USD/día" min={0} max={5000} step={50}
+            nota="Gastos operativos diarios varios (comunicaciones, agua, provisiones, etc.)"/>
+          <Campo label="Limpieza de bodega" value={p.barco_limpiezaBodega||0} onChange={v=>set("barco_limpiezaBodega",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
+            nota="Costo por escala para limpiar bodega antes de cargar arena. Se carga en el viaje de reposicionamiento."/>
+          <Campo label="Importación / Waiver" value={p.barco_importacionWaiver||0} onChange={v=>set("barco_importacionWaiver",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
+            nota="Gastos de importación temporal del barco y/o waiver regulatorio. Se carga en el viaje de reposicionamiento."/>
           <div style={{marginTop:10,padding:"8px 12px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,fontSize:10,color:"#0369A1"}}>
-            <strong>Nota:</strong> El costo diario total (TC + Tripulación = ${costoTotalDia.toLocaleString()}/día) aplica a todos los días del viaje — cargando, navegando, descargando y en vuelta.
+            <strong>Costo diario total</strong> (TC + Misc = ${costoTotalDia.toLocaleString()}/día) aplica a todos los días del viaje — reposicionamiento, cargando, navegando y descargando.
           </div>
         </div>
 
@@ -562,12 +568,13 @@ function TabBarco({p,set}) {
           <div className="ct">Tabla Velocidad / Consumo — Handysize 28.000 Tn
             <button onClick={resetTabla} style={{marginLeft:"auto",padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:8,fontWeight:700,cursor:"pointer"}}>Resetear</button>
           </div>
-          <p style={{fontSize:10,color:C.muted,marginBottom:8,lineHeight:1.5}}>
+          <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
             Consumo VLSFO interpolado automáticamente según la velocidad de cada tramo. Relación cúbica: C ∝ v³.
             La fila resaltada es la más cercana a la velocidad promedio actual ({velProm12.toFixed(1)}kt).
+            <strong> Lastre = Cargado</strong> — sin descuento (operación prácticamente igual en consumo).
           </p>
           <table className="vel-table">
-            <thead><tr><th>Vel (kt)</th><th>Cargado (T/día)</th><th>Lastre (T/día)</th><th>Ahorro lastre</th></tr></thead>
+            <thead><tr><th>Vel (kt)</th><th>Cargado (T/día)</th><th>Lastre (T/día)</th></tr></thead>
             <tbody>{tabla.map((row,i)=>{
               const esActual=Math.abs(row.vel-velProm12)<0.75;
               return (
@@ -575,7 +582,6 @@ function TabBarco({p,set}) {
                   <td style={{fontWeight:700,color:esActual?C.gold:C.navy,fontFamily:"DM Mono,monospace"}}>{row.vel}{esActual?" ←":""}</td>
                   <td><input type="number" value={row.cargado} step={0.1} min={1} onChange={e=>updateTabla(i,"cargado",e.target.value)}/></td>
                   <td><input type="number" value={row.lastre}  step={0.1} min={1} onChange={e=>updateTabla(i,"lastre", e.target.value)}/></td>
-                  <td style={{color:C.green,fontFamily:"DM Mono,monospace",fontSize:10}}>{((1-row.lastre/row.cargado)*100).toFixed(0)}%</td>
                 </tr>
               );
             })}</tbody>
@@ -679,6 +685,86 @@ function SeccionFormulas({tipo,e,p,gruas,grampada,movGrampa,horasDia,pctMerma,ca
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── TAB REPO: VIAJE A PUERTO DE CARGA ─────────────────────────────────────
+function TabRepo({p,set}) {
+  const e0=calcEtapaRepo(p);
+  const tramos=p.repo_tramos||TRAMOS_REPO_DEFAULT;
+
+  const updateTramo=(idx,field,val)=>{
+    const arr=[...tramos];arr[idx]={...arr[idx],[field]:field==="velocidad"?parseFloat(val)||0:val};
+    set("repo_tramos",arr);
+  };
+
+  const costRows=[
+    {label:"Combustible lastre",   eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,           total:e0.combCosto,          hover:e0.hoverComb},
+    {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,             total:e0.fleteCosto,         hover:e0.hoverTC},
+    {label:"Limpieza de bodega",   eq:"por escala",                                          total:e0.limpiezaBodega,     hover:[`Limpieza bodega: $${e0.limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`]},
+    {label:"Importación / Waiver", eq:"por escala",                                          total:e0.importacionWaiver,  hover:[`Importación/Waiver: $${e0.importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`]},
+    {label:"TOTAL",                eq:"Σ reposicionamiento",                                 total:e0.costoTotal,         hover:e0.hoverTotal, isTotal:true},
+  ];
+
+  return (
+    <div>
+      <div className="kpis">
+        <KPI label="Días viaje" value={`${e0.diasNav.toFixed(1)}d`}                                     color={C.navy}/>
+        <KPI label="Distancia"  value={`${e0.totalMn?.toFixed(0)||"—"}mn`}                              color={C.mid}/>
+        <KPI label="Vel. prom." value={`${e0.velProm?.toFixed(1)||"—"}kt`}                              color={C.blue}/>
+        <KPI label="Combustible"value={`${e0.combTotal.toFixed(1)}T`}                                   color={C.orange}/>
+        <KPI label="Costo total"value={`$${(e0.costoTotal/1000).toFixed(0)}k`}                          color={C.gold}/>
+        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`} color={C.green}/>
+      </div>
+
+      <div className="card">
+        <div className="ct">Tramo de Reposicionamiento <TipoBadge tipo="usuario"/></div>
+        <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
+          El barco llega en lastre desde su última posición (proxy: Rio Grande do Sul, Brasil).
+          El costo de limpieza de bodega e importación/waiver se carga en este viaje.
+        </p>
+        <table className="vel-table">
+          <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th>Condición</th></tr></thead>
+          <tbody>{tramos.map((t,i)=>{
+            const dist=t.wpIds?calcDistanciaTramo(t):(t.distancia||0);
+            const dias=dist/t.velocidad/24;
+            return (
+              <tr key={t.id}>
+                <td style={{fontWeight:600,color:C.navy,fontSize:10}}>{t.nombre}</td>
+                <td><span style={{fontSize:8,background:"#EEF2F7",padding:"2px 6px",borderRadius:4,fontWeight:700,color:C.mid}}>{t.tipo}</span></td>
+                <td><input type="number" value={t.velocidad} min={4} max={20} step={0.5}
+                  onChange={e=>updateTramo(i,"velocidad",e.target.value)}
+                  style={{width:60}}/></td>
+                <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>{dist.toFixed(0)}</td>
+                <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.navy,fontWeight:700}}>{dias.toFixed(2)}</td>
+                <td style={{fontSize:9,color:C.mid}}>{t.condicion}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <div className="ct">Costos Viaje a Puerto de Carga</div>
+        <table className="cost-table">
+          <thead><tr><th>Concepto</th><th>Ecuación</th><th style={{textAlign:"right"}}>Total USD</th></tr></thead>
+          <tbody>
+            {costRows.map((r,i)=>(
+              <tr key={i} className={r.isTotal?"total":""}>
+                <td style={{color:r.isTotal?undefined:C.mid,fontSize:r.isTotal?undefined:10}}>{r.label}</td>
+                <td className="eq">{r.eq}</td>
+                <td style={{textAlign:"right"}}>
+                  <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="warn-note" style={{marginTop:8}}>
+          El costo total de este viaje se distribuye entre las {p.cap_capacidadBarco.toLocaleString()} Tn cargadas → <strong>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"} USD/Tn</strong>.
+        </div>
+      </div>
     </div>
   );
 }
@@ -1129,17 +1215,34 @@ function TabEvaluacion({p,tnEntregadas}) {
   const [mes,setMes]=useState(5);
   const e1=calcEtapa1(p,mes);
   const e2=calcEtapa2(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const e0=calcEtapaRepo(p);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
-  const e4=calcEtapa4(p);
   const tot={
-    costoTotal: e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal,
-    usdTn: (e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal)/e3.tnEntregadas,
-    diasTotales: e1.tReal_dias+e2.diasNav+e3.tReal_dias+e4.diasNav,
+    costoTotal: e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal,
+    usdTn: (e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal)/e3.tnEntregadas,
+    diasTotales: e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias,
     tnEntregadas: e3.tnEntregadas,
   };
 
   const etapas=[
+    {
+      id:"e0", label:"VIAJE A PUERTO DE CARGA", color:"#0F766E",
+      kpis:[
+        {l:"Días viaje",      v:`${e0.diasNav.toFixed(1)}d`},
+        {l:"Distancia",       v:`${e0.totalMn?.toFixed(0)||"—"}mn`},
+        {l:"Combustible",     v:`${e0.combTotal.toFixed(1)}T`},
+        {l:"Limpieza bodega", v:`$${(p.barco_limpiezaBodega||0).toLocaleString()}`},
+        {l:"Import./Waiver",  v:`$${(p.barco_importacionWaiver||0).toLocaleString()}`},
+      ],
+      rows:[
+        {label:"Combustible lastre",   eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,   total:e0.combCosto,         hover:e0.hoverComb},
+        {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,     total:e0.fleteCosto,        hover:e0.hoverTC},
+        {label:"Limpieza bodega",      eq:"por escala",                                  total:e0.limpiezaBodega,    hover:[e0.hoverTotal[2]]},
+        {label:"Importación/Waiver",   eq:"por escala",                                  total:e0.importacionWaiver, hover:[e0.hoverTotal[3]]},
+      ],
+      subtotal:e0.costoTotal, dias:e0.diasNav,
+    },
     {
       id:"e1", label:"CARGA — ZÁRATE", color:"#235C96",
       kpis:[
@@ -1193,19 +1296,6 @@ function TabEvaluacion({p,tnEntregadas}) {
         {label:"Merma descarga",      eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,   total:e3.costoMermaDescarga, hover:[e3.hoverTotal[6]]},
       ],
       subtotal:e3.costoTotal, dias:e3.tReal_dias,
-    },
-    {
-      id:"e4", label:"VUELTA EN LASTRE", color:"#92400E",
-      kpis:[
-        {l:"Días",        v:`${e4.diasNav.toFixed(1)}d`},
-        {l:"Distancia",   v:`${e4.totalMn}mn`},
-        {l:"Combustible", v:`${e4.combLastreTotal.toFixed(1)}T`},
-      ],
-      rows:[
-        {label:"Combustible lastre",  eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,           total:e4.combLastre, hover:e4.hoverComb},
-        {label:"Time Charter+Trip.",  eq:`${e4.diasNav.toFixed(1)}d×$${e4.tc}/d`,      total:e4.fleteNav,   hover:e4.hoverTC},
-      ],
-      subtotal:e4.costoTotal, dias:e4.diasNav,
     },
   ];
   return (
@@ -2161,23 +2251,23 @@ function TabSensibilidades({p}) {
 
   // Base
   const base = (() => {
+    const e0 = calcEtapaRepo(p);
     const e1 = calcEtapa1(p, mes);
     const e2 = calcEtapa2(p);
-    const eq  = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...p, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const e4  = calcEtapa4(p);
-    const tot = e1.costoTotal + e2.costoTotal + e3.costoTotal + e4.costoTotal;
+    const tot = e0.costoTotal+e1.costoTotal + e2.costoTotal + e3.costoTotal;
     return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
   })();
 
   function calcConDelta(overrides) {
     const pp = {...p, ...overrides};
+    const e0 = calcEtapaRepo(pp);
     const e1 = calcEtapa1(pp, mes);
     const e2 = calcEtapa2(pp);
-    const eq  = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const e4  = calcEtapa4(pp);
-    const tot = e1.costoTotal + e2.costoTotal + e3.costoTotal + e4.costoTotal;
+    const tot = e0.costoTotal+e1.costoTotal + e2.costoTotal + e3.costoTotal;
     return tot / e3.tnEntregadas;
   }
 
@@ -2441,19 +2531,19 @@ export default function App() {
 
   const tabMap={
     barco:<TabBarco      p={params} set={set}/>,
+    repo: <TabRepo       p={params} set={set}/>,
+    az:   <TabAgenciaZarate p={params} set={set}/>,
     e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     e2:   <TabNavegacion p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
+    abb:  <TabAgenciaBB  p={params} set={set}/>,
     e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
-    e4:   <TabVuelta     p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     mc:   <TabMC         p={params} resultado={mcResultado} setResultado={setMcResultado} mcMes={mcMensual} setMcMes={setMcMensual}/>,
     ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas}/>,
-    az:   <TabAgenciaZarate p={params} set={set}/>,
-    abb:  <TabAgenciaBB p={params} set={set}/>,
+    sens: <TabSensibilidades p={params}/>,
     cl:   <TabClima      p={params} set={set}/>,
     cb:   <TabCombustible p={params} set={set}/>,
     sc:   <TabEscenarios p={params} onLoad={v=>setParams(v)}/>,
     faq:  <TabFAQ/>,
-    sens: <TabSensibilidades p={params}/>,
   };
 
   return (

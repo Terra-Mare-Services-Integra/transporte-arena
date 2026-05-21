@@ -9,16 +9,16 @@ export const FUENTES = {
 };
 
 // ─── TABLA VELOCIDAD/CONSUMO HANDYSIZE 28.000 Tn ──────────────────────────
-// Fuente: valores típicos de mercado para Handysize bulk carrier
-// Consumo sigue relación cúbica: C ∝ v³
+// Consumo cargado: a 11kt → 16 T/día base, relación cúbica C ∝ v³
+// Lastre = igual que cargado (sin descuento — operan prácticamente igual en consumo)
 export const TABLA_VEL_CONSUMO_DEFAULT = [
-  { vel:9,  cargado:9.8,  lastre:7.8  },
-  { vel:10, cargado:11.5, lastre:9.2  },
-  { vel:11, cargado:13.5, lastre:10.8 },
-  { vel:12, cargado:15.6, lastre:12.5 },
-  { vel:13, cargado:18.2, lastre:14.5 },
-  { vel:14, cargado:21.4, lastre:17.1 },
-  { vel:15, cargado:25.1, lastre:20.1 },
+  { vel:9,  cargado:8.8,  lastre:8.8  },
+  { vel:10, cargado:11.9, lastre:11.9 },
+  { vel:11, cargado:16.0, lastre:16.0 },
+  { vel:12, cargado:20.8, lastre:20.8 },
+  { vel:13, cargado:26.5, lastre:26.5 },
+  { vel:14, cargado:33.1, lastre:33.1 },
+  { vel:15, cargado:40.9, lastre:40.9 },
 ];
 
 // Interpolación lineal del consumo dado una velocidad
@@ -114,7 +114,8 @@ export const CLIMA_DB_DEFAULT = {
 // Ruta Zárate → Sea White — optimizada para bulk carriers y supply vessels
 // Fuente: cartas SHN Argentina + análisis operacional AIS
 export const WAYPOINTS_RUTA = [
-  {id:1,  lat:-34.09, lng:-59.02, nombre:"Zárate (PIAPSA)",         tipo:"Hidrovía", operacional:true},
+  {id:0,  lat:-32.03, lng:-52.10, nombre:"Rio Grande do Sul (Brasil)",  tipo:"Origen",   operacional:true},
+  {id:1,  lat:-34.09, lng:-59.02, nombre:"Zárate (PIAPSA)",             tipo:"Hidrovía", operacional:true},
   {id:2,  lat:-34.30, lng:-58.90, nombre:"Canal Mitre Km 49",        tipo:"Hidrovía", operacional:true},
   {id:3,  lat:-34.45, lng:-58.55, nombre:"Paraná Guazú Sur",         tipo:"Hidrovía", operacional:true},
   {id:4,  lat:-34.78, lng:-57.80, nombre:"Canal Intermedio",         tipo:"Hidrovía", operacional:true},
@@ -157,6 +158,12 @@ export function calcDistanciaWaypoints(waypoints) {
 
 // Tramos: agrupan waypoints y tienen velocidad editable
 // La distancia se calcula automáticamente de los waypoints
+// Tramo de reposicionamiento: Rio Grande do Sul → Zárate (en lastre)
+export const TRAMOS_REPO_DEFAULT = [
+  {id:1, nombre:"Rio Grande do Sul → Zárate", tipo:"Costero", velocidad:12, wpIds:[0,1],
+   condicion:"Atlántico Sur — costa brasileña/uruguaya/argentina, lastre"},
+];
+
 export const TRAMOS_DEFAULT = [
   {id:1, nombre:"Zárate → Confluencia",        tipo:"Hidrovía", velocidad:10,   wpIds:[1,2,3,4,5,6],    condicion:"Hidrovía dragada — corriente favorable"},
   {id:2, nombre:"Confluencia → Punta Indio",   tipo:"Estuario", velocidad:11,   wpIds:[6,7],             condicion:"Estuario — marea variable"},
@@ -200,8 +207,14 @@ export const DEFAULT_PARAMS = {
   // CONTRATO BARCO
   barco_timeCharter:         20000,  // USD/día — centralizado acá
   barco_tripulacion:         0,      // USD/día — por ahora 0
+  barco_limpiezaBodega:      15000,  // USD por escala
+  barco_importacionWaiver:   8000,   // USD por escala
+  barco_miscPorDia:          500,    // USD/día — misceláneos operativos
   barco_tablaVelConsumo:     TABLA_VEL_CONSUMO_DEFAULT,
   barco_consumoPuerto:       4.6,    // T/día en puerto (carga y descarga)
+
+  // VIAJE A PUERTO DE CARGA (reposicionamiento Rio Grande → Zárate)
+  repo_tramos:               TRAMOS_REPO_DEFAULT,
 
   // ETAPA 1 — CARGA
   cap_capacidadBarco:        28000,
@@ -293,9 +306,6 @@ export const DEFAULT_PARAMS = {
   des_opexUSDTn:             8,
   des_costoAcopioUSDTn:      2.5,
   des_costoCamionesDirUSDTn: 37.14,
-
-  // ETAPA 4 — VUELTA EN LASTRE
-  vta_tramos:                [...TRAMOS_DEFAULT].reverse(),
 
   // BASE DE DATOS
   clima_zarate:              CLIMA_DB_DEFAULT.zarate,
@@ -552,53 +562,64 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
   };
 }
 
-// ─── ETAPA 4: VUELTA EN LASTRE ─────────────────────────────────────────────
-export function calcEtapa4(p) {
-  const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-  const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion;
-  const nav=velPromedioPonderada(p.vta_tramos||p.nav_tramos);
+// ─── ETAPA 0: REPOSICIONAMIENTO (Rio Grande → Zárate) ─────────────────────
+export function calcEtapaRepo(p) {
+  const vlsfo    = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
+  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
+  const tc       = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+  const tramos   = p.repo_tramos || TRAMOS_REPO_DEFAULT;
+  const nav      = velPromedioPonderada(tramos);
 
-  const combLastreTotal = (p.vta_tramos||p.nav_tramos).reduce((acc,t)=>{
-    const dist=t.wpIds?calcDistanciaTramo(t):(t.distancia||0);
-    const hs=dist/t.velocidad;
-    const consumoDia=interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
-    return acc+(hs/24)*consumoDia;
-  },0);
-  const combLastre=combLastreTotal*vlsfo;
-  const fleteNav  =nav.diasNav*tc;
-  const costoTotal=combLastre+fleteNav;
+  const combTotal = tramos.reduce((acc, t) => {
+    const dist = t.wpIds ? calcDistanciaTramo(t) : (t.distancia || 0);
+    const hs   = dist / t.velocidad;
+    // Viaje en lastre al puerto de carga
+    const consumoDia = interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
+    return acc + (hs / 24) * consumoDia;
+  }, 0);
+
+  const combCosto  = combTotal * vlsfo;
+  const fleteCosto = nav.diasNav * tc;
+  // Costos únicos por escala (se cargan en este viaje)
+  const limpiezaBodega     = p.barco_limpiezaBodega     || 0;
+  const importacionWaiver  = p.barco_importacionWaiver  || 0;
+  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver;
 
   return {
-    ...nav, vlsfo, vlsfoStats, tc, combLastreTotal, combLastre, fleteNav, costoTotal,
+    ...nav, vlsfo, vlsfoStats, tc,
+    combTotal, combCosto, fleteCosto,
+    limpiezaBodega, importacionWaiver, costoTotal,
     hoverComb:[
-      `Consumo lastre interpolado por tramo (tabla Contrato Barco)`,
-      `Total combustible: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Consumo lastre interpolado por tramo`,
+      `Total: ${combTotal.toFixed(1)}T × $${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTC:[
-      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d = $${tc}/d`,
-      `${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d + Misc: $${p.barco_miscPorDia||0}/d = $${tc}/d`,
+      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
-      `Comb. lastre: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Combustible: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
   };
 }
+// calcEtapa4 mantenida como alias de calcEtapaRepo para compatibilidad con MC
+export function calcEtapa4(p) { return calcEtapaRepo(p); }
 
 // ─── TOTAL ─────────────────────────────────────────────────────────────────
 export function calcTotal(p, mesIdx=5) {
+  const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p,mesIdx);
   const e2=calcEtapa2(p);
-  // Inyectamos precio equivalente arena para que calcEtapa3 lo use sin circularidad
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal+e2.costoTotal+e0.costoTotal)/e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const pConEq = {...p, _costoArenaEq: costoArenaEq};
   const e3=calcEtapa3(pConEq,mesIdx,e1.tnPostCarga);
-  const e4=calcEtapa4(p);
-  const costoTotal =e1.costoTotal+e2.costoTotal+e3.costoTotal+e4.costoTotal;
+  const costoTotal =e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
   const usdTn      =costoTotal/e3.tnEntregadas;
-  const diasTotales=e1.tReal_dias+e2.diasNav+e3.tReal_dias+e4.diasNav;
-  return {e1,e2,e3,e4,costoTotal,usdTn,diasTotales,tnEntregadas:e3.tnEntregadas};
+  const diasTotales=e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias;
+  return {e0,e1,e2,e3,costoTotal,usdTn,diasTotales,tnEntregadas:e3.tnEntregadas};
 }
 
 // ─── MONTE CARLO ───────────────────────────────────────────────────────────
@@ -625,7 +646,7 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
   for(let i=0;i<n;i++){
     const mes  =mesIdx!==null?mesIdx:Math.floor(Math.random()*12);
     const vlsfo=Math.max(300,basePrecio+randn()*vlsfoStats.sigma12m);
-    const tc   =Math.max(5000,p.barco_timeCharter+randn()*1500)+p.barco_tripulacion;
+    const tc   =Math.max(5000,p.barco_timeCharter+randn()*1500)+p.barco_tripulacion+(p.barco_miscPorDia||0);
     const espBB=Math.max(0,p.des_esperaBBMes[mes]+randn()*0.6);
     const espZ =Math.max(0,p.des_esperaZarateDias+randn()*0.2);
     const mC   =Math.max(0,p.cap_pctMerma+randn()*0.005);
@@ -635,6 +656,12 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     const pa   =p.cap_arenaFijaPorMes?p.cap_precioArenaMes[mes]:p.cap_precioArenaOrigen;
     const pZ   =sampleInop(p.clima_zarate,mes,p.cap_inopLluvia,p.cap_inopViento);
     const pB   =sampleInop(p.clima_bb,mes,p.des_inopLluvia,p.des_inopViento);
+
+    // E0 — Reposicionamiento (Rio Grande → Zárate, lastre)
+    const tramosR=(p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
+    const {diasNav:diasNavR}=velPromedioPonderada(tramosR);
+    const combRepoT=tramosR.reduce((acc,t)=>{const dist=t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0);const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
+    const c0=combRepoT*vlsfo+diasNavR*tc+(p.barco_limpiezaBodega||0)+(p.barco_importacionWaiver||0);
 
     // E1
     const vH1=p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
@@ -658,18 +685,12 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     const mDTn=tnPC*mD;const tnPD=tnPC-mDTn;
     const tnAc=tnPD*p.des_pctAcopio;const tnDi=tnPD*(1-p.des_pctAcopio);
     const mATn=tnAc*mA;const tnEnt=tnPD-mATn;
-    const precEq=tnPC>0?c1/tnPC:pa; // precio eq. simplificado en MC (solo E1 para velocidad)
+    const precEq=tnPC>0?(c0+c1)/tnPC:pa;
     const c3=p.des_opexUSDTn*tnPC+p.des_costoCamionesDirUSDTn*tnDi
              +p.des_costoAcopioUSDTn*tnAc+tR3*p.barco_consumoPuerto*vlsfo+tR3*tc+calcAgenciaBB(p,tR3)
              +mDTn*precEq;
 
-    // E4
-    const tramosVL=(p.vta_tramos||p.nav_tramos).map(t=>({...t,velocidad:t.velocidad*vF}));
-    const {diasNav:diasNavL}=velPromedioPonderada(tramosVL);
-    const combLastT=tramosVL.reduce((acc,t)=>{const dist=t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0);const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
-    const c4=combLastT*vlsfo+diasNavL*tc;
-
-    results.push(parseFloat(((c1+c2+c3+c4)/tnEnt).toFixed(3)));
+    results.push(parseFloat(((c0+c1+c2+c3)/tnEnt).toFixed(3)));
   }
 
   results.sort((a,b)=>a-b);
