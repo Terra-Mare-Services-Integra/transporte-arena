@@ -215,6 +215,7 @@ export const DEFAULT_PARAMS = {
 
   // VIAJE A PUERTO DE CARGA (reposicionamiento Rio Grande → Zárate)
   repo_tramos:               TRAMOS_REPO_DEFAULT,
+  repo_itemsExtra:           [],  // items adicionales editables por el usuario
 
   // ETAPA 1 — CARGA
   cap_capacidadBarco:        28000,
@@ -583,7 +584,8 @@ export function calcEtapaRepo(p) {
   // Costos únicos por escala (se cargan en este viaje)
   const limpiezaBodega     = p.barco_limpiezaBodega     || 0;
   const importacionWaiver  = p.barco_importacionWaiver  || 0;
-  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver;
+  const extrasTotal        = (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
+  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver + extrasTotal;
 
   return {
     ...nav, vlsfo, vlsfoStats, tc,
@@ -602,6 +604,7 @@ export function calcEtapaRepo(p) {
       `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`),
     ],
   };
 }

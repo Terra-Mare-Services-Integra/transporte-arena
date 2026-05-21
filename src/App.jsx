@@ -799,6 +799,40 @@ function TabRepo({p,set}) {
                 </tr>
               ))}
 
+              {/* Items extra editables */}
+              {(p.repo_itemsExtra||[]).map((it,i)=>(
+                <tr key={it.id} style={{opacity:it.activo?1:0.45}}>
+                  <td>
+                    <input value={it.label} onChange={e=>{
+                      const arr=[...(p.repo_itemsExtra||[])];arr[i]={...arr[i],label:e.target.value};set("repo_itemsExtra",arr);
+                    }} style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:140}}/>
+                  </td>
+                  <td style={{textAlign:"center"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"center"}}>
+                      <input type="checkbox" checked={!!it.activo} onChange={e=>{
+                        const arr=[...(p.repo_itemsExtra||[])];arr[i]={...arr[i],activo:e.target.checked};set("repo_itemsExtra",arr);
+                      }} style={{cursor:"pointer"}}/>
+                      <span style={{fontSize:8,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,borderRadius:4,padding:"1px 6px",fontWeight:700,color:T.usuario.text}}>FIJO</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <input type="number" value={it.usd} min={0} step={500}
+                        onChange={e=>{const arr=[...(p.repo_itemsExtra||[])];arr[i]={...arr[i],usd:parseFloat(e.target.value)||0};set("repo_itemsExtra",arr);}}
+                        style={{width:100,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,
+                                borderRadius:5,padding:"3px 7px",fontSize:12,fontFamily:"DM Mono,monospace",
+                                color:T.usuario.text,fontWeight:700}}/>
+                      <span style={{fontSize:9,color:C.mid}}>USD</span>
+                      <button onClick={()=>{const arr=(p.repo_itemsExtra||[]).filter((_,j)=>j!==i);set("repo_itemsExtra",arr);}}
+                        style={{padding:"1px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:10,cursor:"pointer",fontWeight:700}}>×</button>
+                    </div>
+                  </td>
+                  <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:it.activo?C.navy:C.mid}}>
+                    {it.activo?`$${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
+                  </td>
+                </tr>
+              ))}
+
               {/* Total */}
               <tr className="total">
                 <td colSpan={2} style={{textAlign:"right"}}>TOTAL</td>
@@ -810,8 +844,15 @@ function TabRepo({p,set}) {
             </tbody>
           </table>
         </div>
-        <div className="warn-note" style={{marginTop:8}}>
-          El costo total de este viaje se distribuye entre las {p.cap_capacidadBarco.toLocaleString()} Tn cargadas → <strong>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"} USD/Tn</strong>.
+        <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <button className="run" style={{fontSize:10,padding:"5px 12px"}}
+            onClick={()=>{
+              const nuevo={id:`repo_${Date.now()}`,label:"Nuevo concepto",usd:0,activo:true};
+              set("repo_itemsExtra",[...(p.repo_itemsExtra||[]),nuevo]);
+            }}>+ Agregar fila</button>
+          <div className="warn-note" style={{flex:1,margin:0}}>
+            El costo total de este viaje se distribuye entre las {p.cap_capacidadBarco.toLocaleString()} Tn cargadas → <strong>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"} USD/Tn</strong>.
+          </div>
         </div>
       </div>
     </div>
