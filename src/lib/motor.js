@@ -664,7 +664,8 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     const tramosR=(p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
     const {diasNav:diasNavR}=velPromedioPonderada(tramosR);
     const combRepoT=tramosR.reduce((acc,t)=>{const dist=t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0);const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
-    const c0=combRepoT*vlsfo+diasNavR*tc+(p.barco_limpiezaBodega||0)+(p.barco_importacionWaiver||0);
+    const c0=combRepoT*vlsfo+diasNavR*tc+(p.barco_limpiezaBodega||0)+(p.barco_importacionWaiver||0)
+             +(p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
 
     // E1
     const vH1=p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;

@@ -957,9 +957,10 @@ function TabNavegacion({p,set,tnEntregadas}) {
 // ─── TAB E3: DESCARGA ──────────────────────────────────────────────────────
 function TabDescarga({p,set,tnEntregadas}) {
   const [mes,setMes]=useState(5);
+  const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p,mes);
   const e2=calcEtapa2(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
   const costRows=[
     {label:"Opex descarga",    eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,            total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
@@ -1956,9 +1957,10 @@ function TabAgenciaZarate({p,set}) {
 // ─── TAB AGENCIA BAHÍA BLANCA ──────────────────────────────────────────────
 function TabAgenciaBB({p,set}) {
   const [mes,setMes]=useState(5);
+  const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p,mes);
   const e2=calcEtapa2(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
   const tReal=e3.tReal_dias;
   const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
@@ -2344,9 +2346,9 @@ function TabSensibilidades({p}) {
     const e0 = calcEtapaRepo(p);
     const e1 = calcEtapa1(p, mes);
     const e2 = calcEtapa2(p);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...p, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal + e2.costoTotal + e3.costoTotal;
+    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
     return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
   })();
 
@@ -2355,9 +2357,9 @@ function TabSensibilidades({p}) {
     const e0 = calcEtapaRepo(pp);
     const e1 = calcEtapa1(pp, mes);
     const e2 = calcEtapa2(pp);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal + e2.costoTotal + e3.costoTotal;
+    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
     return tot / e3.tnEntregadas;
   }
 
