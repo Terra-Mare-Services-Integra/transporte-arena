@@ -699,30 +699,29 @@ function TabRepo({p,set}) {
     set("repo_tramos",arr);
   };
 
-  const costRows=[
-    {label:"Combustible lastre",   eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,           total:e0.combCosto,          hover:e0.hoverComb},
-    {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,             total:e0.fleteCosto,         hover:e0.hoverTC},
-    {label:"Limpieza de bodega",   eq:"por escala",                                          total:e0.limpiezaBodega,     hover:[`Limpieza bodega: $${e0.limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`]},
-    {label:"Importación / Waiver", eq:"por escala",                                          total:e0.importacionWaiver,  hover:[`Importación/Waiver: $${e0.importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`]},
-    {label:"TOTAL",                eq:"Σ reposicionamiento",                                 total:e0.costoTotal,         hover:e0.hoverTotal, isTotal:true},
+  // Items fijos editables (igual estructura que agz_items / abb_items)
+  const itemsFijos=[
+    {key:"barco_limpiezaBodega",   label:"Limpieza de bodega",     nota:"Costo por escala para limpiar bodega antes de cargar arena."},
+    {key:"barco_importacionWaiver",label:"Importación / Waiver",   nota:"Gastos de importación temporal del barco y/o waiver regulatorio."},
   ];
 
   return (
     <div>
       <div className="kpis">
-        <KPI label="Días viaje" value={`${e0.diasNav.toFixed(1)}d`}                                     color={C.navy}/>
-        <KPI label="Distancia"  value={`${e0.totalMn?.toFixed(0)||"—"}mn`}                              color={C.mid}/>
-        <KPI label="Vel. prom." value={`${e0.velProm?.toFixed(1)||"—"}kt`}                              color={C.blue}/>
-        <KPI label="Combustible"value={`${e0.combTotal.toFixed(1)}T`}                                   color={C.orange}/>
-        <KPI label="Costo total"value={`$${(e0.costoTotal/1000).toFixed(0)}k`}                          color={C.gold}/>
-        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`} color={C.green}/>
+        <KPI label="Días viaje" value={`${e0.diasNav.toFixed(1)}d`}                                                        color={C.navy}/>
+        <KPI label="Distancia"  value={`${e0.totalMn?.toFixed(0)||"—"}mn`}                                                 color={C.mid}/>
+        <KPI label="Vel. prom." value={`${e0.velProm?.toFixed(1)||"—"}kt`}                                                 color={C.blue}/>
+        <KPI label="Combustible"value={`${e0.combTotal.toFixed(1)}T`}                                                      color={C.orange}/>
+        <KPI label="Costo total"value={`$${(e0.costoTotal/1000).toFixed(0)}k`}                                             color={C.gold}/>
+        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`}  color={C.green}/>
       </div>
 
+      {/* Tramo — solo velocidad editable */}
       <div className="card">
         <div className="ct">Tramo de Reposicionamiento <TipoBadge tipo="usuario"/></div>
         <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
           El barco llega en lastre desde su última posición (proxy: Rio Grande do Sul, Brasil).
-          El costo de limpieza de bodega e importación/waiver se carga en este viaje.
+          Solo la velocidad es editable; la distancia se calcula automáticamente desde los waypoints.
         </p>
         <table className="vel-table">
           <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th>Condición</th></tr></thead>
@@ -745,22 +744,72 @@ function TabRepo({p,set}) {
         </table>
       </div>
 
+      {/* Costos — calculados read-only + fijos editables */}
       <div className="card">
         <div className="ct">Costos Viaje a Puerto de Carga</div>
-        <table className="cost-table">
-          <thead><tr><th>Concepto</th><th>Ecuación</th><th style={{textAlign:"right"}}>Total USD</th></tr></thead>
-          <tbody>
-            {costRows.map((r,i)=>(
-              <tr key={i} className={r.isTotal?"total":""}>
-                <td style={{color:r.isTotal?undefined:C.mid,fontSize:r.isTotal?undefined:10}}>{r.label}</td>
-                <td className="eq">{r.eq}</td>
-                <td style={{textAlign:"right"}}>
-                  <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/>
+        <div style={{overflowX:"auto"}}>
+          <table className="cost-table" style={{tableLayout:"auto"}}>
+            <thead>
+              <tr>
+                <th>Concepto</th>
+                <th>Tipo</th>
+                <th>Ecuación / Valor</th>
+                <th style={{textAlign:"right"}}>Total USD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* Filas calculadas — read only */}
+              {[
+                {label:"Combustible lastre",    eq:`${e0.combTotal.toFixed(1)}T × $${e0.vlsfo}/T`,  total:e0.combCosto,    hover:e0.hoverComb},
+                {label:"Time Charter+Trip+Misc", eq:`${e0.diasNav.toFixed(1)}d × $${e0.tc}/d`,      total:e0.fleteCosto,   hover:e0.hoverTC},
+              ].map((r,i)=>(
+                <tr key={i}>
+                  <td style={{color:C.mid,fontSize:10}}>{r.label}</td>
+                  <td style={{textAlign:"center"}}>
+                    <span style={{fontSize:8,background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:4,padding:"1px 6px",fontWeight:700,color:C.green}}>CALC.</span>
+                  </td>
+                  <td className="eq">{r.eq}</td>
+                  <td style={{textAlign:"right"}}>
+                    <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={r.hover}/>
+                  </td>
+                </tr>
+              ))}
+
+              {/* Filas editables — fijas por escala */}
+              {itemsFijos.map(item=>(
+                <tr key={item.key}>
+                  <td style={{color:C.mid,fontSize:10}}>{item.label}</td>
+                  <td style={{textAlign:"center"}}>
+                    <span style={{fontSize:8,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,borderRadius:4,padding:"1px 6px",fontWeight:700,color:T.usuario.text}}>FIJO</span>
+                  </td>
+                  <td>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <input type="number" value={p[item.key]||0} min={0} step={500}
+                        onChange={e=>set(item.key, parseFloat(e.target.value)||0)}
+                        style={{width:100,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,
+                                borderRadius:5,padding:"3px 7px",fontSize:12,fontFamily:"DM Mono,monospace",
+                                color:T.usuario.text,fontWeight:700}}/>
+                      <span style={{fontSize:9,color:C.mid}}>USD</span>
+                      {item.nota && <span style={{fontSize:8,color:C.mid,fontStyle:"italic"}}>{item.nota}</span>}
+                    </div>
+                  </td>
+                  <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:C.navy}}>
+                    ${(p[item.key]||0).toLocaleString("es-AR",{maximumFractionDigits:0})}
+                  </td>
+                </tr>
+              ))}
+
+              {/* Total */}
+              <tr className="total">
+                <td colSpan={2} style={{textAlign:"right"}}>TOTAL</td>
+                <td className="eq">Σ reposicionamiento</td>
+                <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:13}}>
+                  ${e0.costoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
         <div className="warn-note" style={{marginTop:8}}>
           El costo total de este viaje se distribuye entre las {p.cap_capacidadBarco.toLocaleString()} Tn cargadas → <strong>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"} USD/Tn</strong>.
         </div>
