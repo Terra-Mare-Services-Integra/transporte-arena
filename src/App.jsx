@@ -1117,7 +1117,6 @@ function TabDescarga({p,set,tnEntregadas}) {
     return rows;
   }, [p, e3.tnEntrada]);
 
-  const [verTabla, setVerTabla] = useState(false);
 
   const costoRows=[
     {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                  total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
