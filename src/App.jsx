@@ -957,20 +957,58 @@ function TabNavegacion({p,set,tnEntregadas}) {
 // ─── TAB E3: DESCARGA ──────────────────────────────────────────────────────
 function TabDescarga({p,set,tnEntregadas}) {
   const [mes,setMes]=useState(5);
+  const [subTab,setSubTab]=useState("directa");
   const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p,mes);
   const e2=calcEtapa2(p);
   const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
+
+  // ── Cálculos camiones: distribución basada en capacidad de camiones ──
+  const camDir = p.des_camDir_cantidad||10;
+  const volDir = p.des_camDir_volM3||30;
+  const camAco = p.des_camAco_cantidad||5;
+  const volAco = p.des_camAco_volM3||30;
+  const densidad = p.cap_densidadArena||1.5;
+  const tnPorCamDir = volDir * densidad;
+  const tnPorCamAco = volAco * densidad;
+  const tnTotalPorCicloDir = camDir * tnPorCamDir;
+  const tnTotalPorCicloAco = camAco * tnPorCamAco;
+  const totalCapCiclo = tnTotalPorCicloDir + tnTotalPorCicloAco;
+  const pctDirectoCalc = totalCapCiclo > 0 ? tnTotalPorCicloDir / totalCapCiclo : (1 - (p.des_pctAcopio||0));
+  const pctAcopioCalc  = 1 - pctDirectoCalc;
+
+  // Velocidad y distancia acopio → costo USD/Tn acopio
+  const velAco   = p.des_camAco_velKmh||60;
+  const distAco  = p.des_camAco_distKm||15;
+  const hsViajeAco = distAco / velAco;           // horas por viaje (solo ida)
+  const rotacionesHora = tnTotalPorCicloAco > 0 ? (1 / (hsViajeAco * 2)) : 0; // ciclo ida+vuelta
+  // Costo operativo acopio: usamos el parámetro des_costoAcopioUSDTn como tarifa base del servicio
+  // más el cálculo de distancia como referencia informativa
+  const costoKmTon = p.des_camAco_costoKmTon || 0.08; // USD / (Tn·km) — editable
+  const costoAcopioCalculado = distAco * costoKmTon * 2; // ida y vuelta, en USD/Tn
+
+  const tnDirecto = e3.tnEntrada * pctDirectoCalc;
+  const tnAcopio  = e3.tnEntrada * pctAcopioCalc;
+
   const costRows=[
     {label:"Opex descarga",    eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,            total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
-    {label:"Camiones directo", eq:`$${p.des_costoCamionesDirUSDTn}/Tn×${e3.tnDirecto.toFixed(0)}Tn`,total:e3.costoCamiones,hover:[e3.hoverTotal[1]]},
-    {label:"Acopio BB",        eq:`$${p.des_costoAcopioUSDTn}/Tn×${e3.tnAcopio.toFixed(0)}Tn`,      total:e3.costoAcopio,  hover:[e3.hoverTotal[2]]},
+    {label:"Camiones directo", eq:`$${p.des_costoCamionesDirUSDTn}/Tn×${tnDirecto.toFixed(0)}Tn`,   total:p.des_costoCamionesDirUSDTn*tnDirecto, hover:[`${camDir} camiones × ${tnPorCamDir.toFixed(1)}Tn/cam = ${tnTotalPorCicloDir.toFixed(0)}Tn/ciclo`]},
+    {label:"Acopio BB",        eq:`$${(p.des_costoAcopioUSDTn||costoAcopioCalculado).toFixed(2)}/Tn×${tnAcopio.toFixed(0)}Tn`, total:(p.des_costoAcopioUSDTn||costoAcopioCalculado)*tnAcopio, hover:[`${camAco} camiones × ${tnPorCamAco.toFixed(1)}Tn/cam = ${tnTotalPorCicloAco.toFixed(0)}Tn/ciclo`]},
     {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,total:e3.combPuerto,hover:e3.hoverComb},
     {label:"Time Charter+Trip.",eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                       total:e3.fleteEtapa,   hover:e3.hoverTC},
     {label:"Merma descarga",   eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,total:e3.costoMermaDescarga,hover:[e3.hoverTotal[6]]},
     {label:"TOTAL ETAPA 3",    eq:"Σ costos descarga",                                               total:e3.costoTotal,   hover:e3.hoverTotal,isTotal:true},
   ];
+
+  const subTabStyle = (id) => ({
+    padding:"6px 14px", border:"none", borderRadius:"6px 6px 0 0", cursor:"pointer",
+    fontFamily:"Montserrat,sans-serif", fontWeight:700, fontSize:10, letterSpacing:.3,
+    background: subTab===id ? "#fff" : "#EEF2F7",
+    color: subTab===id ? C.navy : C.mid,
+    borderBottom: subTab===id ? `2px solid ${C.blue}` : "2px solid transparent",
+  });
+
   return (
     <div>
       <EspejoCheck p={p}/>
@@ -989,6 +1027,120 @@ function TabDescarga({p,set,tnEntregadas}) {
       </div>
       <div className="g2">
         <div>
+          {/* ── Distribución visual Directo / Acopio ── */}
+          <div className="card">
+            <div className="ct">Distribución de Descarga</div>
+            <div style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <div style={{width:10,height:10,borderRadius:2,background:C.green}}/>
+                  <span style={{fontSize:10,fontWeight:700,color:C.green}}>Directo a Neuquén</span>
+                  <span style={{fontSize:13,fontWeight:800,color:C.green,fontFamily:"DM Mono,monospace"}}>{(pctDirectoCalc*100).toFixed(1)}%</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:13,fontWeight:800,color:C.gold,fontFamily:"DM Mono,monospace"}}>{(pctAcopioCalc*100).toFixed(1)}%</span>
+                  <span style={{fontSize:10,fontWeight:700,color:C.gold}}>Acopio BB</span>
+                  <div style={{width:10,height:10,borderRadius:2,background:C.gold}}/>
+                </div>
+              </div>
+              <div style={{height:18,borderRadius:6,overflow:"hidden",display:"flex",border:`1px solid ${C.border}`}}>
+                <div style={{width:`${pctDirectoCalc*100}%`,background:C.green,transition:"width .3s",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {pctDirectoCalc>0.15&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{tnDirecto.toFixed(0)}Tn</span>}
+                </div>
+                <div style={{flex:1,background:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {pctAcopioCalc>0.15&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{tnAcopio.toFixed(0)}Tn</span>}
+                </div>
+              </div>
+              <div style={{fontSize:9,color:C.mid,marginTop:4,textAlign:"center"}}>
+                Distribución calculada automáticamente según capacidad de camiones
+              </div>
+            </div>
+            <div className="g3" style={{marginTop:6}}>
+              {[{l:"Directo",v:`${tnDirecto.toFixed(0)}Tn`,c:C.green},{l:"Acopio",v:`${tnAcopio.toFixed(0)}Tn`,c:C.gold},{l:"Entregadas",v:`${e3.tnEntregadas.toFixed(0)}Tn`,c:C.navy}].map(({l,v,c})=>(
+                <div key={l} style={{background:"#EEF2F7",borderRadius:7,padding:"6px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:8,color:C.muted,textTransform:"uppercase"}}>{l}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"DM Mono,monospace"}}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Sub-tabs Directa / Acopio ── */}
+          <div style={{display:"flex",gap:2,marginBottom:0,paddingBottom:0}}>
+            <button style={subTabStyle("directa")} onClick={()=>setSubTab("directa")}>🚛 Descarga Directa</button>
+            <button style={subTabStyle("acopio")}  onClick={()=>setSubTab("acopio")}>🏗️ Descarga Acopio</button>
+          </div>
+
+          {subTab==="directa"&&(
+            <div className="card" style={{borderTopLeftRadius:0,marginTop:0,borderTop:`2px solid ${C.blue}`}}>
+              <div className="ct">Descarga Directa — Camiones a Neuquén <TipoBadge tipo="usuario"/></div>
+              <p style={{fontSize:10,color:C.mid,lineHeight:1.5,marginBottom:10}}>
+                Camiones que se cargan directamente desde la tolva de descarga del barco y se dirigen a destino final (Neuquén / Añelo). La capacidad total de estos camiones define qué proporción de la carga va a destino directo.
+              </p>
+              <div className="g2">
+                <Campo label="Cantidad de camiones" value={p.des_camDir_cantidad||10} onChange={v=>set("des_camDir_cantidad",v)} tipo="usuario" unit="unidades" min={1} max={100} step={1}
+                  nota={`Total: ${tnTotalPorCicloDir.toFixed(0)} Tn por ciclo de descarga`}/>
+                <Campo label="Volumen por camión" value={p.des_camDir_volM3||30} onChange={v=>set("des_camDir_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+                  nota={`≈ ${tnPorCamDir.toFixed(1)} Tn/camión (densidad ${densidad}T/m³)`}/>
+              </div>
+              <Campo label="Tarifa flete directo" value={p.des_costoCamionesDirUSDTn||0} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}
+                nota="Costo por tonelada del flete Bahía Blanca → destino final (Neuquén / Añelo)"/>
+              <div style={{marginTop:8,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:C.green}}>
+                <strong>{camDir} camiones × {tnPorCamDir.toFixed(1)} Tn/cam = {tnTotalPorCicloDir.toFixed(0)} Tn por ciclo</strong>
+                <span style={{marginLeft:10,color:C.mid}}>{(pctDirectoCalc*100).toFixed(1)}% del total descargado → {tnDirecto.toFixed(0)} Tn</span>
+              </div>
+            </div>
+          )}
+
+          {subTab==="acopio"&&(
+            <div className="card" style={{borderTopLeftRadius:0,marginTop:0,borderTop:`2px solid ${C.gold}`}}>
+              <div className="ct">Descarga Acopio — Playa de Acopio BB <TipoBadge tipo="usuario"/></div>
+              <p style={{fontSize:10,color:C.mid,lineHeight:1.5,marginBottom:10}}>
+                Camiones que cargan en la tolva y depositan en la playa de acopio de Bahía Blanca. El costo de acopio se calcula en función de la distancia, velocidad y tarifa por km/Tn.
+              </p>
+              <div className="g2">
+                <Campo label="Cantidad de camiones" value={p.des_camAco_cantidad||5} onChange={v=>set("des_camAco_cantidad",v)} tipo="usuario" unit="unidades" min={1} max={50} step={1}
+                  nota={`Total: ${tnTotalPorCicloAco.toFixed(0)} Tn por ciclo de descarga`}/>
+                <Campo label="Volumen por camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+                  nota={`≈ ${tnPorCamAco.toFixed(1)} Tn/camión (densidad ${densidad}T/m³)`}/>
+              </div>
+              <div className="g2">
+                <Campo label="Distancia tolva → acopio" value={p.des_camAco_distKm||15} onChange={v=>set("des_camAco_distKm",v)} tipo="usuario" unit="km" min={1} max={200} step={1}
+                  nota="Distancia de ida. El ciclo completo (ida+vuelta) se calcula automáticamente."/>
+                <Campo label="Velocidad camiones" value={p.des_camAco_velKmh||60} onChange={v=>set("des_camAco_velKmh",v)} tipo="usuario" unit="km/h" min={10} max={120} step={5}/>
+              </div>
+              <Campo label="Costo por km·Tn" value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01}
+                nota="Tarifa del servicio de camionaje por tonelada por kilómetro (ida+vuelta)."/>
+              <div style={{marginTop:8,padding:"10px 12px",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:8}}>
+                <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:8,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo por camión</div>
+                    <div style={{fontSize:14,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace"}}>{(hsViajeAco*2).toFixed(1)} hs</div>
+                    <div style={{fontSize:9,color:C.mid}}>{distAco}km × 2 ÷ {velAco}km/h</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Costo calculado</div>
+                    <div style={{fontSize:14,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace"}}>${costoAcopioCalculado.toFixed(2)}/Tn</div>
+                    <div style={{fontSize:9,color:C.mid}}>{distAco}km×2 × ${(p.des_camAco_costoKmTon||0.08)}/Tn·km</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,color:C.gold,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Tn a acopio</div>
+                    <div style={{fontSize:14,fontWeight:800,color:C.gold,fontFamily:"DM Mono,monospace"}}>{tnAcopio.toFixed(0)} Tn</div>
+                    <div style={{fontSize:9,color:C.mid}}>{(pctAcopioCalc*100).toFixed(1)}% del total</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:8,color:C.red,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Costo total acopio</div>
+                    <div style={{fontSize:14,fontWeight:800,color:C.red,fontFamily:"DM Mono,monospace"}}>${(costoAcopioCalculado*tnAcopio).toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+                    <div style={{fontSize:9,color:C.mid}}>${costoAcopioCalculado.toFixed(2)} × {tnAcopio.toFixed(0)}Tn</div>
+                  </div>
+                </div>
+              </div>
+              <div style={{marginTop:8,padding:"6px 10px",background:"#EEF2F7",borderRadius:6,fontSize:9,color:C.mid}}>
+                💡 El campo "Costo calculado" ($USD/Tn) se usa automáticamente en la tabla de costos de la etapa. Si preferís ingresar una tarifa fija, ajustá el parámetro "Costo por km·Tn".
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <div className="ct">Parámetros Físicos — Descarga <TipoBadge tipo="usuario"/></div>
             <div className="g3">
@@ -996,29 +1148,11 @@ function TabDescarga({p,set,tnEntregadas}) {
               <Campo label="Grúas" value={p.des_gruas} onChange={v=>set("des_gruas",v)} tipo="usuario" min={1} max={4}/>
               <Campo label="Mov/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
               <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Camiones directo" value={p.des_costoCamionesDirUSDTn} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={1}/>
-              <Campo label="Acopio BB" value={p.des_costoAcopioUSDTn} onChange={v=>set("des_costoAcopioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
             </div>
             <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
             <div className="g2">
               <Campo label="Merma descarga" value={p.des_pctMermaDescarga*100} onChange={v=>set("des_pctMermaDescarga",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
               <Campo label="Merma acopio" value={p.des_pctMermaAcopio*100} onChange={v=>set("des_pctMermaAcopio",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
-            </div>
-            <div style={{marginTop:6}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                <span style={{fontSize:9,fontWeight:700,color:C.green}}>Despacho directo</span>
-                <span style={{fontSize:13,fontWeight:800,color:C.green,fontFamily:"DM Mono,monospace"}}>{((1-p.des_pctAcopio)*100).toFixed(0)}%</span>
-              </div>
-              <input type="range" min={0} max={1} step={0.05} value={1-p.des_pctAcopio}
-                onChange={e=>set("des_pctAcopio",parseFloat((1-e.target.value).toFixed(2)))} style={{accentColor:C.green}}/>
-              <div className="g3" style={{marginTop:6}}>
-                {[{l:"Directo",v:`${e3.tnDirecto.toFixed(0)}Tn`,c:C.green},{l:"Acopio",v:`${e3.tnAcopio.toFixed(0)}Tn`,c:C.gold},{l:"Entregadas",v:`${e3.tnEntregadas.toFixed(0)}Tn`,c:C.navy}].map(({l,v,c})=>(
-                  <div key={l} style={{background:"#EEF2F7",borderRadius:7,padding:"6px 8px",textAlign:"center"}}>
-                    <div style={{fontSize:8,color:C.muted,textTransform:"uppercase"}}>{l}</div>
-                    <div style={{fontSize:12,fontWeight:700,color:c,fontFamily:"DM Mono,monospace"}}>{v}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
           <div className="card">
@@ -1514,6 +1648,118 @@ function TabEvaluacion({p,tnEntregadas}) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* ── DESGLOSE: Costo Logístico vs Costo Arena+Mermas ── */}
+      {(() => {
+        // Costo arena + mermas
+        const costoArena   = e1.costoArena   || 0;
+        const costoMermaCarga   = e1.costoMerma    || 0;
+        const costoMermaDesc    = e3.costoMermaDescarga || 0;
+        const costoMermaAcopio  = (e3.mermaAcopio_Tn||0) * (e3.precioArenaEq||0);
+        const totalArenaMermas  = costoArena + costoMermaCarga + costoMermaDesc + costoMermaAcopio;
+
+        // Costo logístico puro = todo lo demás
+        const totalLogistico = tot.costoTotal - totalArenaMermas;
+        const tn = tot.tnEntregadas || 1;
+
+        const pctLog  = tot.costoTotal > 0 ? totalLogistico / tot.costoTotal * 100 : 0;
+        const pctArena = 100 - pctLog;
+
+        const filas = [
+          {l:"Precio arena en origen",       v:costoArena,          c:"#5B21B6"},
+          {l:"Merma de carga (Zárate)",      v:costoMermaCarga,     c:"#DC2626"},
+          {l:"Merma de descarga (BB)",       v:costoMermaDesc,      c:"#C2410C"},
+          {l:"Merma de acopio",              v:costoMermaAcopio,    c:"#D97706"},
+        ];
+        const filasLog = [
+          {l:"Barco (TC + tripulación)",     v:e0.fleteCosto + e1.fleteEtapa + e2.fleteNav + e3.fleteEtapa, c:C.navy},
+          {l:"Combustible (todas etapas)",   v:e0.combCosto + e1.combPuerto + e2.combNav + e3.combPuerto,   c:C.orange},
+          {l:"Agencia Zárate",               v:e1.agencia || 0,     c:C.blue},
+          {l:"Agencia BB",                   v:e3.agencia || 0,     c:C.blue},
+          {l:"Opex carga + descarga",        v:(e1.costoOpex||0) + (e3.costoOpex||0), c:C.mid},
+          {l:"Camiones + Acopio",            v:(e3.costoCamiones||0) + (e3.costoAcopio||0), c:"#166534"},
+          {l:"Repo. (limpieza, waiver, etc.)",v:e0.combCosto + e0.fleteCosto + (e0.limpiezaBodega||0) + (e0.importacionWaiver||0) - e0.combCosto - e0.fleteCosto + e0.limpiezaBodega + e0.importacionWaiver, c:C.mid},
+        ];
+        // Simplify: just show logístico total vs arena total
+        return (
+          <div className="card" style={{borderTop:`3px solid #7C3AED`}}>
+            <div className="ct" style={{color:"#7C3AED"}}>📊 Desglose: Costo Logístico vs Costo Arena y Mermas</div>
+            <p style={{fontSize:10,color:C.mid,marginBottom:12,lineHeight:1.6}}>
+              Aísla el <strong>costo propio del viaje</strong> (barco, combustible, agencias, opex) del <strong>costo de la arena y sus pérdidas</strong> (precio origen + mermas de carga, descarga y acopio).
+            </p>
+
+            {/* Barra apilada visual */}
+            <div style={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,flexWrap:"wrap",gap:4}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <div style={{width:12,height:12,borderRadius:2,background:"#7C3AED"}}/>
+                  <span style={{fontSize:10,fontWeight:700,color:"#7C3AED"}}>Logístico</span>
+                  <span style={{fontSize:13,fontWeight:800,color:"#7C3AED",fontFamily:"DM Mono,monospace"}}>${(totalLogistico/tn).toFixed(1)}/Tn ({pctLog.toFixed(0)}%)</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:13,fontWeight:800,color:"#5B21B6",fontFamily:"DM Mono,monospace"}}>${(totalArenaMermas/tn).toFixed(1)}/Tn ({pctArena.toFixed(0)}%)</span>
+                  <span style={{fontSize:10,fontWeight:700,color:"#5B21B6"}}>Arena + Mermas</span>
+                  <div style={{width:12,height:12,borderRadius:2,background:"#5B21B6"}}/>
+                </div>
+              </div>
+              <div style={{height:20,borderRadius:8,overflow:"hidden",display:"flex",border:`1px solid ${C.border}`}}>
+                <div style={{width:`${pctLog}%`,background:"#7C3AED",transition:"width .3s",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {pctLog>12&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{pctLog.toFixed(0)}%</span>}
+                </div>
+                <div style={{flex:1,background:"#5B21B6",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {pctArena>12&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{pctArena.toFixed(0)}%</span>}
+                </div>
+              </div>
+            </div>
+
+            <div className="g2">
+              {/* Bloque Logístico */}
+              <div style={{background:"#F5F3FF",border:"1px solid #C4B5FD",borderRadius:8,padding:"10px 12px"}}>
+                <div style={{fontSize:9,color:"#7C3AED",fontWeight:800,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Costo Logístico Puro</div>
+                <div style={{fontSize:22,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#7C3AED",lineHeight:1,marginBottom:2}}>${(totalLogistico/tn).toFixed(1)}<span style={{fontSize:10,fontWeight:400,color:"#A78BFA"}}> /Tn</span></div>
+                <div style={{fontSize:10,color:"#7C3AED",fontFamily:"DM Mono,monospace",marginBottom:8}}>${totalLogistico.toLocaleString("es-AR",{maximumFractionDigits:0})} total</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <tbody>
+                    {[
+                      {l:"Barco (TC+Trip+Misc)", v: (e0.fleteCosto||0)+(e1.fleteEtapa||0)+(e2.fleteNav||0)+(e3.fleteEtapa||0)},
+                      {l:"Combustible total",    v: (e0.combCosto||0)+(e1.combPuerto||0)+(e2.combNav||0)+(e3.combPuerto||0)},
+                      {l:"Agencia Zárate",       v: e1.agencia||0},
+                      {l:"Agencia BB",           v: e3.agencia||0},
+                      {l:"Opex carga+desc.",     v: (e1.costoOpex||0)+(e3.costoOpex||0)},
+                      {l:"Camiones+Acopio",      v: (e3.costoCamiones||0)+(e3.costoAcopio||0)},
+                      {l:"Reposicionamiento",    v: (e0.limpiezaBodega||0)+(e0.importacionWaiver||0)},
+                    ].map(({l,v})=>(
+                      <tr key={l} style={{borderBottom:"1px solid #EDE9FE"}}>
+                        <td style={{padding:"4px 0",color:"#6D28D9",fontSize:9}}>{l}</td>
+                        <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:"#7C3AED",fontSize:9,padding:"4px 0"}}>${(v/tn).toFixed(1)}/Tn</td>
+                        <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:"#A78BFA",fontSize:8,padding:"4px 0",paddingLeft:6}}>${(v/1000).toFixed(0)}k</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bloque Arena + Mermas */}
+              <div style={{background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:8,padding:"10px 12px"}}>
+                <div style={{fontSize:9,color:"#5B21B6",fontWeight:800,textTransform:"uppercase",letterSpacing:.5,marginBottom:8}}>Arena + Mermas</div>
+                <div style={{fontSize:22,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#5B21B6",lineHeight:1,marginBottom:2}}>${(totalArenaMermas/tn).toFixed(1)}<span style={{fontSize:10,fontWeight:400,color:"#8B5CF6"}}> /Tn</span></div>
+                <div style={{fontSize:10,color:"#5B21B6",fontFamily:"DM Mono,monospace",marginBottom:8}}>${totalArenaMermas.toLocaleString("es-AR",{maximumFractionDigits:0})} total</div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <tbody>
+                    {filas.map(({l,v,c})=>(
+                      <tr key={l} style={{borderBottom:"1px solid #EDE9FE"}}>
+                        <td style={{padding:"4px 0",color:c,fontSize:9}}>{l}</td>
+                        <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:c,fontSize:9,padding:"4px 0"}}>${(v/tn).toFixed(1)}/Tn</td>
+                        <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:"#8B5CF6",fontSize:8,padding:"4px 0",paddingLeft:6}}>${(v/1000).toFixed(0)}k</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1639,39 +1885,93 @@ function TabEscenarios({p, onLoad}) {
   const [load,setLoad]=useState(false);
   const [msg,setMsg]=useState("");
   const [vista,setVista]=useState("escenarios");
-  const [editId,setEditId]=useState(null);       // id del escenario en edición
+  const [editId,setEditId]=useState(null);
   const [editNom,setEditNom]=useState("");
   const [editDesc,setEditDesc]=useState("");
+  const [dbStatus,setDbStatus]=useState(null); // null | "ok" | "error"
   const det=calcTotal(p);
 
   const cargar=async()=>{
     setLoad(true);
-    const[{data:e},{data:c}]=await Promise.all([
-      supabase.from("escenarios_arena").select("*").order("created_at",{ascending:false}),
-      supabase.from("corridas_montecarlo").select("*").order("created_at",{ascending:false}),
-    ]);
-    setEsc(e||[]);setCorridas(c||[]);setLoad(false);
+    setMsg("");
+    try {
+      const [{data:e,error:eErr},{data:c,error:cErr}]=await Promise.all([
+        supabase.from("escenarios_arena").select("*").order("created_at",{ascending:false}),
+        supabase.from("corridas_montecarlo").select("*").order("created_at",{ascending:false}),
+      ]);
+      if(eErr) {
+        console.error("Error cargando escenarios:",eErr);
+        setMsg("Error al leer escenarios: "+eErr.message);
+        setDbStatus("error");
+      } else {
+        setEsc(e||[]);
+        setDbStatus("ok");
+      }
+      if(cErr) {
+        console.error("Error cargando corridas:",cErr);
+      } else {
+        setCorridas(c||[]);
+      }
+    } catch(ex) {
+      console.error("Error inesperado en cargar():",ex);
+      setMsg("Error inesperado: "+ex.message);
+      setDbStatus("error");
+    }
+    setLoad(false);
   };
+
+  // Auto-cargar al montar
+  useEffect(()=>{ cargar(); },[]);
+
   const guardar=async()=>{
     if(!nom.trim()){setMsg("Ingresá un nombre");return;}
     setSav(true);
-    const{error}=await supabase.from("escenarios_arena").insert({nombre:nom.trim(),descripcion:desc.trim(),params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))});
-    if(error)setMsg("Error: "+error.message);
-    else{setMsg("✓ Guardado");setNom("");setDesc("");cargar();}
-    setSav(false);setTimeout(()=>setMsg(""),3000);
+    setMsg("");
+    try {
+      const payload = {
+        nombre: nom.trim(),
+        descripcion: desc.trim(),
+        params: p,
+        usd_tn: parseFloat(det.usdTn.toFixed(1)),
+      };
+      const{data,error}=await supabase.from("escenarios_arena").insert(payload).select();
+      if(error){
+        console.error("Error al guardar escenario:",error);
+        setMsg("Error al guardar: "+error.message);
+      } else {
+        setMsg("✓ Guardado");
+        setNom("");
+        setDesc("");
+        await cargar();
+      }
+    } catch(ex) {
+      console.error("Excepción al guardar:",ex);
+      setMsg("Error inesperado: "+ex.message);
+    }
+    setSav(false);
+    setTimeout(()=>setMsg(""),4000);
   };
-  const eliminar=async(tabla,id)=>{await supabase.from(tabla).delete().eq("id",id);cargar();};
+
+  const eliminar=async(tabla,id)=>{
+    const{error}=await supabase.from(tabla).delete().eq("id",id);
+    if(error) console.error("Error al eliminar:",error);
+    cargar();
+  };
   const abrirEdit=(e)=>{setEditId(e.id);setEditNom(e.nombre);setEditDesc(e.descripcion||"");};
   const cancelarEdit=()=>{setEditId(null);setEditNom("");setEditDesc("");};
   const actualizarNombre=async(id)=>{
-    await supabase.from("escenarios_arena").update({nombre:editNom.trim(),descripcion:editDesc.trim()}).eq("id",id);
-    setMsg("✓ Nombre actualizado");setTimeout(()=>setMsg(""),3000);
+    const{error}=await supabase.from("escenarios_arena").update({nombre:editNom.trim(),descripcion:editDesc.trim()}).eq("id",id);
+    if(error){setMsg("Error: "+error.message);}
+    else{setMsg("✓ Nombre actualizado");}
+    setTimeout(()=>setMsg(""),3000);
     cancelarEdit();cargar();
   };
   const sobreescribir=async(id,nombre)=>{
     const det=calcTotal(p);
-    await supabase.from("escenarios_arena").update({params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))}).eq("id",id);
-    setMsg(`✓ Sobreescrito: ${nombre}`);setTimeout(()=>setMsg(""),3000);
+    const{error}=await supabase.from("escenarios_arena").update({params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))}).eq("id",id);
+    if(error){setMsg("Error: "+error.message);}
+    else{setMsg(`✓ Sobreescrito: ${nombre}`);}
+    setTimeout(()=>setMsg(""),3000);
     cargar();
   };
 
@@ -1707,7 +2007,15 @@ function TabEscenarios({p, onLoad}) {
               <button key={v.id} className={`tbtn ${vista===v.id?"on":""}`} onClick={()=>setVista(v.id)}>{v.l}</button>
             ))}
           </div>
-          <button className="run" style={{padding:"5px 10px",fontSize:9}} onClick={cargar}>{load?"...":"↻"}</button>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {dbStatus==="error"&&(
+              <span style={{fontSize:9,color:C.red,fontWeight:700}}>⚠️ Error Supabase — ver consola</span>
+            )}
+            {dbStatus==="ok"&&(
+              <span style={{fontSize:9,color:C.green,fontWeight:700}}>✓ DB conectada</span>
+            )}
+            <button className="run" style={{padding:"5px 10px",fontSize:9}} onClick={cargar} disabled={load}>{load?"...":"↻ Actualizar"}</button>
+          </div>
         </div>
         {vista==="escenarios"&&(
           esc.length===0?<div style={{textAlign:"center",padding:"20px",color:C.mid,fontSize:11}}>No hay escenarios.</div>
