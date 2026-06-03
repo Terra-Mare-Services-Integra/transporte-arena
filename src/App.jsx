@@ -726,16 +726,19 @@ function TabRepo({p,set}) {
         <table className="vel-table">
           <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th>Condición</th></tr></thead>
           <tbody>{tramos.map((t,i)=>{
-            const dist=t.wpIds?calcDistanciaTramo(t):(t.distancia||0);
+            const dist=t.distancia||0;
             const dias=dist/t.velocidad/24;
             return (
               <tr key={t.id}>
-                <td style={{fontWeight:600,color:C.navy,fontSize:10}}>{t.nombre}</td>
+                <td><input value={t.nombre} onChange={e=>updateTramo(i,"nombre",e.target.value)}
+                  style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,fontWeight:600,minWidth:120}}/></td>
                 <td><span style={{fontSize:8,background:"#EEF2F7",padding:"2px 6px",borderRadius:4,fontWeight:700,color:C.mid}}>{t.tipo}</span></td>
                 <td><input type="number" value={t.velocidad} min={4} max={20} step={0.5}
                   onChange={e=>updateTramo(i,"velocidad",e.target.value)}
                   style={{width:60}}/></td>
-                <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>{dist.toFixed(0)}</td>
+                <td><input type="number" value={dist} min={0} step={1}
+                  onChange={e=>updateTramo(i,"distancia",parseFloat(e.target.value)||0)}
+                  className="tramo-input" style={{width:70}}/></td>
                 <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.navy,fontWeight:700}}>{dias.toFixed(2)}</td>
                 <td style={{fontSize:9,color:C.mid}}>{t.condicion}</td>
               </tr>
@@ -886,6 +889,23 @@ function TabCarga({p,set,tnEntregadas}) {
         <KPI label="Merma" value={`${e1.mermaTn.toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
         <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
+      {(()=>{
+        const e1Meses=MESES.map((_,i)=>calcEtapa1(p,i));
+        const avg=arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
+        return (
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Promedio anual</div>
+            <div className="kpis" style={{opacity:.75}}>
+              <KPI label="Vel. ideal" value={`${avg(e1Meses.map(e=>e.velIdeal_TnMin)).toFixed(1)}Tn/min`} color={T.formula.text}/>
+              <KPI label="T. ideal" value={`${avg(e1Meses.map(e=>e.tIdeal_dias)).toFixed(1)}d`} color={T.formula.text}/>
+              <KPI label="T. real" value={`${avg(e1Meses.map(e=>e.tReal_dias)).toFixed(1)}d`} color={C.gold}/>
+              <KPI label="Inop. clima" value={`${(avg(e1Meses.map(e=>e.pInop))*100).toFixed(1)}%`} color={C.orange}/>
+              <KPI label="Merma" value={`${avg(e1Meses.map(e=>e.mermaTn)).toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
+              <KPI label="USD/Tn etapa" value={`$${(avg(e1Meses.map(e=>e.costoTotal))/tnEntregadas).toFixed(1)}`} color={C.gold}/>
+            </div>
+          </div>
+        );
+      })()}
       <div className="g2">
         <div>
           <div className="card">
@@ -923,11 +943,22 @@ function TabCarga({p,set,tnEntregadas}) {
 // ─── TAB E2: NAVEGACIÓN IDA ────────────────────────────────────────────────
 function TabNavegacion({p,set,tnEntregadas}) {
   const e2=calcEtapa2(p);
+  const tramos=p.nav_tramos||[];
   const costRows=[
     {label:"Combustible ida",   eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,total:e2.combNav,  hover:e2.hoverComb},
     {label:"Time Charter+Trip.",eq:`${e2.diasNav.toFixed(1)}d×$${e2.tc}/d`,      total:e2.fleteNav, hover:e2.hoverTC},
     {label:"TOTAL ETAPA 2",     eq:"Σ costos navegación ida",                    total:e2.costoTotal,hover:e2.hoverTotal,isTotal:true},
   ];
+  const updateTramo=(i,field,val)=>{
+    const arr=[...tramos];
+    arr[i]={...arr[i],[field]:field==="velocidad"||field==="distancia"?parseFloat(val)||0:val};
+    set("nav_tramos",arr);
+  };
+  const agregarTramo=()=>{
+    const nuevo={id:`nav_${Date.now()}`,nombre:"Nuevo tramo",tipo:"Costero",velocidad:10,distancia:0,condicion:""};
+    set("nav_tramos",[...tramos,nuevo]);
+  };
+  const eliminarTramo=(i)=>set("nav_tramos",tramos.filter((_,j)=>j!==i));
   return (
     <div>
       <VLSFOWidget p={p} set={set}/>
@@ -939,8 +970,36 @@ function TabNavegacion({p,set,tnEntregadas}) {
         <KPI label="USD/Tn etapa" value={`$${(e2.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
       <div className="card">
-        <div className="ct">Ruta — Zárate → Sea White (velocidad y consumo editables)</div>
-        <MapaNavegacion tramos={p.nav_tramos} onUpdate={arr=>set("nav_tramos",arr)} titulo="IDA CARGADO"/>
+        <div className="ct">Tramos — Zárate → Sea White <TipoBadge tipo="usuario"/></div>
+        <table className="vel-table">
+          <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th style={{width:32}}/></tr></thead>
+          <tbody>
+            {tramos.map((t,i)=>{
+              const dist=t.distancia||0;
+              const dias=t.velocidad>0?dist/t.velocidad/24:0;
+              return (
+                <tr key={t.id}>
+                  <td><input value={t.nombre} onChange={e=>updateTramo(i,"nombre",e.target.value)}
+                    style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,fontWeight:600,minWidth:120}}/></td>
+                  <td><span style={{fontSize:8,background:"#EEF2F7",padding:"2px 6px",borderRadius:4,fontWeight:700,color:C.mid}}>{t.tipo}</span></td>
+                  <td><input type="number" value={t.velocidad} min={4} max={20} step={0.5}
+                    onChange={e=>updateTramo(i,"velocidad",e.target.value)}
+                    style={{width:60}}/></td>
+                  <td><input type="number" value={dist} min={0} step={1}
+                    onChange={e=>updateTramo(i,"distancia",e.target.value)}
+                    className="tramo-input" style={{width:70}}/></td>
+                  <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.navy,fontWeight:700}}>{dias.toFixed(2)}</td>
+                  <td><button onClick={()=>eliminarTramo(i)}
+                    style={{padding:"1px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:11,cursor:"pointer",fontWeight:700}}>×</button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
+          <button className="run" style={{fontSize:10,padding:"5px 12px"}} onClick={agregarTramo}>+ Agregar tramo</button>
+          <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{e2.totalMn} mn · {e2.diasNav.toFixed(1)} días</strong></span>
+        </div>
       </div>
       <div className="card">
         <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
@@ -1090,7 +1149,6 @@ function TabDescarga({p,set,tnEntregadas}) {
     const volDirM3    = p.des_camDir_volM3 || 30;
     const volAcoM3    = p.des_camAco_volM3 || 30;
     const tPosMin     = p.des_tPosicionMin || 5;
-    const tBalMin     = p.des_tBalanzaMin || 3;
     const distAcoKm   = p.des_camAco_distKm || 15;
     const velAcoKmh   = p.des_camAco_velKmh || 60;
     const tDescAcoMin = p.des_tDescargaAcoMin || 15;
@@ -1100,8 +1158,8 @@ function TabDescarga({p,set,tnEntregadas}) {
     const tCargaDirMin= (tnPorDir / velGruaTnHr) * 60;
     const tCargaAcoMin= (tnPorAco / velGruaTnHr) * 60;
     const tViajeMin   = (distAcoKm / velAcoKmh) * 60;
-    const tCicloDirMin= tPosMin + tBalMin + tCargaDirMin;
-    const tCicloAcoMin= tPosMin + tBalMin + tCargaAcoMin + tViajeMin + tDescAcoMin + tViajeMin;
+    const tCicloDirMin= tPosMin + tCargaDirMin;
+    const tCicloAcoMin= tPosMin + tCargaAcoMin + tViajeMin + tDescAcoMin + tViajeMin;
     const rows = [];
     for (let nDir = 0; nDir <= total; nDir++) {
       const nAco = total - nDir;
@@ -1117,7 +1175,6 @@ function TabDescarga({p,set,tnEntregadas}) {
     return rows;
   }, [p, e3.tnEntrada]);
 
-
   const costoRows=[
     {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                  total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
     {label:"Camiones directo",        eq:`$${p.des_costoCamionesDirUSDTn||0}/Tn×${opt.tnDir.toFixed(0)}Tn`,       total:(p.des_costoCamionesDirUSDTn||0)*opt.tnDir, hover:[`${opt.nDir} cam × ${opt.tnPorDir.toFixed(1)}Tn/cam`]},
@@ -1125,6 +1182,7 @@ function TabDescarga({p,set,tnEntregadas}) {
     {label:"Combustible puerto",      eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`, total:e3.combPuerto,   hover:e3.hoverComb},
     {label:"Time Charter+Trip.",      eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                              total:e3.fleteEtapa,   hover:e3.hoverTC},
     {label:"Merma descarga",          eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`, total:e3.costoMermaDescarga, hover:[e3.hoverTotal[6]]},
+    {label:"Merma acopio",            eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,  total:e3.mermaAcopio_Tn*e3.precioArenaEq, hover:[`${e3.mermaAcopio_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
     {label:"TOTAL ETAPA 3",           eq:"Σ costos descarga",                                                     total:e3.costoTotal,   hover:e3.hoverTotal, isTotal:true},
   ];
 
@@ -1146,12 +1204,31 @@ function TabDescarga({p,set,tnEntregadas}) {
         <KPI label="Tn entregadas"  value={e3.tnEntregadas.toFixed(0)}                    color={C.green}/>
         <KPI label="USD/Tn etapa"   value={`$${(e3.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
+      {(()=>{
+        const e3Meses=MESES.map((_,i)=>{
+          const _e1=calcEtapa1(p,i);
+          const _costoArenaEq=_e1.tnPostCarga>0?(calcEtapaRepo(p).costoTotal+_e1.costoTotal+calcEtapa2(p).costoTotal)/_e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
+          return calcEtapa3({...p,_costoArenaEq},i,_e1.tnPostCarga);
+        });
+        const avg=arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
+        return (
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Promedio anual</div>
+            <div className="kpis" style={{opacity:.75}}>
+              <KPI label="Tn entrada"     value={avg(e3Meses.map(e=>e.tnEntrada)).toFixed(0)}                                    unit="post merma carga" color={T.formula.text}/>
+              <KPI label="T. ideal"       value={`${avg(e3Meses.map(e=>e.tIdeal_dias)).toFixed(1)}d`}                            color={T.formula.text}/>
+              <KPI label="T. real"        value={`${avg(e3Meses.map(e=>e.tReal_dias)).toFixed(1)}d`}                             color={C.gold}/>
+              <KPI label="Inop. clima BB" value={`${(avg(e3Meses.map(e=>e.pInop))*100).toFixed(1)}%`}                            color={C.orange}/>
+              <KPI label="Tn entregadas"  value={avg(e3Meses.map(e=>e.tnEntregadas)).toFixed(0)}                                 color={C.green}/>
+              <KPI label="USD/Tn etapa"   value={`$${(avg(e3Meses.map(e=>e.costoTotal))/tnEntregadas).toFixed(1)}`}              color={C.gold}/>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══ OPTIMIZADOR ══ */}
       <div className="card" style={{borderTop:`3px solid #7C3AED`}}>
         <div className="ct" style={{color:"#7C3AED"}}>⚙️ Optimizador de Tolvas — Resultado Óptimo</div>
-
-        {/* KPIs resultado */}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
           {[
             {l:"Camiones directos",  v:opt.nDir,                             c:C.green},
@@ -1167,8 +1244,6 @@ function TabDescarga({p,set,tnEntregadas}) {
             </div>
           ))}
         </div>
-
-        {/* Barra distribución */}
         <div style={{marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1191,185 +1266,123 @@ function TabDescarga({p,set,tnEntregadas}) {
             </div>
           </div>
         </div>
-
-        {/* Detalle ciclos */}
-        <div className="g2" style={{marginBottom:10}}>
-          <div style={{background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,padding:"10px 12px"}}>
-            <div style={{fontSize:9,color:C.green,fontWeight:800,textTransform:"uppercase",marginBottom:6}}>Ciclo camión directo</div>
-            {[
-              {l:"Posicionamiento",  v:`${p.des_tPosicionMin||5} min`},
-              {l:"Balanza",          v:`${p.des_tBalanzaMin||3} min`},
-              {l:"Carga en tolva",   v:`${opt.tCargaDirMin.toFixed(1)} min`},
-              {l:"TOTAL ciclo",      v:`${opt.tCicloDirMin.toFixed(1)} min`, b:true},
-              {l:"Throughput/cam.",  v:`${opt.tCicloDirMin>0?(opt.tnPorDir/opt.tCicloDirMin*60).toFixed(1):0} Tn/hr`},
-            ].map(({l,v,b})=>(
-              <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:10,padding:"2px 0",borderBottom:"1px solid #D1FAE5",fontWeight:b?800:400}}>
-                <span style={{color:C.mid}}>{l}</span>
-                <span style={{fontFamily:"DM Mono,monospace",color:C.green,fontWeight:b?800:600}}>{v}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:8,padding:"10px 12px"}}>
-            <div style={{fontSize:9,color:C.orange,fontWeight:800,textTransform:"uppercase",marginBottom:6}}>Ciclo camión acopio</div>
-            {[
-              {l:"Posicionamiento",  v:`${p.des_tPosicionMin||5} min`},
-              {l:"Balanza",          v:`${p.des_tBalanzaMin||3} min`},
-              {l:"Carga en tolva",   v:`${opt.tCargaAcoMin.toFixed(1)} min`},
-              {l:"Viaje ida",        v:`${((p.des_camAco_distKm||15)/(p.des_camAco_velKmh||60)*60).toFixed(1)} min`},
-              {l:"Descarga acopio",  v:`${p.des_tDescargaAcoMin||15} min`},
-              {l:"Vuelta vacío",     v:`${((p.des_camAco_distKm||15)/(p.des_camAco_velKmh||60)*60).toFixed(1)} min`},
-              {l:"TOTAL ciclo",      v:`${opt.tCicloAcoMin.toFixed(1)} min`, b:true},
-              {l:"Throughput/cam.",  v:`${opt.tCicloAcoMin>0?(opt.tnPorAco/opt.tCicloAcoMin*60).toFixed(1):0} Tn/hr`},
-            ].map(({l,v,b})=>(
-              <div key={l} style={{display:"flex",justifyContent:"space-between",fontSize:10,padding:"2px 0",borderBottom:`1px solid ${C.warnBorder}`,fontWeight:b?800:400}}>
-                <span style={{color:C.mid}}>{l}</span>
-                <span style={{fontFamily:"DM Mono,monospace",color:C.orange,fontWeight:b?800:600}}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Alerta cuello de botella */}
-        {opt.cuello==="camiones"?(
-          <div style={{padding:"8px 12px",background:"#FEF3C7",border:`1px solid ${C.warnBorder}`,borderRadius:8,fontSize:10,color:C.orange,marginBottom:8}}>
-            ⚠️ <strong>Cuello de botella: camiones.</strong> Las grúas pueden descargar {opt.throughputGruasHr.toFixed(0)} Tn/hr pero los camiones solo retiran {(opt.throughputDirHr+opt.throughputAcoHr).toFixed(0)} Tn/hr. Agregá camiones al pool para reducir días barco.
-          </div>
-        ):(
-          <div style={{padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:C.green,marginBottom:8}}>
-            ✓ <strong>Cuello de botella: grúas.</strong> Los camiones tienen capacidad suficiente ({(opt.throughputDirHr+opt.throughputAcoHr).toFixed(0)} Tn/hr) para absorber toda la producción de las grúas ({opt.throughputGruasHr.toFixed(0)} Tn/hr). Más camiones no reducen días barco.
-          </div>
-        )}
-
-        {/* Tabla de todas las combinaciones */}
-        <button onClick={()=>setVerTabla(v=>!v)}
-          style={{fontSize:9,padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontWeight:600,cursor:"pointer",marginBottom:verTabla?8:0}}>
-          {verTabla?"▲ Ocultar tabla de combinaciones":"▼ Ver todas las combinaciones"}
-        </button>
-        {verTabla&&(
-          <div style={{overflowX:"auto",marginTop:6}}>
-            <table className="cost-table">
-              <thead><tr><th>Dir.</th><th>Aco.</th><th style={{textAlign:"right"}}>Tn/hr</th><th style={{textAlign:"right"}}>Días</th><th style={{textAlign:"right"}}>% Directo</th><th>Cuello</th></tr></thead>
-              <tbody>
-                {tablaCombinaciones.map(r=>{
-                  const esOpt = r.nDir===opt.nDir && r.nAco===opt.nAco;
-                  return (
-                    <tr key={r.nDir} style={{background:esOpt?"#FFFBEB":"",fontWeight:esOpt?800:400}}>
-                      <td style={{color:C.green,fontFamily:"DM Mono,monospace"}}>{r.nDir}</td>
-                      <td style={{color:C.gold,fontFamily:"DM Mono,monospace"}}>{r.nAco}</td>
-                      <td style={{textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.tpReal}</td>
-                      <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:esOpt?"#7C3AED":C.navy}}>{r.dias}{esOpt?" ★":""}</td>
-                      <td style={{textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.pctDir}%</td>
-                      <td style={{fontSize:9,color:r.cuello==="grúas"?C.blue:C.orange}}>{r.cuello}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+        {verTabla&&tablaCombinaciones.length>0&&(
+          <div style={{overflowX:"auto",marginTop:8}}>
+            <table className="vel-table">
+              <thead><tr><th>Dir</th><th>Aco</th><th>Tn/hr</th><th>Días</th><th>% Dir</th><th>Cuello</th></tr></thead>
+              <tbody>{tablaCombinaciones.map((r,i)=>{
+                const esOpt=r.nDir===opt.nDir&&r.nAco===opt.nAco;
+                return (
+                  <tr key={i} style={{background:esOpt?"#F3E8FF":undefined,fontWeight:esOpt?700:400}}>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:C.green}}>{r.nDir}</td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:C.gold}}>{r.nAco}</td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.tpReal}</td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",color:esOpt?"#7C3AED":C.navy}}>{r.dias}{esOpt?" ★":""}</td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.pctDir}%</td>
+                    <td style={{fontSize:9,color:r.cuello==="grúas"?C.blue:C.orange}}>{r.cuello}</td>
+                  </tr>
+                );
+              })}</tbody>
             </table>
           </div>
         )}
+        <button onClick={()=>setVerTabla(v=>!v)} style={{marginTop:8,fontSize:9,padding:"3px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,cursor:"pointer"}}>
+          {verTabla?"Ocultar tabla":"Ver todas las combinaciones"}
+        </button>
       </div>
 
-      {/* ══ PARÁMETROS ══ */}
-      <div className="g2">
-        <div>
-          <div className="card">
-            <div className="ct">Flota y Tolvas <TipoBadge tipo="usuario"/></div>
-            <div className="g2">
-              <Campo label="Camiones disponibles (total)" value={p.des_camTotalDisp||15} onChange={v=>set("des_camTotalDisp",Math.max(1,Math.round(v)))} tipo="usuario" unit="unidades" min={1} max={50} step={1}
-                nota="Pool total. El optimizador distribuye entre directo y acopio."/>
-              <Campo label="N° tolvas (= N° grúas)" value={p.des_nTolvas||2} onChange={v=>set("des_nTolvas",Math.max(1,Math.round(v)))} tipo="usuario" unit="tolvas" min={1} max={8} step={1}
-                nota="Cada tolva tiene su propia grúa. Operan en paralelo."/>
-            </div>
-            <Campo label="Velocidad grúa / tolva" value={p.des_velGruaTnHr||400} onChange={v=>set("des_velGruaTnHr",v)} tipo="usuario" unit="Tn/hr por grúa" min={50} max={2000} step={50}
-              nota="Vel. descarga del barco = vel. de llenado de la tolva. Ambas son la misma."/>
-          </div>
-
-          <div className="card">
-            <div className="ct">Tiempos Operativos <TipoBadge tipo="usuario"/></div>
-            <div className="g2">
-              <Campo label="Posicionamiento" value={p.des_tPosicionMin||5} onChange={v=>set("des_tPosicionMin",v)} tipo="usuario" unit="min" min={1} max={30} step={1}
-                nota="Arrancar, conductor sube, recibe OK, avanza bajo tolva."/>
-              <Campo label="Balanza" value={p.des_tBalanzaMin||3} onChange={v=>set("des_tBalanzaMin",v)} tipo="usuario" unit="min" min={1} max={20} step={1}
-                nota="Tiempo total de pesaje (entrada + salida)."/>
-            </div>
-            <Campo label="Descarga en acopio" value={p.des_tDescargaAcoMin||15} onChange={v=>set("des_tDescargaAcoMin",v)} tipo="usuario" unit="min" min={2} max={60} step={1}
-              nota="Tiempo fijo de volcado del camión en la playa de acopio."/>
-          </div>
-
-          <div className="card" style={{borderLeft:`3px solid ${C.green}`}}>
-            <div className="ct" style={{color:C.green}}>Camiones Directos — Neuquén</div>
-            <div className="g2">
-              <Campo label="Volumen por camión" value={p.des_camDir_volM3||30} onChange={v=>set("des_camDir_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
-                nota={`≈ ${((p.des_camDir_volM3||30)*(p.cap_densidadArena||1.5)).toFixed(1)} Tn/camión`}/>
-              <Campo label="Tarifa flete" value={p.des_costoCamionesDirUSDTn||0} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}
-                nota="BB → Neuquén/Añelo"/>
-            </div>
-          </div>
-
-          <div className="card" style={{borderLeft:`3px solid ${C.gold}`}}>
-            <div className="ct" style={{color:C.gold}}>Camiones Acopio — Playa BB</div>
-            <div className="g2">
-              <Campo label="Volumen por camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
-                nota={`≈ ${((p.des_camAco_volM3||30)*(p.cap_densidadArena||1.5)).toFixed(1)} Tn/camión`}/>
-              <Campo label="Distancia tolva→acopio" value={p.des_camAco_distKm||15} onChange={v=>set("des_camAco_distKm",v)} tipo="usuario" unit="km" min={1} max={100} step={1}
-                nota="Solo ida. Ciclo usa ida+vuelta."/>
-            </div>
-            <div className="g2">
-              <Campo label="Velocidad" value={p.des_camAco_velKmh||60} onChange={v=>set("des_camAco_velKmh",v)} tipo="usuario" unit="km/h" min={10} max={120} step={5}/>
-              <Campo label="Costo transp." value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01}
-                nota="Tarifa por Tn·km (ida+vuelta)"/>
-            </div>
-            <Campo label="Alquiler predio" value={p.des_alquilerPredioUSDTn||0} onChange={v=>set("des_alquilerPredioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.1}
-              nota="Costo del predio de acopio por tonelada almacenada."/>
-            <div style={{marginTop:6,padding:"6px 10px",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:6,fontSize:10,color:C.orange}}>
-              Costo acopio: <strong>${opt.costoAcoUSDTn.toFixed(2)}/Tn</strong> × {opt.tnAco.toFixed(0)} Tn = <strong>${opt.costoAcoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</strong>
-            </div>
-          </div>
+      {/* ══ PARÁMETROS — una columna ══ */}
+      <div className="card">
+        <div className="ct">Flota y Tolvas <TipoBadge tipo="usuario"/></div>
+        <div className="g2">
+          <Campo label="Camiones disponibles (total)" value={p.des_camTotalDisp||15} onChange={v=>set("des_camTotalDisp",Math.max(1,Math.round(v)))} tipo="usuario" unit="unidades" min={1} max={50} step={1}
+            nota="Pool total. El optimizador distribuye entre directo y acopio."/>
+          <Campo label="N° tolvas (= N° grúas)" value={p.des_nTolvas||2} onChange={v=>set("des_nTolvas",Math.max(1,Math.round(v)))} tipo="usuario" unit="tolvas" min={1} max={8} step={1}
+            nota="Cada tolva tiene su propia grúa. Operan en paralelo."/>
         </div>
+        <Campo label="Velocidad grúa / tolva" value={p.des_velGruaTnHr||400} onChange={v=>set("des_velGruaTnHr",v)} tipo="usuario" unit="Tn/hr por grúa" min={50} max={2000} step={50}
+          nota="Vel. descarga del barco = vel. de llenado de la tolva. Ambas son la misma."/>
+      </div>
 
-        <div>
-          <div className="card">
-            <div className="ct">Parámetros Físicos — Descarga <TipoBadge tipo="usuario"/></div>
-            <div className="g3">
-              <Campo label="Grampada" value={p.des_grampada} onChange={v=>set("des_grampada",v)} tipo="usuario" unit="m³" min={5} max={30}/>
-              <Campo label="Grúas" value={p.des_gruas} onChange={v=>set("des_gruas",v)} tipo="usuario" min={1} max={4}/>
-              <Campo label="Mov/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
-              <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-            </div>
-            <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
-            <div className="g2">
-              <Campo label="Merma descarga" value={p.des_pctMermaDescarga*100} onChange={v=>set("des_pctMermaDescarga",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
-              <Campo label="Merma acopio"   value={p.des_pctMermaAcopio*100}   onChange={v=>set("des_pctMermaAcopio",v/100)}   tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
-            </div>
-          </div>
-          <div className="card">
-            <div className="ct">Espera BB por Mes (días) <TipoBadge tipo="estadistico"/> <FuenteLink fuente={FUENTES.esperaBB}/></div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4}}>
-              {MESES.map((m,i)=>(
-                <div key={m}>
-                  <div style={{fontSize:7,color:T.stat.label,textAlign:"center",marginBottom:2,fontWeight:700}}>{m}</div>
-                  <input type="number" value={p.des_esperaBBMes[i]} step={0.1} min={0} max={15}
-                    onChange={e=>{const arr=[...p.des_esperaBBMes];arr[i]=parseFloat(e.target.value)||0;set("des_esperaBBMes",arr);}}
-                    style={{width:"100%",background:T.stat.bg,border:`1px solid ${T.stat.border}`,borderRadius:4,padding:"3px 3px",color:T.stat.text,fontSize:10,textAlign:"center",fontFamily:"DM Mono,monospace"}}/>
-                </div>
-              ))}
-            </div>
-          </div>
-          <SeccionInop puerto="bb" p={p} set={set} mesIdx={mes} tIdeal_dias={e3.tIdeal_dias}
-            climaKey="clima_bb" umbralLluviaKey="des_inopLluvia" umbralVientoKey="des_inopViento"/>
-          <SeccionFormulas tipo="descarga" e={e3} p={p}
-            gruas={p.des_gruas} grampada={p.des_grampada} movGrampa={p.des_movGrampa}
-            horasDia={p.des_horasDia} pctMerma={p.des_pctMermaDescarga} capacidad={p.cap_capacidadBarco}/>
-          <div className="card">
-            <div className="ct">Costos Etapa 3</div>
-            <CostTable rows={costoRows} tnEntregadas={tnEntregadas}/>
-          </div>
+      <div className="card">
+        <div className="ct">Tiempos Operativos <TipoBadge tipo="usuario"/></div>
+        <Campo label="Posicionamiento" value={p.des_tPosicionMin||5} onChange={v=>set("des_tPosicionMin",v)} tipo="usuario" unit="min" min={1} max={30} step={1}
+          nota="Arrancar, conductor sube, recibe OK, avanza bajo tolva."/>
+        <Campo label="Descarga en acopio" value={p.des_tDescargaAcoMin||15} onChange={v=>set("des_tDescargaAcoMin",v)} tipo="usuario" unit="min" min={2} max={60} step={1}
+          nota="Tiempo fijo de volcado del camión en la playa de acopio."/>
+      </div>
+
+      <div className="card" style={{borderLeft:`3px solid ${C.green}`}}>
+        <div className="ct" style={{color:C.green}}>Camiones Directos — Neuquén</div>
+        <div className="g2">
+          <Campo label="Volumen por camión" value={p.des_camDir_volM3||30} onChange={v=>set("des_camDir_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+            nota={`≈ ${((p.des_camDir_volM3||30)*(p.cap_densidadArena||1.5)).toFixed(1)} Tn/camión`}/>
+          <Campo label="Tarifa flete" value={p.des_costoCamionesDirUSDTn||0} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}
+            nota="BB → Neuquén/Añelo"/>
         </div>
+      </div>
+
+      <div className="card" style={{borderLeft:`3px solid ${C.gold}`}}>
+        <div className="ct" style={{color:C.gold}}>Camiones Acopio — Playa BB</div>
+        <div className="g2">
+          <Campo label="Volumen por camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+            nota={`≈ ${((p.des_camAco_volM3||30)*(p.cap_densidadArena||1.5)).toFixed(1)} Tn/camión`}/>
+          <Campo label="Distancia tolva→acopio" value={p.des_camAco_distKm||15} onChange={v=>set("des_camAco_distKm",v)} tipo="usuario" unit="km" min={1} max={100} step={1}
+            nota="Solo ida. Ciclo usa ida+vuelta."/>
+        </div>
+        <div className="g2">
+          <Campo label="Velocidad" value={p.des_camAco_velKmh||60} onChange={v=>set("des_camAco_velKmh",v)} tipo="usuario" unit="km/h" min={10} max={120} step={5}/>
+          <Campo label="Costo transp." value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01}
+            nota="Tarifa por Tn·km (ida+vuelta)"/>
+        </div>
+        <Campo label="Alquiler predio" value={p.des_alquilerPredioUSDTn||0} onChange={v=>set("des_alquilerPredioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.1}
+          nota="Costo del predio de acopio por tonelada almacenada."/>
+        <div style={{marginTop:6,padding:"6px 10px",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:6,fontSize:10,color:C.orange}}>
+          Costo acopio: <strong>${opt.costoAcoUSDTn.toFixed(2)}/Tn</strong> × {opt.tnAco.toFixed(0)} Tn = <strong>${opt.costoAcoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</strong>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="ct">Parámetros Físicos — Descarga <TipoBadge tipo="usuario"/></div>
+        <div className="g3">
+          <Campo label="Grampada" value={p.des_grampada} onChange={v=>set("des_grampada",v)} tipo="usuario" unit="m³" min={5} max={30}/>
+          <Campo label="Grúas" value={p.des_gruas} onChange={v=>set("des_gruas",v)} tipo="usuario" min={1} max={4}/>
+          <Campo label="Mov/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
+          <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
+        </div>
+        <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
+        <div className="g2">
+          <Campo label="Merma descarga" value={p.des_pctMermaDescarga*100} onChange={v=>set("des_pctMermaDescarga",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
+          <Campo label="Merma acopio"   value={p.des_pctMermaAcopio*100}   onChange={v=>set("des_pctMermaAcopio",v/100)}   tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="ct">Espera BB por Mes (días) <TipoBadge tipo="estadistico"/> <FuenteLink fuente={FUENTES.esperaBB}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4}}>
+          {MESES.map((m,i)=>(
+            <div key={m}>
+              <div style={{fontSize:7,color:T.stat.label,textAlign:"center",marginBottom:2,fontWeight:700}}>{m}</div>
+              <input type="number" value={p.des_esperaBBMes[i]} step={0.1} min={0} max={15}
+                onChange={e=>{const arr=[...p.des_esperaBBMes];arr[i]=parseFloat(e.target.value)||0;set("des_esperaBBMes",arr);}}
+                style={{width:"100%",background:T.stat.bg,border:`1px solid ${T.stat.border}`,borderRadius:4,padding:"3px 3px",color:T.stat.text,fontSize:10,textAlign:"center",fontFamily:"DM Mono,monospace"}}/>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <SeccionInop puerto="bb" p={p} set={set} mesIdx={mes} tIdeal_dias={e3.tIdeal_dias}
+        climaKey="clima_bb" umbralLluviaKey="des_inopLluvia" umbralVientoKey="des_inopViento"/>
+      <SeccionFormulas tipo="descarga" e={e3} p={p}
+        gruas={p.des_gruas} grampada={p.des_grampada} movGrampa={p.des_movGrampa}
+        horasDia={p.des_horasDia} pctMerma={p.des_pctMermaDescarga} capacidad={p.cap_capacidadBarco}/>
+      <div className="card">
+        <div className="ct">Costos Etapa 3</div>
+        <CostTable rows={costoRows} tnEntregadas={tnEntregadas}/>
       </div>
     </div>
   );
 }
-
 
 // ─── TAB E4: VUELTA EN LASTRE ──────────────────────────────────────────────
 function TabVuelta({p,set,tnEntregadas}) {
