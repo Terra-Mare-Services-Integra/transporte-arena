@@ -160,16 +160,16 @@ export function calcDistanciaWaypoints(waypoints) {
 // La distancia se calcula automáticamente de los waypoints
 // Tramo de reposicionamiento: Rio Grande do Sul → Zárate (en lastre)
 export const TRAMOS_REPO_DEFAULT = [
-  {id:1, nombre:"Rio Grande do Sul → Zárate", tipo:"Costero", velocidad:12, wpIds:[0,1],
+  {id:1, nombre:"Rio Grande do Sul → Zárate", tipo:"Costero", velocidad:12, distancia:369,
    condicion:"Atlántico Sur — costa brasileña/uruguaya/argentina, lastre"},
 ];
 
 export const TRAMOS_DEFAULT = [
-  {id:1, nombre:"Zárate → Confluencia",        tipo:"Hidrovía", velocidad:10,   wpIds:[1,2,3,4,5,6],    condicion:"Hidrovía dragada — corriente favorable"},
-  {id:2, nombre:"Confluencia → Punta Indio",   tipo:"Estuario", velocidad:11,   wpIds:[6,7],             condicion:"Estuario — marea variable"},
-  {id:3, nombre:"Punta Indio → Rada BB",        tipo:"Costero",  velocidad:12.5, wpIds:[7,8,9,10,11,12,13,14,15,16], condicion:"Mar abierto — costa bonaerense"},
-  {id:4, nombre:"Rada BB → Pto. Rosales",       tipo:"Puerto",   velocidad:8,    wpIds:[16,17,18],        condicion:"Canal principal BB — 98km, práctico"},
-  {id:5, nombre:"Pto. Rosales → Sea White",     tipo:"Puerto",   velocidad:7,    wpIds:[18,19,20],        condicion:"Canal interior — ing. White"},
+  {id:1, nombre:"Zárate → Confluencia",      tipo:"Hidrovía", velocidad:10,   distancia:173, condicion:"Hidrovía dragada — corriente favorable"},
+  {id:2, nombre:"Confluencia → Punta Indio", tipo:"Estuario", velocidad:11,   distancia:20,  condicion:"Estuario — marea variable"},
+  {id:3, nombre:"Punta Indio → Rada BB",     tipo:"Costero",  velocidad:12.5, distancia:422, condicion:"Mar abierto — costa bonaerense"},
+  {id:4, nombre:"Rada BB → Pto. Rosales",    tipo:"Puerto",   velocidad:8,    distancia:30,  condicion:"Canal principal BB — 98km, práctico"},
+  {id:5, nombre:"Pto. Rosales → Sea White",  tipo:"Puerto",   velocidad:7,    distancia:18,  condicion:"Canal interior — ing. White"},
 ];
 
 // Calcula distancia de un tramo usando sus wpIds
@@ -204,6 +204,9 @@ export function getPrecioVLSFO(escenario, vlsfoManual, vlsfoHistorico) {
 
 // ─── DEFAULT PARAMS ────────────────────────────────────────────────────────
 export const DEFAULT_PARAMS = {
+  // IDENTIFICACIÓN DEL PROYECTO
+  proyecto_titulo:           "Transporte Arena",
+
   // CONTRATO BARCO
   barco_timeCharter:         20000,  // USD/día — centralizado acá
   barco_tripulacion:         0,      // USD/día — por ahora 0
@@ -230,10 +233,10 @@ export const DEFAULT_PARAMS = {
   // ─── AGENCIA ZÁRATE (PIAPSA / CAMPANA) ───────────────────────────────────
   // tipo: "fijo" = USD fijo por escala | "diario" = USD/día × tReal_dias_carga
   agz_items: [
-    { id:"agz_01", label:"Hidrovía Waterway Tolls (RECA→ZTE)", tipo:"fijo",    usd:28700, activo:true,  nota:"Ida: RECA-ZTE" },
-    { id:"agz_02", label:"Hidrovía Waterway Tolls (ZTE→RECA)", tipo:"fijo",    usd:28700, activo:true,  nota:"Vuelta: ZTE-RECA" },
-    { id:"agz_03", label:"Port Pilots (IN/OUT)",                tipo:"fijo",    usd:8750,  activo:true,  nota:"Prácticos entrada/salida" },
-    { id:"agz_04", label:"Wharfage",                           tipo:"diario",  usd:4455,  activo:true,  nota:"USD 0.33×NRT×día (NRT≈13.500)" },
+    { id:"agz_01", label:"Hidrovía Waterway Tolls (RECA→ZTE)", tipo:"fijo",    usd:28700, activo:true,  nota:"Ida: RECA-ZTE",   categoria:"Canal Dues" },
+    { id:"agz_02", label:"Hidrovía Waterway Tolls (ZTE→RECA)", tipo:"fijo",    usd:28700, activo:true,  nota:"Vuelta: ZTE-RECA", categoria:"Canal Dues" },
+    { id:"agz_03", label:"Port Pilots (IN/OUT)",                tipo:"fijo",    usd:8750,  activo:true,  nota:"Prácticos entrada/salida", categoria:"Pilotaje" },
+    { id:"agz_04", label:"Wharfage",                           tipo:"diario",  usd:4455,  activo:true,  nota:"USD 0.33×NRT×día (NRT≈13.500)", categoria:"Muellaje" },
     { id:"agz_05", label:"Entrance Dues / Nav. Waters Tax",     tipo:"fijo",    usd:392,   activo:true,  nota:"" },
     { id:"agz_06", label:"Free Pratique expenses",              tipo:"fijo",    usd:550,   activo:true,  nota:"" },
     { id:"agz_07", label:"Migrations Taxes",                    tipo:"fijo",    usd:2500,  activo:true,  nota:"IN+OUT" },
@@ -243,13 +246,13 @@ export const DEFAULT_PARAMS = {
     { id:"agz_11", label:"Customs O/T Saturdays",               tipo:"fijo",    usd:2370,  activo:false, nota:"Solo sábados 24hs" },
     { id:"agz_12", label:"Customs O/T Sundays",                 tipo:"fijo",    usd:2715,  activo:false, nota:"Solo domingos 24hs" },
     { id:"agz_13", label:"Authorities Transportation",          tipo:"fijo",    usd:175,   activo:true,  nota:"" },
-    { id:"agz_14", label:"Watchmen services",                   tipo:"diario",  usd:460,   activo:true,  nota:"USD 460/turno × turnos (4 turnos/día ~ USD 1840/día)" },
-    { id:"agz_15", label:"Head Tally Clerk",                    tipo:"diario",  usd:568,   activo:true,  nota:"USD 568/turno × turnos (4 turnos/día ~ USD 2275/día)" },
+    { id:"agz_14", label:"Watchmen services",                   tipo:"diario",  usd:460,   activo:true,  nota:"USD 460/turno × turnos (4 turnos/día ~ USD 1840/día)", categoria:"Servicios" },
+    { id:"agz_15", label:"Head Tally Clerk",                    tipo:"diario",  usd:568,   activo:true,  nota:"USD 568/turno × turnos (4 turnos/día ~ USD 2275/día)", categoria:"Servicios" },
     { id:"agz_16", label:"Linemen services",                    tipo:"fijo",    usd:3200,  activo:true,  nota:"Normal time. Extra si nocturno/OT" },
     { id:"agz_17", label:"CN Charge (Full Agents)",              tipo:"fijo",    usd:130,   activo:true,  nota:"" },
     { id:"agz_18", label:"Lumpsum (Agency expenses)",           tipo:"fijo",    usd:350,   activo:true,  nota:"" },
     { id:"agz_19", label:"Bank Charges/Commissions",            tipo:"fijo",    usd:1174,  activo:true,  nota:"~1.2% del total" },
-    { id:"agz_20", label:"Agency Fee",                          tipo:"fijo",    usd:2500,  activo:true,  nota:"" },
+    { id:"agz_20", label:"Agency Fee",                          tipo:"fijo",    usd:2500,  activo:true,  nota:"",               categoria:"Honorarios" },
     { id:"agz_21", label:"ISPS charge",                         tipo:"fijo",    usd:0,     activo:false, nota:"Consultar terminal" },
     { id:"agz_22", label:"Oil boom",                            tipo:"fijo",    usd:0,     activo:false, nota:"Si aplica" },
     { id:"agz_23", label:"Río de la Plata Pilotage",            tipo:"fijo",    usd:0,     activo:false, nota:"Solo si requiere" },
@@ -282,12 +285,12 @@ export const DEFAULT_PARAMS = {
   // ─── AGENCIA BAHÍA BLANCA (ARGELAN) ──────────────────────────────────────
   // tipo: "fijo" = USD fijo por escala | "diario" = USD/día × tReal_dias_descarga
   abb_items: [
-    { id:"abb_01", label:"Pilotage (IN/OUT)",                   tipo:"fijo",    usd:22308, activo:true,  nota:"Prácticos IN+OUT" },
-    { id:"abb_02", label:"Towage (remolques obligatorios)",      tipo:"fijo",    usd:56000, activo:true,  nota:"IN+OUT obligatorio" },
-    { id:"abb_03", label:"Wharfage dues",                       tipo:"diario",  usd:9948,  activo:true,  nota:"USD 9.948/día" },
-    { id:"abb_04", label:"Canal dues (IN/OUT)",                  tipo:"fijo",    usd:100913,activo:true,  nota:"Peaje canal de acceso" },
+    { id:"abb_01", label:"Pilotage (IN/OUT)", categoria:"Pilotaje",                   tipo:"fijo",    usd:22308, activo:true,  nota:"Prácticos IN+OUT" },
+    { id:"abb_02", label:"Towage (remolques obligatorios)", categoria:"Remolques",      tipo:"fijo",    usd:56000, activo:true,  nota:"IN+OUT obligatorio" },
+    { id:"abb_03", label:"Wharfage dues", categoria:"Muellaje",                       tipo:"diario",  usd:9948,  activo:true,  nota:"USD 9.948/día" },
+    { id:"abb_04", label:"Canal dues (IN/OUT)", categoria:"Canal Dues",                  tipo:"fijo",    usd:100913,activo:true,  nota:"Peaje canal de acceso" },
     { id:"abb_05", label:"Mooring / Unmooring",                 tipo:"fijo",    usd:4500,  activo:true,  nota:"" },
-    { id:"abb_06", label:"Tally",                               tipo:"fijo",    usd:14111, activo:true,  nota:"" },
+    { id:"abb_06", label:"Tally", categoria:"Servicios",                               tipo:"fijo",    usd:14111, activo:true,  nota:"" },
     { id:"abb_07", label:"Customs overtime",                    tipo:"fijo",    usd:0,     activo:false, nota:"USD 200/turno 6hs — obligatorio si opera" },
     { id:"abb_08", label:"Migration dues",                      tipo:"fijo",    usd:1250,  activo:true,  nota:"Servicio de salida" },
     { id:"abb_09", label:"SENASA inspection",                   tipo:"fijo",    usd:150,   activo:true,  nota:"" },
