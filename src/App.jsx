@@ -522,26 +522,23 @@ function TabBarco({p,set}) {
   };
   const resetTabla=()=>set("barco_tablaVelConsumo",TABLA_VEL_CONSUMO_DEFAULT);
 
-  // Costo diario total incluyendo misc
   const costoTotalDia=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
 
   return (
     <div>
-      <div className="card" style={{background:"linear-gradient(135deg,#213363,#1a2a50)",border:"none"}}>
-        <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>CONTRATO DE FLETAMENTO — RESUMEN</div>
-        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-          {[
-            {l:"Time Charter",  v:`$${p.barco_timeCharter.toLocaleString()}/día`,  c:"#fff"},
-            {l:"Tripulación",   v:`$${p.barco_tripulacion.toLocaleString()}/día`,   c:"#93C5FD"},
-            {l:"Total diario",  v:`$${costoTotalDia.toLocaleString()}/día`,         c:"#FCD34D"},
-            {l:"Por viaje (est.)",v:`$${(costoTotalDia*calcTotal(p).diasTotales/1000).toFixed(0)}k`, c:"#FCA5A5"},
-          ].map(({l,v,c})=>(
-            <div key={l}>
-              <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>{l}</div>
-              <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"DM Mono,monospace"}}>{v}</div>
-            </div>
-          ))}
-        </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+        {[
+          {l:"Time Charter",     v:`$${p.barco_timeCharter.toLocaleString()}`,                              u:"USD/día"},
+          {l:"Tripulación",      v:`$${p.barco_tripulacion.toLocaleString()}`,                               u:"USD/día"},
+          {l:"Total diario",     v:`$${costoTotalDia.toLocaleString()}`,                                     u:"USD/día"},
+          {l:"Por viaje (est.)", v:`$${(costoTotalDia*calcTotal(p).diasTotales/1000).toFixed(0)}k`,          u:"USD"},
+        ].map(({l,v,u})=>(
+          <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.6,fontWeight:600,marginBottom:6}}>{l}</div>
+            <div style={{fontSize:18,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace",lineHeight:1}}>{v}</div>
+            <div style={{fontSize:9,color:"#94A3B8",marginTop:3}}>{u}</div>
+          </div>
+        ))}
       </div>
 
       <div className="g2">
@@ -695,9 +692,14 @@ function TabRepo({p,set}) {
   const tramos=p.repo_tramos||TRAMOS_REPO_DEFAULT;
 
   const updateTramo=(idx,field,val)=>{
-    const arr=[...tramos];arr[idx]={...arr[idx],[field]:field==="velocidad"?parseFloat(val)||0:val};
+    const arr=[...tramos];arr[idx]={...arr[idx],[field]:field==="velocidad"||field==="distancia"?parseFloat(val)||0:val};
     set("repo_tramos",arr);
   };
+  const agregarTramo=()=>{
+    const nuevo={id:`repo_${Date.now()}`,nombre:"Nuevo tramo",tipo:"Costero",velocidad:10,distancia:0,condicion:""};
+    set("repo_tramos",[...tramos,nuevo]);
+  };
+  const eliminarTramo=(i)=>set("repo_tramos",tramos.filter((_,j)=>j!==i));
 
   // Items fijos editables (igual estructura que agz_items / abb_items)
   const itemsFijos=[
@@ -705,46 +707,68 @@ function TabRepo({p,set}) {
     {key:"barco_importacionWaiver",label:"Importación / Waiver",   nota:"Gastos de importación temporal del barco y/o waiver regulatorio."},
   ];
 
+  const lugarSalida = p.repo_lugarSalida || "Rio Grande do Sul, Brasil";
+  const lugarLlegada = p.repo_lugarLlegada || "Zárate, Argentina";
+
   return (
     <div>
-      <div className="kpis">
-        <KPI label="Días viaje" value={`${e0.diasNav.toFixed(1)}d`}                                                        color={C.navy}/>
-        <KPI label="Distancia"  value={`${e0.totalMn?.toFixed(0)||"—"}mn`}                                                 color={C.mid}/>
-        <KPI label="Vel. prom." value={`${e0.velProm?.toFixed(1)||"—"}kt`}                                                 color={C.blue}/>
-        <KPI label="Combustible"value={`${e0.combTotal.toFixed(1)}T`}                                                      color={C.orange}/>
-        <KPI label="Costo total"value={`$${(e0.costoTotal/1000).toFixed(0)}k`}                                             color={C.gold}/>
-        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`}  color={C.green}/>
+      {/* Origen / Destino */}
+      <div className="card">
+        <div className="ct">Viaje a Puerto de Carga <TipoBadge tipo="usuario"/></div>
+        <div className="g2">
+          <Campo label="Lugar de salida" value={lugarSalida}
+            onChange={v=>set("repo_lugarSalida",v)} tipo="usuario"
+            nota="Posición de última operación del barco (proxy)"/>
+          <Campo label="Lugar de llegada" value={lugarLlegada}
+            onChange={v=>set("repo_lugarLlegada",v)} tipo="usuario"
+            nota="Puerto de carga de la arena"/>
+        </div>
       </div>
 
-      {/* Tramo — solo velocidad editable */}
+      {/* Tramos — totalmente editables con agregar/eliminar */}
       <div className="card">
-        <div className="ct">Tramo de Reposicionamiento <TipoBadge tipo="usuario"/></div>
-        <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
-          El barco llega en lastre desde su última posición (proxy: Rio Grande do Sul, Brasil).
-          Solo la velocidad es editable; la distancia se calcula automáticamente desde los waypoints.
-        </p>
+        <div className="ct">Tramos <TipoBadge tipo="usuario"/></div>
         <table className="vel-table">
-          <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th>Condición</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th style={{width:32}}/></tr></thead>
           <tbody>{tramos.map((t,i)=>{
             const dist=t.distancia||0;
-            const dias=dist/t.velocidad/24;
+            const dias=t.velocidad>0?dist/t.velocidad/24:0;
             return (
               <tr key={t.id}>
                 <td><input value={t.nombre} onChange={e=>updateTramo(i,"nombre",e.target.value)}
                   style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,fontWeight:600,minWidth:120}}/></td>
                 <td><span style={{fontSize:8,background:"#EEF2F7",padding:"2px 6px",borderRadius:4,fontWeight:700,color:C.mid}}>{t.tipo}</span></td>
                 <td><input type="number" value={t.velocidad} min={4} max={20} step={0.5}
-                  onChange={e=>updateTramo(i,"velocidad",e.target.value)}
-                  style={{width:60}}/></td>
+                  onChange={e=>updateTramo(i,"velocidad",e.target.value)} style={{width:60}}/></td>
                 <td><input type="number" value={dist} min={0} step={1}
-                  onChange={e=>updateTramo(i,"distancia",parseFloat(e.target.value)||0)}
+                  onChange={e=>updateTramo(i,"distancia",e.target.value)}
                   className="tramo-input" style={{width:70}}/></td>
                 <td style={{fontFamily:"DM Mono,monospace",fontSize:10,color:C.navy,fontWeight:700}}>{dias.toFixed(2)}</td>
-                <td style={{fontSize:9,color:C.mid}}>{t.condicion}</td>
+                <td><button onClick={()=>eliminarTramo(i)}
+                  style={{padding:"1px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:11,cursor:"pointer",fontWeight:700}}>×</button></td>
               </tr>
             );
           })}</tbody>
         </table>
+        <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
+          <button className="run" style={{fontSize:10,padding:"5px 12px"}} onClick={agregarTramo}>+ Agregar tramo</button>
+          <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.navy}}>{e0.totalMn?.toFixed(0)||0} mn · {e0.diasNav.toFixed(1)} días</strong></span>
+        </div>
+      </div>
+
+      {/* Resultados calculados — debajo de los inputs */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+        {[
+          {l:"Días viaje",   v:`${e0.diasNav.toFixed(1)}d`},
+          {l:"Distancia",    v:`${e0.totalMn?.toFixed(0)||0} mn`},
+          {l:"Combustible",  v:`${e0.combTotal.toFixed(1)} T`},
+          {l:"USD/Tn",       v:`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`},
+        ].map(({l,v})=>(
+          <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.6,fontWeight:600,marginBottom:4}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{v}</div>
+          </div>
+        ))}
       </div>
 
       {/* Costos — calculados read-only + fijos editables */}
@@ -864,77 +888,69 @@ function TabRepo({p,set}) {
 
 // ─── TAB E1: CARGA ─────────────────────────────────────────────────────────
 function TabCarga({p,set,tnEntregadas}) {
-  const [mes,setMes]=useState(5);
-  const e1=calcEtapa1(p,mes);
+  // Sin selector de mes — usa promedio pesimista del clima (max inop de los 12 meses)
+  const mesWorst = useMemo(()=>{
+    let worstMes=0, worstInop=0;
+    for(let i=0;i<12;i++){
+      const e=calcEtapa1(p,i);
+      if(e.pInop>worstInop){worstInop=e.pInop;worstMes=i;}
+    }
+    return worstMes;
+  },[p]);
+  const e1=calcEtapa1(p,mesWorst);
+
   const costRows=[
-    {label:"Costo arena",      eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoArena,   hover:[e1.hoverTotal[0]]},
-    {label:"Costo merma",      eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,               total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
-    {label:"Opex carga",       eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoOpex,hover:[e1.hoverTotal[2]]},
-    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,total:e1.combPuerto,hover:e1.hoverComb},
-    {label:"Time Charter+Trip.", eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                   total:e1.fleteEtapa,   hover:e1.hoverTC},
-    {label:"TOTAL ETAPA 1",    eq:"Σ costos carga",                                               total:e1.costoTotal,   hover:e1.hoverTotal,isTotal:true},
+    {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]]},
+    {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]]},
+    {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
+    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb},
+    {label:"Time Charter+Trip.",eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
+    {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:e1.costoTotal,  hover:e1.hoverTotal, isTotal:true},
   ];
+
   return (
     <div>
-      <VLSFOWidget p={p} set={set}/>
-      <div style={{marginBottom:8}}>
-        <div style={{fontSize:8,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
-        <MesSelector value={mes} onChange={setMes}/>
-      </div>
+      {/* KPIs — fila única */}
       <div className="kpis">
-        <KPI label="Vel. ideal" value={`${e1.velIdeal_TnMin.toFixed(1)}Tn/min`} color={T.formula.text}/>
-        <KPI label="T. ideal" value={`${e1.tIdeal_dias.toFixed(1)}d`} color={T.formula.text}/>
-        <KPI label="T. real" value={`${e1.tReal_dias.toFixed(1)}d`} color={C.gold}/>
-        <KPI label="Inop. clima" value={`${(e1.pInop*100).toFixed(1)}%`} color={C.orange}/>
-        <KPI label="Merma" value={`${e1.mermaTn.toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
+        <KPI label="Vel. ideal"   value={`${e1.velIdeal_TnMin.toFixed(1)}Tn/min`} color={T.formula.text}/>
+        <KPI label="T. ideal"     value={`${e1.tIdeal_dias.toFixed(1)}d`}          color={T.formula.text}/>
+        <KPI label="T. real"      value={`${e1.tReal_dias.toFixed(1)}d`}           color={C.gold}/>
+        <KPI label="Inop. clima"  value={`${(e1.pInop*100).toFixed(1)}%`}          color={C.orange}/>
+        <KPI label="Merma"        value={`${e1.mermaTn.toFixed(0)}Tn`}             unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
         <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
-      {(()=>{
-        const e1Meses=MESES.map((_,i)=>calcEtapa1(p,i));
-        const avg=arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
-        return (
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Promedio anual</div>
-            <div className="kpis" style={{opacity:.75}}>
-              <KPI label="Vel. ideal" value={`${avg(e1Meses.map(e=>e.velIdeal_TnMin)).toFixed(1)}Tn/min`} color={T.formula.text}/>
-              <KPI label="T. ideal" value={`${avg(e1Meses.map(e=>e.tIdeal_dias)).toFixed(1)}d`} color={T.formula.text}/>
-              <KPI label="T. real" value={`${avg(e1Meses.map(e=>e.tReal_dias)).toFixed(1)}d`} color={C.gold}/>
-              <KPI label="Inop. clima" value={`${(avg(e1Meses.map(e=>e.pInop))*100).toFixed(1)}%`} color={C.orange}/>
-              <KPI label="Merma" value={`${avg(e1Meses.map(e=>e.mermaTn)).toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
-              <KPI label="USD/Tn etapa" value={`$${(avg(e1Meses.map(e=>e.costoTotal))/tnEntregadas).toFixed(1)}`} color={C.gold}/>
-            </div>
-          </div>
-        );
-      })()}
-      <div className="g2">
-        <div>
-          <div className="card">
-            <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
-            <div className="g3">
-              <Campo label="Capacidad" value={p.cap_capacidadBarco} onChange={v=>set("cap_capacidadBarco",v)} tipo="usuario" unit="Tn" min={1000} max={80000} step={1000}/>
-              <Campo label="Densidad" value={p.cap_densidadArena} onChange={v=>set("cap_densidadArena",v)} tipo="usuario" unit="T/m³" min={1} max={2} step={0.05}/>
-              <Campo label="Grampada" value={p.cap_grampada} onChange={v=>set("cap_grampada",v)} tipo="usuario" unit="m³" min={5} max={30}/>
-              <Campo label="Grúas" value={p.cap_gruas} onChange={v=>set("cap_gruas",v)} tipo="usuario" min={1} max={4}/>
-              <Campo label="Mov/min" value={p.cap_movGrampa} onChange={v=>set("cap_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
-              <Campo label="Precio arena" value={p.cap_precioArenaOrigen} onChange={v=>set("cap_precioArenaOrigen",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Opex carga" value={p.cap_opexUSDTn} onChange={v=>set("cap_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Espera Zárate" value={p.cap_esperaDias} onChange={v=>set("cap_esperaDias",v)} tipo="usuario" unit="días" min={0} max={5} step={0.25} nota="Puerto propio"/>
-            </div>
-            <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
-            <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
-          </div>
-          <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mes} tIdeal_dias={e1.tIdeal_dias}
-            climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
+
+      {/* Una sola columna */}
+      <div className="card">
+        <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
+        <div className="g3">
+          <Campo label="Capacidad"     value={p.cap_capacidadBarco}  onChange={v=>set("cap_capacidadBarco",v)}  tipo="usuario" unit="Tn"      min={1000} max={80000} step={1000}/>
+          <Campo label="Densidad"      value={p.cap_densidadArena}   onChange={v=>set("cap_densidadArena",v)}   tipo="usuario" unit="T/m³"    min={1}    max={2}     step={0.05}/>
+          <Campo label="Grampada"      value={p.cap_grampada}        onChange={v=>set("cap_grampada",v)}        tipo="usuario" unit="m³"      min={5}    max={30}/>
+          <Campo label="Grúas"         value={p.cap_gruas}           onChange={v=>set("cap_gruas",v)}           tipo="usuario"               min={1}    max={4}/>
+          <Campo label="Mov/min"       value={p.cap_movGrampa}       onChange={v=>set("cap_movGrampa",v)}       tipo="usuario" unit="mov/min" min={0.1}  max={2}     step={0.1}/>
+          <Campo label="Precio arena"  value={p.cap_precioArenaOrigen} onChange={v=>set("cap_precioArenaOrigen",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
+          <Campo label="Opex carga"    value={p.cap_opexUSDTn}       onChange={v=>set("cap_opexUSDTn",v)}       tipo="usuario" unit="USD/Tn"  min={0}    step={0.5}/>
+          <Campo label="Espera Zárate" value={p.cap_esperaDias}      onChange={v=>set("cap_esperaDias",v)}      tipo="usuario" unit="días"    min={0}    max={5}     step={0.25} nota="Puerto propio"/>
         </div>
-        <div>
-          <SeccionFormulas tipo="carga" e={e1} p={p}
-            gruas={p.cap_gruas} grampada={p.cap_grampada} movGrampa={p.cap_movGrampa}
-            horasDia={p.cap_horasDia} pctMerma={p.cap_pctMerma} capacidad={p.cap_capacidadBarco}/>
-          <div className="card">
-            <div className="ct">Costos Etapa 1</div>
-            <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
-          </div>
-        </div>
+        <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
+        <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
+      </div>
+
+      <div style={{padding:"6px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,fontSize:10,color:"#64748B",marginBottom:8}}>
+        ℹ️ Inoperabilidad climática calculada con el mes más pesimista del año (<strong>mes {MESES[mesWorst]}</strong> — {(e1.pInop*100).toFixed(1)}% inop). Editá los umbrales en la pestaña <strong>Base Clima</strong>.
+      </div>
+
+      <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e1.tIdeal_dias}
+        climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
+
+      <SeccionFormulas tipo="carga" e={e1} p={p}
+        gruas={p.cap_gruas} grampada={p.cap_grampada} movGrampa={p.cap_movGrampa}
+        horasDia={p.cap_horasDia} pctMerma={p.cap_pctMerma} capacidad={p.cap_capacidadBarco}/>
+
+      <div className="card">
+        <div className="ct">Costos Etapa 1</div>
+        <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
       </div>
     </div>
   );
@@ -961,16 +977,8 @@ function TabNavegacion({p,set,tnEntregadas}) {
   const eliminarTramo=(i)=>set("nav_tramos",tramos.filter((_,j)=>j!==i));
   return (
     <div>
-      <VLSFOWidget p={p} set={set}/>
-      <div className="kpis">
-        <KPI label="Vel. promedio" value={`${e2.velProm.toFixed(1)}kt`} color={T.formula.text}/>
-        <KPI label="Distancia" value={`${e2.totalMn}mn`}/>
-        <KPI label="Días" value={`${e2.diasNav.toFixed(1)}d`} color={T.formula.text}/>
-        <KPI label="Combustible" value={`${e2.combNavTotal.toFixed(1)}T`} color={C.orange}/>
-        <KPI label="USD/Tn etapa" value={`$${(e2.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
-      </div>
       <div className="card">
-        <div className="ct">Tramos — Zárate → Sea White <TipoBadge tipo="usuario"/></div>
+        <div className="ct">Tramos — {p.repo_lugarLlegada||"Zárate"} → {p.nav_lugarLlegada||"Sea White"} <TipoBadge tipo="usuario"/></div>
         <table className="vel-table">
           <thead><tr><th>Tramo</th><th>Tipo</th><th>Vel (kt)</th><th>Dist (mn)</th><th>Días</th><th style={{width:32}}/></tr></thead>
           <tbody>
@@ -998,9 +1006,32 @@ function TabNavegacion({p,set,tnEntregadas}) {
         </table>
         <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
           <button className="run" style={{fontSize:10,padding:"5px 12px"}} onClick={agregarTramo}>+ Agregar tramo</button>
-          <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{e2.totalMn} mn · {e2.diasNav.toFixed(1)} días</strong></span>
+          <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.navy}}>{e2.totalMn} mn · {e2.diasNav.toFixed(1)} días</strong></span>
         </div>
       </div>
+
+      {/* Puerto de llegada */}
+      <div className="card">
+        <div className="ct">Puerto de Descarga <TipoBadge tipo="usuario"/></div>
+        <Campo label="Lugar de llegada" value={p.nav_lugarLlegada||"Sea White, Bahía Blanca"} onChange={v=>set("nav_lugarLlegada",v)} tipo="usuario" nota="Puerto de descarga de la arena"/>
+      </div>
+
+      {/* Resultados calculados */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12}}>
+        {[
+          {l:"Vel. promedio", v:`${e2.velProm.toFixed(1)} kt`},
+          {l:"Distancia",     v:`${e2.totalMn} mn`},
+          {l:"Días",          v:`${e2.diasNav.toFixed(1)}d`},
+          {l:"Combustible",   v:`${e2.combNavTotal.toFixed(1)} T`},
+          {l:"USD/Tn etapa",  v:`$${(e2.costoTotal/tnEntregadas).toFixed(1)}`},
+        ].map(({l,v})=>(
+          <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.6,fontWeight:600,marginBottom:4}}>{l}</div>
+            <div style={{fontSize:15,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
       <div className="card">
         <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
         <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
@@ -2325,14 +2356,15 @@ function TabEscenarios({p, onLoad}) {
   );
 }
 
-// ─── TAB AGENCIA ZÁRATE ────────────────────────────────────────────────────
+// ─── TAB AGENCIA PUERTO DE CARGA ──────────────────────────────────────────
 function TabAgenciaZarate({p,set}) {
-  const [mes,setMes]=useState(5);
-  const e1=calcEtapa1(p,mes);
+  const e1=calcEtapa1(p,0); // usa promedio sin mes
   const tReal=e1.tReal_dias;
   const diasDisp=p.agz_redondearDias?Math.ceil(tReal):tReal;
   const items=p.agz_items||[];
   const totalActivo=calcAgenciaZarate(p,tReal);
+  const tnCargadas=p.cap_capacidadBarco||1;
+  const titulo=`Agencia ${p.repo_lugarLlegada||"Puerto de Carga"}`;
 
   function updItem(id,field,val){
     const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
@@ -2342,24 +2374,20 @@ function TabAgenciaZarate({p,set}) {
   return (
     <div>
       <div className="card">
-        <div className="ct">🏗️ Agencia Marítima Zárate — PIAPSA / Campana</div>
+        <div className="ct">⚓ {titulo}</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
-          <div style={{flex:1,minWidth:200}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
-            <MesSelector value={mes} onChange={setMes}/>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>T. Real carga</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{tReal.toFixed(2)}d</div>
           </div>
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real carga</div>
-            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
-            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
-          </div>
-          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia Z.</div>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Total Agencia</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+            <div style={{fontSize:9,color:"#64748B"}}>${(totalActivo/tnCargadas).toFixed(2)}/Tn</div>
           </div>
           <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
             <input type="checkbox" checked={!!p.agz_redondearDias} onChange={e=>set("agz_redondearDias",e.target.checked)}/>
-            Redondear días (sin decimales)
+            Redondear días
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
@@ -2370,8 +2398,8 @@ function TabAgenciaZarate({p,set}) {
                 <th>Concepto</th>
                 <th>Tipo</th>
                 <th style={{textAlign:"right"}}>USD unitario</th>
-                <th style={{textAlign:"right"}}>Días</th>
                 <th style={{textAlign:"right"}}>Total USD</th>
+                <th style={{textAlign:"right"}}>USD/Tn</th>
                 <th>Nota</th>
               </tr>
             </thead>
@@ -2402,11 +2430,11 @@ function TabAgenciaZarate({p,set}) {
                         style={{width:90,textAlign:"right",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:4,
                                 padding:"3px 6px",fontSize:12,fontFamily:"DM Mono,monospace",color:C.gold,fontWeight:700}}/>
                     </td>
-                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:11,color:C.mid}}>
-                      {it.tipo==="diario"?diasAplicados.toFixed(2):"—"}
-                    </td>
                     <td className="mono" style={{textAlign:"right",fontWeight:it.activo?700:400,color:it.activo?C.navy:C.mid}}>
                       {it.activo?`$${total.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
+                    </td>
+                    <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>
+                      {it.activo?`$${(total/tnCargadas).toFixed(2)}`:"—"}
                     </td>
                     <td>
                       <input value={it.nota||""} onChange={e=>updItem(it.id,"nota",e.target.value)}
@@ -2418,8 +2446,9 @@ function TabAgenciaZarate({p,set}) {
                 );
               })}
               <tr className="total">
-                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA ZÁRATE</td>
+                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE CARGA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnCargadas).toFixed(2)}/Tn</td>
                 <td/>
               </tr>
             </tbody>
@@ -2463,16 +2492,17 @@ function TabAgenciaZarate({p,set}) {
 
 // ─── TAB AGENCIA BAHÍA BLANCA ──────────────────────────────────────────────
 function TabAgenciaBB({p,set}) {
-  const [mes,setMes]=useState(5);
   const e0=calcEtapaRepo(p);
-  const e1=calcEtapa1(p,mes);
+  const e1=calcEtapa1(p,0);
   const e2=calcEtapa2(p);
   const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
-  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},0,e1.tnPostCarga);
   const tReal=e3.tReal_dias;
   const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
   const items=p.abb_items||[];
   const totalActivo=calcAgenciaBB(p,tReal);
+  const tnCargadas=p.cap_capacidadBarco||1;
+  const titulo=`Agencia ${p.nav_lugarLlegada||"Puerto de Descarga"}`;
 
   function updItem(id,field,val){
     const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
@@ -2482,24 +2512,20 @@ function TabAgenciaBB({p,set}) {
   return (
     <div>
       <div className="card">
-        <div className="ct">⚓ Agencia Marítima Bahía Blanca — Argelan Ships Service</div>
+        <div className="ct">⚓ {titulo}</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
-          <div style={{flex:1,minWidth:200}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
-            <MesSelector value={mes} onChange={setMes}/>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>T. Real descarga</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{tReal.toFixed(2)}d</div>
           </div>
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real descarga</div>
-            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
-            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
-          </div>
-          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia BB</div>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Total Agencia</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+            <div style={{fontSize:9,color:"#64748B"}}>${(totalActivo/tnCargadas).toFixed(2)}/Tn</div>
           </div>
           <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
             <input type="checkbox" checked={!!p.abb_redondearDias} onChange={e=>set("abb_redondearDias",e.target.checked)}/>
-            Redondear días (sin decimales)
+            Redondear días
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
@@ -2558,8 +2584,9 @@ function TabAgenciaBB({p,set}) {
                 );
               })}
               <tr className="total">
-                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA BB</td>
+                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA BAHÍA BLANCA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnCargadas).toFixed(2)}/Tn</td>
                 <td/>
               </tr>
             </tbody>
@@ -2574,52 +2601,8 @@ function TabAgenciaBB({p,set}) {
           <div className="warn-note" style={{flex:1}}>Los valores editados acá actualizan automáticamente el cálculo de Etapa 3 (Descarga) y el Monte Carlo.</div>
         </div>
       </div>
-      <div className="card">
-        <div className="ct">Resumen por tipo</div>
-        <div className="g3">
-          {[{t:"fijo",label:"Costos fijos",c:C.green},{t:"diario",label:"Costos diarios",c:C.orange}].map(({t,label,c})=>{
-            const tot=items.filter(it=>it.activo&&it.tipo===t).reduce((s,it)=>s+(t==="diario"?it.usd*diasDisp:it.usd),0);
-            const count=items.filter(it=>it.activo&&it.tipo===t).length;
-            return (
-              <div key={t} style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${c}`}}>
-                <div style={{fontSize:8,color:c,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>{label}</div>
-                <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:c,marginTop:2}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
-                <div style={{fontSize:9,color:C.mid,marginTop:2}}>{count} ítem{count!==1?"s":""} activo{count!==1?"s":""}</div>
-              </div>
-            );
-          })}
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${C.navy}`}}>
-            <div style={{fontSize:8,color:C.navy,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>USD / Tn (escala)</div>
-            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.navy,marginTop:2}}>
-              ${e1.tnPostCarga>0?(totalActivo/e1.tnPostCarga).toFixed(2):"—"}
-            </div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>sobre {e1.tnPostCarga.toFixed(0)} Tn</div>
-          </div>
-        </div>
-      </div>
-      <div className="card">
-        <div className="ct">Merma descarga — valorización</div>
-        <div style={{fontSize:10,color:C.mid,marginBottom:8}}>
-          La merma de descarga se valúa al <strong>precio equivalente de la arena</strong>: costo total hasta llegada (Etapa 1 + Etapa 2) dividido las toneladas cargadas. Esto refleja lo que costó llevar cada tonelada hasta BB.
-        </div>
-        <div className="g3">
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px"}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Precio eq. arena/Tn</div>
-            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.navy,marginTop:2}}>${e3.precioArenaEq.toFixed(2)}</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>(E1+E2) / tn cargadas</div>
-          </div>
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"10px 12px"}}>
-            <div style={{fontSize:8,color:C.red,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Merma desc.</div>
-            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.red,marginTop:2}}>{e3.mermaDescarga_Tn.toFixed(0)} Tn</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{(p.des_pctMermaDescarga*100).toFixed(1)}% de tn entrada</div>
-          </div>
-          <div style={{background:"#FEF3C7",borderRadius:8,padding:"10px 12px",borderLeft:`3px solid ${C.warnBorder}`}}>
-            <div style={{fontSize:8,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Costo merma desc.</div>
-            <div style={{fontSize:17,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.orange,marginTop:2}}>${e3.costoMermaDescarga.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{e3.mermaDescarga_Tn.toFixed(0)}Tn × ${e3.precioArenaEq.toFixed(2)}</div>
-          </div>
-        </div>
-      </div>
+
+
     </div>
   );
 }
