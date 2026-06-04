@@ -2600,6 +2600,374 @@ function TabAgenciaBB({p,set}) {
   );
 }
 
+function TabFAQ() {
+  const [abierto, setAbierto] = useState(null);
+  const secciones = [...new Set(FAQ_ITEMS.map(f=>f.seccion))];
+
+  return (
+    <div>
+      <div className="card">
+        <div className="ct">❓ Preguntas Frecuentes — Metodología del Modelo</div>
+        <p style={{fontSize:11,color:C.mid,lineHeight:1.6,marginBottom:0}}>
+          Explicaciones de los conceptos, fórmulas y decisiones de diseño detrás de la herramienta.
+          Hacé clic en cada pregunta para expandir.
+        </p>
+      </div>
+
+      {secciones.map(sec=>(
+        <div key={sec} className="card">
+          <div className="ct">{sec}</div>
+          {FAQ_ITEMS.filter(f=>f.seccion===sec).map(item=>{
+            const isOpen = abierto===item.id;
+            return (
+              <div key={item.id} style={{
+                borderRadius:8, border:`1px solid ${isOpen?C.blue:C.border}`,
+                marginBottom:8, overflow:"hidden",
+                transition:"border-color .15s",
+              }}>
+                {/* Pregunta */}
+                <button
+                  onClick={()=>setAbierto(isOpen?null:item.id)}
+                  style={{
+                    width:"100%", display:"flex", justifyContent:"space-between",
+                    alignItems:"center", padding:"10px 14px", border:"none",
+                    background:isOpen?"#EEF2F7":"#fff", cursor:"pointer", textAlign:"left",
+                    gap:10,
+                  }}>
+                  <span style={{fontSize:12,fontWeight:700,color:isOpen?C.navy:C.mid,lineHeight:1.4}}>
+                    {item.pregunta}
+                  </span>
+                  <span style={{
+                    fontSize:16, color:isOpen?C.blue:C.mid, flexShrink:0,
+                    transform:isOpen?"rotate(180deg)":"none", transition:"transform .2s",
+                  }}>▾</span>
+                </button>
+
+                {/* Respuesta */}
+                {isOpen && (
+                  <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,background:"#fff"}}>
+                    {/* Texto con formato */}
+                    <div style={{
+                      fontSize:11, color:"#374151", lineHeight:1.8,
+                      whiteSpace:"pre-wrap", fontFamily:"inherit", marginBottom:10,
+                    }}>
+                      {item.respuesta}
+                    </div>
+
+                    {/* Nota */}
+                    {item.nota && (
+                      <div style={{
+                        background:"#FEF3C7", border:"1px solid #D4B84A", borderLeft:`3px solid #D4B84A`,
+                        borderRadius:6, padding:"7px 11px", fontSize:10, color:"#92400E",
+                        marginBottom:item.links.length?10:0,
+                      }}>
+                        ⚠️ {item.nota}
+                      </div>
+                    )}
+
+                    {/* Links */}
+                    {item.links.length>0 && (
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
+                        {item.links.map(l=>(
+                          <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
+                            style={{
+                              fontSize:10, fontWeight:700, color:C.blue,
+                              background:"#EEF2F7", border:`1px solid ${C.border}`,
+                              borderRadius:5, padding:"4px 10px", textDecoration:"none",
+                              display:"inline-flex", alignItems:"center", gap:4,
+                            }}>
+                            🔗 {l.label}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
+function TabSensibilidades({p}) {
+  const [mes, setMes] = useState(5);
+
+  // Base
+  const base = (() => {
+    const e0 = calcEtapaRepo(p);
+    const e1 = calcEtapa1(p, mes);
+    const e2 = calcEtapa2(p);
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
+    const e3  = calcEtapa3({...p, _costoArenaEq: eq}, mes, e1.tnPostCarga);
+    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
+    return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
+  })();
+
+  function calcConDelta(overrides) {
+    const pp = {...p, ...overrides};
+    const e0 = calcEtapaRepo(pp);
+    const e1 = calcEtapa1(pp, mes);
+    const e2 = calcEtapa2(pp);
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
+    const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, mes, e1.tnPostCarga);
+    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
+    return tot / e3.tnEntregadas;
+  }
+
+  // Definición de sensibilidades
+  const grupos = [
+    {
+      titulo: "Tiempos de espera portuaria",
+      icon: "⏱️",
+      items: [
+        {
+          label: "Espera en Zárate",
+          unidad: "días",
+          deltas: [-1, -0.5, +0.5, +1, +2],
+          fn: d => calcConDelta({ cap_esperaDias: Math.max(0, p.cap_esperaDias + d) }),
+          base_val: p.cap_esperaDias,
+          nota: "Afecta TC, combustible puerto y agencia Zárate (ítems diarios)",
+        },
+        {
+          label: `Espera en BB (${MESES[mes]})`,
+          unidad: "días",
+          deltas: [-1, -0.5, +0.5, +1, +2],
+          fn: d => calcConDelta({ des_esperaBBMes: p.des_esperaBBMes.map((v,i) => i===mes ? Math.max(0,v+d) : v) }),
+          base_val: p.des_esperaBBMes[mes],
+          nota: "Afecta TC, combustible puerto y agencia BB (ítems diarios)",
+        },
+      ],
+    },
+    {
+      titulo: "Velocidad de navegación",
+      icon: "🧭",
+      items: [
+        {
+          label: "Velocidad barco (ida cargado)",
+          unidad: "kt (todos los tramos)",
+          deltas: [-1, -0.5, +0.5, +1],
+          fn: d => calcConDelta({ nav_tramos: p.nav_tramos.map(t => ({...t, velocidad: Math.max(6, t.velocidad + d)})) }),
+          base_val: null,
+          nota: "Velocidad menor → más días navegando → más TC y combustible. El consumo sube por la relación cúbica.",
+        },
+        {
+          label: "Velocidad barco (vuelta lastre)",
+          unidad: "kt (todos los tramos)",
+          deltas: [-1, -0.5, +0.5, +1],
+          fn: d => calcConDelta({ vta_tramos: (p.vta_tramos||p.nav_tramos).map(t => ({...t, velocidad: Math.max(6, t.velocidad + d)})) }),
+          base_val: null,
+          nota: "Impacto menor que la ida porque el consumo en lastre es ~20% inferior.",
+        },
+      ],
+    },
+    {
+      titulo: "Costos del barco",
+      icon: "🚢",
+      items: [
+        {
+          label: "Time Charter",
+          unidad: "USD/día",
+          deltas: [-2000, -1000, +1000, +2000, +5000],
+          fn: d => calcConDelta({ barco_timeCharter: Math.max(0, p.barco_timeCharter + d) }),
+          base_val: p.barco_timeCharter,
+          nota: "Impacta en todas las etapas proporcional a los días totales del ciclo.",
+        },
+        {
+          label: "Precio VLSFO",
+          unidad: "USD/T",
+          deltas: [-100, -50, +50, +100, +200],
+          fn: d => calcConDelta({ nav_escenarioVLSFO: "manual", nav_vlsfoManual: Math.max(200, p.nav_vlsfoManual + d) }),
+          base_val: p.nav_vlsfoManual,
+          nota: "Afecta navegación (mayor impacto) y estadía en puerto (menor impacto).",
+        },
+      ],
+    },
+    {
+      titulo: "Precio y merma de arena",
+      icon: "⛏️",
+      items: [
+        {
+          label: "Precio arena en origen",
+          unidad: "USD/Tn",
+          deltas: [-2, -1, +1, +2, +5],
+          fn: d => calcConDelta({ cap_precioArenaOrigen: Math.max(0, p.cap_precioArenaOrigen + d) }),
+          base_val: p.cap_precioArenaOrigen,
+          nota: "El precio de la arena es el componente de mayor peso absoluto en el costo total.",
+        },
+        {
+          label: "Merma de carga",
+          unidad: "%",
+          deltas: [-0.5, -0.25, +0.25, +0.5, +1],
+          fn: d => calcConDelta({ cap_pctMerma: Math.max(0, p.cap_pctMerma + d/100) }),
+          base_val: p.cap_pctMerma * 100,
+          nota: "Cada punto de merma extra significa más Tn compradas para el mismo embarque.",
+        },
+        {
+          label: "Merma de descarga",
+          unidad: "%",
+          deltas: [-0.5, -0.25, +0.25, +0.5, +1],
+          fn: d => calcConDelta({ des_pctMermaDescarga: Math.max(0, p.des_pctMermaDescarga + d/100) }),
+          base_val: p.des_pctMermaDescarga * 100,
+          nota: "Valorizada al precio equivalente (costo hasta llegada / Tn), no al precio origen.",
+        },
+      ],
+    },
+    {
+      titulo: "Capacidad operativa",
+      icon: "🏭",
+      items: [
+        {
+          label: "Horas de trabajo/día — Carga",
+          unidad: "hs",
+          deltas: [-4, -2, +2, +4],
+          fn: d => calcConDelta({ cap_horasDia: Math.min(24, Math.max(4, p.cap_horasDia + d)) }),
+          base_val: p.cap_horasDia,
+          nota: "Más horas por día → menor tiempo ideal → menor exposición climática y menos TC.",
+        },
+        {
+          label: "Horas de trabajo/día — Descarga",
+          unidad: "hs",
+          deltas: [-4, -2, +2, +4],
+          fn: d => calcConDelta({ des_horasDia: Math.min(24, Math.max(4, p.des_horasDia + d)) }),
+          base_val: p.des_horasDia,
+          nota: "Mismo efecto que en carga pero sobre el tiempo de descarga en BB.",
+        },
+      ],
+    },
+  ];
+
+  const fmtDelta = (v) => {
+    const d = v - base.usdTn;
+    const color = d > 0 ? C.red : d < 0 ? C.green : C.mid;
+    const sign  = d > 0 ? "+" : "";
+    return { color, text: `${sign}${d.toFixed(2)}`, abs: `$${v.toFixed(1)}` };
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="ct">📐 Análisis de Sensibilidades — Impacto en USD/Tn</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:4}}>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (esperas y clima)</div>
+            <MesSelector value={mes} onChange={setMes}/>
+          </div>
+          <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Base actual</div>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD/Tn</span></div>
+          </div>
+        </div>
+        <div className="warn-note">Cada fila muestra el USD/Tn resultante si solo cambia esa variable. El color indica si el cambio sube (🔴) o baja (🟢) el costo.</div>
+      </div>
+
+      {grupos.map(grupo => (
+        <div key={grupo.titulo} className="card">
+          <div className="ct">{grupo.icon} {grupo.titulo}</div>
+          {grupo.items.map(item => {
+            const resultados = item.deltas.map(d => ({ d, usdTn: item.fn(d) }));
+            return (
+              <div key={item.label} style={{marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,flexWrap:"wrap",gap:4}}>
+                  <div>
+                    <span style={{fontSize:11,fontWeight:700,color:C.navy}}>{item.label}</span>
+                    {item.base_val !== null && (
+                      <span style={{fontSize:9,color:C.mid,marginLeft:6}}>base: <span style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{item.base_val} {item.unidad}</span></span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tabla de resultados */}
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                    <thead>
+                      <tr style={{background:"#EEF2F7"}}>
+                        <th style={{padding:"5px 10px",textAlign:"left",fontSize:8,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5,width:120}}>Δ {item.unidad}</th>
+                        {resultados.map(r=>(
+                          <th key={r.d} style={{padding:"5px 10px",textAlign:"center",fontSize:10,fontWeight:700,
+                            color: r.d < 0 ? C.green : r.d > 0 ? C.red : C.mid}}>
+                            {r.d > 0 ? `+${r.d}` : r.d}
+                          </th>
+                        ))}
+                        <th style={{padding:"5px 10px",textAlign:"center",fontSize:9,fontWeight:700,color:C.gold,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>BASE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{padding:"6px 10px",fontSize:9,color:C.mid,fontWeight:600}}>USD/Tn resultado</td>
+                        {resultados.map(r => {
+                          const {color, abs} = fmtDelta(r.usdTn);
+                          return (
+                            <td key={r.d} style={{padding:"6px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontWeight:700,color}}>
+                              {abs}
+                            </td>
+                          );
+                        })}
+                        <td style={{padding:"6px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontWeight:800,color:C.gold,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>
+                          ${base.usdTn.toFixed(1)}
+                        </td>
+                      </tr>
+                      <tr style={{background:"#F9FAFB"}}>
+                        <td style={{padding:"4px 10px",fontSize:9,color:C.mid,fontWeight:600}}>Δ USD/Tn</td>
+                        {resultados.map(r => {
+                          const {color, text} = fmtDelta(r.usdTn);
+                          return (
+                            <td key={r.d} style={{padding:"4px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontSize:10,fontWeight:700,color}}>
+                              {text}
+                            </td>
+                          );
+                        })}
+                        <td style={{padding:"4px 10px",textAlign:"center",fontSize:10,color:C.mid,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>—</td>
+                      </tr>
+                      <tr>
+                        <td style={{padding:"4px 10px",fontSize:9,color:C.mid,fontWeight:600}}>Δ Costo total</td>
+                        {resultados.map(r => {
+                          const d = (r.usdTn - base.usdTn) * base.tnEnt;
+                          const color = d > 0 ? C.red : d < 0 ? C.green : C.mid;
+                          const sign = d > 0 ? "+" : "";
+                          return (
+                            <td key={r.d} style={{padding:"4px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontSize:10,fontWeight:600,color}}>
+                              {sign}${Math.round(d/1000)}k
+                            </td>
+                          );
+                        })}
+                        <td style={{padding:"4px 10px",textAlign:"center",fontSize:10,color:C.mid,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Barra visual */}
+                <div style={{display:"flex",gap:3,marginTop:6,alignItems:"center",height:8}}>
+                  {resultados.map(r => {
+                    const d = r.usdTn - base.usdTn;
+                    const maxD = Math.max(...resultados.map(x=>Math.abs(x.usdTn-base.usdTn)), 0.01);
+                    const w = Math.abs(d) / maxD * 100;
+                    return (
+                      <div key={r.d} style={{flex:1,height:"100%",background:"#EEF2F7",borderRadius:3,overflow:"hidden",position:"relative"}}>
+                        <div style={{position:"absolute",[d<0?"right":"left"]:d<0?`${100-w}%`:"0",width:`${w}%`,height:"100%",
+                          background: d > 0 ? "#FCA5A5" : d < 0 ? "#86EFAC" : "transparent",borderRadius:3,transition:"width .3s"}}/>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {item.nota && (
+                  <div style={{fontSize:9,color:C.mid,marginTop:5,fontStyle:"italic"}}>{item.nota}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── MAIN ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab,setTab]=useState("barco");
   const [params,setParams]=useState(DEFAULT_PARAMS);
