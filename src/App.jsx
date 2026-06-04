@@ -1348,7 +1348,7 @@ function TabDescarga({p,set,tnEntregadas}) {
         </div>
       </div>
 
-      <SeccionInop puerto="bb" p={p} set={set} mesIdx={mes} tIdeal_dias={e3.tIdeal_dias}
+      <SeccionInop puerto="bb" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e3.tIdeal_dias}
         climaKey="clima_bb" umbralLluviaKey="des_inopLluvia" umbralVientoKey="des_inopViento"/>
       <SeccionFormulas tipo="descarga" e={e3} p={p}
         gruas={p.des_gruas} grampada={p.des_grampada} movGrampa={p.des_movGrampa}
