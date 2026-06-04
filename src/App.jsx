@@ -223,8 +223,9 @@ const FuenteLink = ({fuente}) => (
   </a>
 );
 
-const Campo = ({label,value,onChange,tipo="usuario",unit,min,max,step=1,nota}) => {
+const Campo = ({label,value,onChange,tipo="usuario",unit,min,max,step=1,nota,inputType}) => {
   const st=T[tipo]||T.formula;
+  const isText = inputType==="text" || typeof value === "string";
   return (
     <div className="campo">
       <div className="campo-label" style={{color:st.label}}>
@@ -232,6 +233,10 @@ const Campo = ({label,value,onChange,tipo="usuario",unit,min,max,step=1,nota}) =
       </div>
       {tipo==="formula"||tipo==="stat"?(
         <div className="campo-formula" style={{background:st.bg,borderColor:st.border,color:st.text}}>{value}</div>
+      ):isText?(
+        <input className="campo-input" type="text" value={value||""} 
+          onChange={e=>onChange&&onChange(e.target.value)}
+          style={{background:st.bg,borderColor:st.border,color:st.text}}/>
       ):(
         <input className="campo-input" type="number" value={value} min={min} max={max} step={step}
           onChange={e=>onChange&&onChange(parseFloat(e.target.value)||0)}
@@ -870,77 +875,62 @@ function TabRepo({p,set}) {
 
 // ─── TAB E1: CARGA ─────────────────────────────────────────────────────────
 function TabCarga({p,set,tnEntregadas}) {
-  const [mes,setMes]=useState(5);
-  const e1=calcEtapa1(p,mes);
+  // Mes más pesimista del clima de Zárate
+  const mesWorst = useMemo(()=>{
+    let worst=0, worstInop=0;
+    for(let i=0;i<12;i++){
+      const e=calcEtapa1(p,i);
+      if(e.pInop>worstInop){worstInop=e.pInop;worst=i;}
+    }
+    return worst;
+  },[p]);
+  const e1=calcEtapa1(p,mesWorst);
+
   const costRows=[
-    {label:"Costo arena",      eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoArena,   hover:[e1.hoverTotal[0]]},
-    {label:"Costo merma",      eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,               total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
-    {label:"Opex carga",       eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,total:e1.costoOpex,hover:[e1.hoverTotal[2]]},
-    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,total:e1.combPuerto,hover:e1.hoverComb},
-    {label:"Time Charter+Trip.", eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                   total:e1.fleteEtapa,   hover:e1.hoverTC},
-    {label:"TOTAL ETAPA 1",    eq:"Σ costos carga",                                               total:e1.costoTotal,   hover:e1.hoverTotal,isTotal:true},
+    {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]]},
+    {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]]},
+    {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
+    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb},
+    {label:"Time Charter+Trip.",eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
+    {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:e1.costoTotal,  hover:e1.hoverTotal, isTotal:true},
   ];
+
   return (
     <div>
-      <VLSFOWidget p={p} set={set}/>
-      <div style={{marginBottom:8}}>
-        <div style={{fontSize:8,color:C.muted,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
-        <MesSelector value={mes} onChange={setMes}/>
-      </div>
       <div className="kpis">
-        <KPI label="Vel. ideal" value={`${e1.velIdeal_TnMin.toFixed(1)}Tn/min`} color={T.formula.text}/>
-        <KPI label="T. ideal" value={`${e1.tIdeal_dias.toFixed(1)}d`} color={T.formula.text}/>
-        <KPI label="T. real" value={`${e1.tReal_dias.toFixed(1)}d`} color={C.gold}/>
-        <KPI label="Inop. clima" value={`${(e1.pInop*100).toFixed(1)}%`} color={C.orange}/>
-        <KPI label="Merma" value={`${e1.mermaTn.toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
+        <KPI label="Vel. ideal"   value={`${e1.velIdeal_TnMin.toFixed(1)}Tn/min`} color={T.formula.text}/>
+        <KPI label="T. ideal"     value={`${e1.tIdeal_dias.toFixed(1)}d`}          color={T.formula.text}/>
+        <KPI label="T. real"      value={`${e1.tReal_dias.toFixed(1)}d`}           color={C.gold}/>
+        <KPI label="Inop. clima"  value={`${(e1.pInop*100).toFixed(1)}%`}          color={C.orange}/>
+        <KPI label="Merma"        value={`${e1.mermaTn.toFixed(0)}Tn`}             unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
         <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
-      {(()=>{
-        const e1Meses=MESES.map((_,i)=>calcEtapa1(p,i));
-        const avg=arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
-        return (
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Promedio anual</div>
-            <div className="kpis" style={{opacity:.75}}>
-              <KPI label="Vel. ideal" value={`${avg(e1Meses.map(e=>e.velIdeal_TnMin)).toFixed(1)}Tn/min`} color={T.formula.text}/>
-              <KPI label="T. ideal" value={`${avg(e1Meses.map(e=>e.tIdeal_dias)).toFixed(1)}d`} color={T.formula.text}/>
-              <KPI label="T. real" value={`${avg(e1Meses.map(e=>e.tReal_dias)).toFixed(1)}d`} color={C.gold}/>
-              <KPI label="Inop. clima" value={`${(avg(e1Meses.map(e=>e.pInop))*100).toFixed(1)}%`} color={C.orange}/>
-              <KPI label="Merma" value={`${avg(e1Meses.map(e=>e.mermaTn)).toFixed(0)}Tn`} unit={`${(p.cap_pctMerma*100).toFixed(1)}%`} color={C.red}/>
-              <KPI label="USD/Tn etapa" value={`$${(avg(e1Meses.map(e=>e.costoTotal))/tnEntregadas).toFixed(1)}`} color={C.gold}/>
-            </div>
-          </div>
-        );
-      })()}
-      <div className="g2">
-        <div>
-          <div className="card">
-            <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
-            <div className="g3">
-              <Campo label="Capacidad" value={p.cap_capacidadBarco} onChange={v=>set("cap_capacidadBarco",v)} tipo="usuario" unit="Tn" min={1000} max={80000} step={1000}/>
-              <Campo label="Densidad" value={p.cap_densidadArena} onChange={v=>set("cap_densidadArena",v)} tipo="usuario" unit="T/m³" min={1} max={2} step={0.05}/>
-              <Campo label="Grampada" value={p.cap_grampada} onChange={v=>set("cap_grampada",v)} tipo="usuario" unit="m³" min={5} max={30}/>
-              <Campo label="Grúas" value={p.cap_gruas} onChange={v=>set("cap_gruas",v)} tipo="usuario" min={1} max={4}/>
-              <Campo label="Mov/min" value={p.cap_movGrampa} onChange={v=>set("cap_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
-              <Campo label="Precio arena" value={p.cap_precioArenaOrigen} onChange={v=>set("cap_precioArenaOrigen",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Opex carga" value={p.cap_opexUSDTn} onChange={v=>set("cap_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
-              <Campo label="Espera Zárate" value={p.cap_esperaDias} onChange={v=>set("cap_esperaDias",v)} tipo="usuario" unit="días" min={0} max={5} step={0.25} nota="Puerto propio"/>
-            </div>
-            <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
-            <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
-          </div>
-          <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mes} tIdeal_dias={e1.tIdeal_dias}
-            climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
+      <div style={{padding:"6px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,fontSize:10,color:"#64748B",marginBottom:8}}>
+        ℹ️ Usando mes más pesimista: <strong>{MESES[mesWorst]}</strong> ({(e1.pInop*100).toFixed(1)}% inop. climática). Editá umbrales en <strong>Base Clima</strong>.
+      </div>
+      <div className="card">
+        <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
+        <div className="g3">
+          <Campo label="Capacidad"     value={p.cap_capacidadBarco}    onChange={v=>set("cap_capacidadBarco",v)}    tipo="usuario" unit="Tn"      min={1000} max={80000} step={1000}/>
+          <Campo label="Densidad"      value={p.cap_densidadArena}     onChange={v=>set("cap_densidadArena",v)}     tipo="usuario" unit="T/m³"    min={1}    max={2}     step={0.05}/>
+          <Campo label="Grampada"      value={p.cap_grampada}          onChange={v=>set("cap_grampada",v)}          tipo="usuario" unit="m³"      min={5}    max={30}/>
+          <Campo label="Grúas"         value={p.cap_gruas}             onChange={v=>set("cap_gruas",v)}             tipo="usuario"               min={1}    max={4}/>
+          <Campo label="Mov/min"       value={p.cap_movGrampa}         onChange={v=>set("cap_movGrampa",v)}         tipo="usuario" unit="mov/min" min={0.1}  max={2}     step={0.1}/>
+          <Campo label="Precio arena"  value={p.cap_precioArenaOrigen} onChange={v=>set("cap_precioArenaOrigen",v)} tipo="usuario" unit="USD/Tn"  min={0}    step={0.5}/>
+          <Campo label="Opex carga"    value={p.cap_opexUSDTn}         onChange={v=>set("cap_opexUSDTn",v)}         tipo="usuario" unit="USD/Tn"  min={0}    step={0.5}/>
+          <Campo label="Espera Zárate" value={p.cap_esperaDias}        onChange={v=>set("cap_esperaDias",v)}        tipo="usuario" unit="días"    min={0}    max={5}     step={0.25} nota="Puerto propio"/>
         </div>
-        <div>
-          <SeccionFormulas tipo="carga" e={e1} p={p}
-            gruas={p.cap_gruas} grampada={p.cap_grampada} movGrampa={p.cap_movGrampa}
-            horasDia={p.cap_horasDia} pctMerma={p.cap_pctMerma} capacidad={p.cap_capacidadBarco}/>
-          <div className="card">
-            <div className="ct">Costos Etapa 1</div>
-            <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
-          </div>
-        </div>
+        <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
+        <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
+      </div>
+      <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e1.tIdeal_dias}
+        climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
+      <SeccionFormulas tipo="carga" e={e1} p={p}
+        gruas={p.cap_gruas} grampada={p.cap_grampada} movGrampa={p.cap_movGrampa}
+        horasDia={p.cap_horasDia} pctMerma={p.cap_pctMerma} capacidad={p.cap_capacidadBarco}/>
+      <div className="card">
+        <div className="ct">Costos Etapa 1</div>
+        <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
       </div>
     </div>
   );
@@ -967,14 +957,6 @@ function TabNavegacion({p,set,tnEntregadas}) {
   const eliminarTramo=(i)=>set("nav_tramos",tramos.filter((_,j)=>j!==i));
   return (
     <div>
-      <VLSFOWidget p={p} set={set}/>
-      <div className="kpis">
-        <KPI label="Vel. promedio" value={`${e2.velProm.toFixed(1)}kt`} color={T.formula.text}/>
-        <KPI label="Distancia" value={`${e2.totalMn}mn`}/>
-        <KPI label="Días" value={`${e2.diasNav.toFixed(1)}d`} color={T.formula.text}/>
-        <KPI label="Combustible" value={`${e2.combNavTotal.toFixed(1)}T`} color={C.orange}/>
-        <KPI label="USD/Tn etapa" value={`$${(e2.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
-      </div>
       <div className="card">
         <div className="ct">Tramos <TipoBadge tipo="usuario"/></div>
         <table className="vel-table">
@@ -2320,41 +2302,36 @@ function TabEscenarios({p, onLoad}) {
   );
 }
 
-// ─── TAB AGENCIA ZÁRATE ────────────────────────────────────────────────────
+// ─── TAB AGENCIA PUERTO DE CARGA ──────────────────────────────────────────
 function TabAgenciaZarate({p,set}) {
-  const [mes,setMes]=useState(5);
-  const e1=calcEtapa1(p,mes);
+  const e1=calcEtapa1(p,0);
   const tReal=e1.tReal_dias;
   const diasDisp=p.agz_redondearDias?Math.ceil(tReal):tReal;
   const items=p.agz_items||[];
   const totalActivo=calcAgenciaZarate(p,tReal);
+  const tnRef=p.cap_capacidadBarco||1;
 
   function updItem(id,field,val){
-    const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
-    set("agz_items",upd);
+    set("agz_items",items.map(it=>it.id===id?{...it,[field]:val}:it));
   }
 
   return (
     <div>
       <div className="card">
-        <div className="ct">🏗️ Agencia Marítima Zárate — PIAPSA / Campana</div>
+        <div className="ct">⚓ Agencia Puerto de Carga</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
-          <div style={{flex:1,minWidth:200}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
-            <MesSelector value={mes} onChange={setMes}/>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>T. Real carga</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{tReal.toFixed(2)}d</div>
           </div>
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real carga</div>
-            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
-            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
-          </div>
-          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia Z.</div>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Total Agencia</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+            <div style={{fontSize:9,color:"#64748B"}}>${(totalActivo/tnRef).toFixed(2)}/Tn</div>
           </div>
           <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
             <input type="checkbox" checked={!!p.agz_redondearDias} onChange={e=>set("agz_redondearDias",e.target.checked)}/>
-            Redondear días (sin decimales)
+            Redondear días
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
@@ -2373,8 +2350,8 @@ function TabAgenciaZarate({p,set}) {
             </thead>
             <tbody>
               {items.map(it=>{
-                const diasAplicados=it.tipo==="diario"?diasDisp:1;
-                const total=it.activo?(it.tipo==="diario"?it.usd*diasAplicados:it.usd):0;
+                const d=it.tipo==="diario"?diasDisp:1;
+                const total=it.activo?(it.tipo==="diario"?it.usd*d:it.usd):0;
                 return (
                   <tr key={it.id} style={{opacity:it.activo?1:0.45}}>
                     <td style={{textAlign:"center"}}>
@@ -2407,20 +2384,20 @@ function TabAgenciaZarate({p,set}) {
                       {it.activo?`$${total.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
                     </td>
                     <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>
-                      {it.activo?`$${(total/tnCargadas).toFixed(2)}`:"—"}
+                      {it.activo?`$${(total/tnRef).toFixed(2)}`:"—"}
                     </td>
                     <td>
                       <input value={it.nota||""} onChange={e=>updItem(it.id,"nota",e.target.value)}
                         placeholder="nota..."
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",
-                                color:C.mid,minWidth:120}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:100}}/>
                     </td>
                   </tr>
                 );
               })}
               <tr className="total">
-                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA ZÁRATE</td>
+                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE CARGA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnRef).toFixed(2)}/Tn</td>
                 <td/>
               </tr>
             </tbody>
@@ -2428,14 +2405,12 @@ function TabAgenciaZarate({p,set}) {
         </div>
         <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
           <button className="run" style={{fontSize:10,padding:"5px 12px"}}
-            onClick={()=>{
-              const nuevo={id:`agz_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:""};
-              set("agz_items",[...items,nuevo]);
-            }}>+ Agregar fila</button>
+            onClick={()=>set("agz_items",[...items,{id:`agz_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:"",categoria:""}])}>
+            + Agregar fila
+          </button>
           <div className="warn-note" style={{flex:1}}>Los valores editados acá actualizan automáticamente el cálculo de Etapa 1 (Carga) y el Monte Carlo.</div>
         </div>
       </div>
-
       <div className="card">
         <div className="ct">Resumen por Categoría</div>
         <table className="cost-table">
@@ -2443,13 +2418,13 @@ function TabAgenciaZarate({p,set}) {
           <tbody>
             {(()=>{
               const cats=[...new Set(items.filter(it=>it.activo&&it.categoria).map(it=>it.categoria))].sort();
-              const rows=cats.map(cat=>{
+              const result=cats.map(cat=>{
                 const tot=items.filter(it=>it.activo&&it.categoria===cat).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
-                return <tr key={cat}><td style={{fontWeight:600,color:C.navy}}>{cat}</td><td className="mono" style={{textAlign:"right"}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>${(tot/tnCargadas).toFixed(2)}</td></tr>;
+                return <tr key={cat}><td style={{fontWeight:600,color:C.navy}}>{cat}</td><td className="mono" style={{textAlign:"right"}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>${(tot/tnRef).toFixed(2)}</td></tr>;
               });
-              const sinCatTot=items.filter(it=>it.activo&&!it.categoria).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
-              if(sinCatTot>0) rows.push(<tr key="sc"><td style={{color:C.mid,fontStyle:"italic"}}>Sin categoría</td><td className="mono" style={{textAlign:"right",color:C.mid}}>${sinCatTot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td/></tr>);
-              return rows;
+              const scTot=items.filter(it=>it.activo&&!it.categoria).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
+              if(scTot>0) result.push(<tr key="sc"><td style={{color:C.mid,fontStyle:"italic"}}>Sin categoría</td><td className="mono" style={{textAlign:"right",color:C.mid}}>${scTot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td/></tr>);
+              return result;
             })()}
           </tbody>
         </table>
@@ -2458,45 +2433,40 @@ function TabAgenciaZarate({p,set}) {
   );
 }
 
-// ─── TAB AGENCIA BAHÍA BLANCA ──────────────────────────────────────────────
+// ─── TAB AGENCIA PUERTO DE DESCARGA ───────────────────────────────────────
 function TabAgenciaBB({p,set}) {
-  const [mes,setMes]=useState(5);
   const e0=calcEtapaRepo(p);
-  const e1=calcEtapa1(p,mes);
+  const e1=calcEtapa1(p,0);
   const e2=calcEtapa2(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
-  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
+  const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},0,e1.tnPostCarga);
   const tReal=e3.tReal_dias;
   const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
   const items=p.abb_items||[];
   const totalActivo=calcAgenciaBB(p,tReal);
+  const tnRef=p.cap_capacidadBarco||1;
 
   function updItem(id,field,val){
-    const upd=items.map(it=>it.id===id?{...it,[field]:val}:it);
-    set("abb_items",upd);
+    set("abb_items",items.map(it=>it.id===id?{...it,[field]:val}:it));
   }
 
   return (
     <div>
       <div className="card">
-        <div className="ct">⚓ Agencia Marítima Bahía Blanca — Argelan Ships Service</div>
+        <div className="ct">⚓ Agencia Puerto de Descarga</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
-          <div style={{flex:1,minWidth:200}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (para calcular días)</div>
-            <MesSelector value={mes} onChange={setMes}/>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>T. Real descarga</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>{tReal.toFixed(2)}d</div>
           </div>
-          <div style={{background:"#EEF2F7",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.mid,textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>T. Real descarga</div>
-            <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{tReal.toFixed(2)}d</div>
-            <div style={{fontSize:8,color:C.mid}}>Días a facturar</div>
-          </div>
-          <div style={{background:C.navy,borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total Agencia BB</div>
-            <div style={{fontSize:18,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"8px 14px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600}}>Total Agencia</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#1E293B",fontFamily:"ui-monospace,monospace"}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</div>
+            <div style={{fontSize:9,color:"#64748B"}}>${(totalActivo/tnRef).toFixed(2)}/Tn</div>
           </div>
           <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:600,color:C.mid,cursor:"pointer"}}>
             <input type="checkbox" checked={!!p.abb_redondearDias} onChange={e=>set("abb_redondearDias",e.target.checked)}/>
-            Redondear días (sin decimales)
+            Redondear días
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
@@ -2515,8 +2485,8 @@ function TabAgenciaBB({p,set}) {
             </thead>
             <tbody>
               {items.map(it=>{
-                const diasAplicados=it.tipo==="diario"?diasDisp:1;
-                const total=it.activo?(it.tipo==="diario"?it.usd*diasAplicados:it.usd):0;
+                const d=it.tipo==="diario"?diasDisp:1;
+                const total=it.activo?(it.tipo==="diario"?it.usd*d:it.usd):0;
                 return (
                   <tr key={it.id} style={{opacity:it.activo?1:0.45}}>
                     <td style={{textAlign:"center"}}>
@@ -2549,20 +2519,20 @@ function TabAgenciaBB({p,set}) {
                       {it.activo?`$${total.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
                     </td>
                     <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>
-                      {it.activo?`$${(total/tnCargadas).toFixed(2)}`:"—"}
+                      {it.activo?`$${(total/tnRef).toFixed(2)}`:"—"}
                     </td>
                     <td>
                       <input value={it.nota||""} onChange={e=>updItem(it.id,"nota",e.target.value)}
                         placeholder="nota..."
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",
-                                color:C.mid,minWidth:120}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:9,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:100}}/>
                     </td>
                   </tr>
                 );
               })}
               <tr className="total">
-                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA BB</td>
+                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE DESCARGA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnRef).toFixed(2)}/Tn</td>
                 <td/>
               </tr>
             </tbody>
@@ -2570,14 +2540,12 @@ function TabAgenciaBB({p,set}) {
         </div>
         <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
           <button className="run" style={{fontSize:10,padding:"5px 12px"}}
-            onClick={()=>{
-              const nuevo={id:`abb_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:""};
-              set("abb_items",[...items,nuevo]);
-            }}>+ Agregar fila</button>
+            onClick={()=>set("abb_items",[...items,{id:`abb_${Date.now()}`,label:"Nuevo concepto",tipo:"fijo",usd:0,activo:true,nota:"",categoria:""}])}>
+            + Agregar fila
+          </button>
           <div className="warn-note" style={{flex:1}}>Los valores editados acá actualizan automáticamente el cálculo de Etapa 3 (Descarga) y el Monte Carlo.</div>
         </div>
       </div>
-
       <div className="card">
         <div className="ct">Resumen por Categoría</div>
         <table className="cost-table">
@@ -2585,13 +2553,13 @@ function TabAgenciaBB({p,set}) {
           <tbody>
             {(()=>{
               const cats=[...new Set(items.filter(it=>it.activo&&it.categoria).map(it=>it.categoria))].sort();
-              const rows=cats.map(cat=>{
+              const result=cats.map(cat=>{
                 const tot=items.filter(it=>it.activo&&it.categoria===cat).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
-                return <tr key={cat}><td style={{fontWeight:600,color:C.navy}}>{cat}</td><td className="mono" style={{textAlign:"right"}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>${(tot/tnCargadas).toFixed(2)}</td></tr>;
+                return <tr key={cat}><td style={{fontWeight:600,color:C.navy}}>{cat}</td><td className="mono" style={{textAlign:"right"}}>${tot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid}}>${(tot/tnRef).toFixed(2)}</td></tr>;
               });
-              const sinCatTot=items.filter(it=>it.activo&&!it.categoria).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
-              if(sinCatTot>0) rows.push(<tr key="sc"><td style={{color:C.mid,fontStyle:"italic"}}>Sin categoría</td><td className="mono" style={{textAlign:"right",color:C.mid}}>${sinCatTot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td/></tr>);
-              return rows;
+              const scTot=items.filter(it=>it.activo&&!it.categoria).reduce((s,it)=>s+(it.tipo==="diario"?it.usd*diasDisp:it.usd),0);
+              if(scTot>0) result.push(<tr key="sc"><td style={{color:C.mid,fontStyle:"italic"}}>Sin categoría</td><td className="mono" style={{textAlign:"right",color:C.mid}}>${scTot.toLocaleString("es-AR",{maximumFractionDigits:0})}</td><td/></tr>);
+              return result;
             })()}
           </tbody>
         </table>
@@ -2600,374 +2568,6 @@ function TabAgenciaBB({p,set}) {
   );
 }
 
-function TabFAQ() {
-  const [abierto, setAbierto] = useState(null);
-  const secciones = [...new Set(FAQ_ITEMS.map(f=>f.seccion))];
-
-  return (
-    <div>
-      <div className="card">
-        <div className="ct">❓ Preguntas Frecuentes — Metodología del Modelo</div>
-        <p style={{fontSize:11,color:C.mid,lineHeight:1.6,marginBottom:0}}>
-          Explicaciones de los conceptos, fórmulas y decisiones de diseño detrás de la herramienta.
-          Hacé clic en cada pregunta para expandir.
-        </p>
-      </div>
-
-      {secciones.map(sec=>(
-        <div key={sec} className="card">
-          <div className="ct">{sec}</div>
-          {FAQ_ITEMS.filter(f=>f.seccion===sec).map(item=>{
-            const isOpen = abierto===item.id;
-            return (
-              <div key={item.id} style={{
-                borderRadius:8, border:`1px solid ${isOpen?C.blue:C.border}`,
-                marginBottom:8, overflow:"hidden",
-                transition:"border-color .15s",
-              }}>
-                {/* Pregunta */}
-                <button
-                  onClick={()=>setAbierto(isOpen?null:item.id)}
-                  style={{
-                    width:"100%", display:"flex", justifyContent:"space-between",
-                    alignItems:"center", padding:"10px 14px", border:"none",
-                    background:isOpen?"#EEF2F7":"#fff", cursor:"pointer", textAlign:"left",
-                    gap:10,
-                  }}>
-                  <span style={{fontSize:12,fontWeight:700,color:isOpen?C.navy:C.mid,lineHeight:1.4}}>
-                    {item.pregunta}
-                  </span>
-                  <span style={{
-                    fontSize:16, color:isOpen?C.blue:C.mid, flexShrink:0,
-                    transform:isOpen?"rotate(180deg)":"none", transition:"transform .2s",
-                  }}>▾</span>
-                </button>
-
-                {/* Respuesta */}
-                {isOpen && (
-                  <div style={{padding:"12px 16px",borderTop:`1px solid ${C.border}`,background:"#fff"}}>
-                    {/* Texto con formato */}
-                    <div style={{
-                      fontSize:11, color:"#374151", lineHeight:1.8,
-                      whiteSpace:"pre-wrap", fontFamily:"inherit", marginBottom:10,
-                    }}>
-                      {item.respuesta}
-                    </div>
-
-                    {/* Nota */}
-                    {item.nota && (
-                      <div style={{
-                        background:"#FEF3C7", border:"1px solid #D4B84A", borderLeft:`3px solid #D4B84A`,
-                        borderRadius:6, padding:"7px 11px", fontSize:10, color:"#92400E",
-                        marginBottom:item.links.length?10:0,
-                      }}>
-                        ⚠️ {item.nota}
-                      </div>
-                    )}
-
-                    {/* Links */}
-                    {item.links.length>0 && (
-                      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
-                        {item.links.map(l=>(
-                          <a key={l.url} href={l.url} target="_blank" rel="noreferrer"
-                            style={{
-                              fontSize:10, fontWeight:700, color:C.blue,
-                              background:"#EEF2F7", border:`1px solid ${C.border}`,
-                              borderRadius:5, padding:"4px 10px", textDecoration:"none",
-                              display:"inline-flex", alignItems:"center", gap:4,
-                            }}>
-                            🔗 {l.label}
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
-function TabSensibilidades({p}) {
-  const [mes, setMes] = useState(5);
-
-  // Base
-  const base = (() => {
-    const e0 = calcEtapaRepo(p);
-    const e1 = calcEtapa1(p, mes);
-    const e2 = calcEtapa2(p);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...p, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
-    return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
-  })();
-
-  function calcConDelta(overrides) {
-    const pp = {...p, ...overrides};
-    const e0 = calcEtapaRepo(pp);
-    const e1 = calcEtapa1(pp, mes);
-    const e2 = calcEtapa2(pp);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, mes, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
-    return tot / e3.tnEntregadas;
-  }
-
-  // Definición de sensibilidades
-  const grupos = [
-    {
-      titulo: "Tiempos de espera portuaria",
-      icon: "⏱️",
-      items: [
-        {
-          label: "Espera en Zárate",
-          unidad: "días",
-          deltas: [-1, -0.5, +0.5, +1, +2],
-          fn: d => calcConDelta({ cap_esperaDias: Math.max(0, p.cap_esperaDias + d) }),
-          base_val: p.cap_esperaDias,
-          nota: "Afecta TC, combustible puerto y agencia Zárate (ítems diarios)",
-        },
-        {
-          label: `Espera en BB (${MESES[mes]})`,
-          unidad: "días",
-          deltas: [-1, -0.5, +0.5, +1, +2],
-          fn: d => calcConDelta({ des_esperaBBMes: p.des_esperaBBMes.map((v,i) => i===mes ? Math.max(0,v+d) : v) }),
-          base_val: p.des_esperaBBMes[mes],
-          nota: "Afecta TC, combustible puerto y agencia BB (ítems diarios)",
-        },
-      ],
-    },
-    {
-      titulo: "Velocidad de navegación",
-      icon: "🧭",
-      items: [
-        {
-          label: "Velocidad barco (ida cargado)",
-          unidad: "kt (todos los tramos)",
-          deltas: [-1, -0.5, +0.5, +1],
-          fn: d => calcConDelta({ nav_tramos: p.nav_tramos.map(t => ({...t, velocidad: Math.max(6, t.velocidad + d)})) }),
-          base_val: null,
-          nota: "Velocidad menor → más días navegando → más TC y combustible. El consumo sube por la relación cúbica.",
-        },
-        {
-          label: "Velocidad barco (vuelta lastre)",
-          unidad: "kt (todos los tramos)",
-          deltas: [-1, -0.5, +0.5, +1],
-          fn: d => calcConDelta({ vta_tramos: (p.vta_tramos||p.nav_tramos).map(t => ({...t, velocidad: Math.max(6, t.velocidad + d)})) }),
-          base_val: null,
-          nota: "Impacto menor que la ida porque el consumo en lastre es ~20% inferior.",
-        },
-      ],
-    },
-    {
-      titulo: "Costos del barco",
-      icon: "🚢",
-      items: [
-        {
-          label: "Time Charter",
-          unidad: "USD/día",
-          deltas: [-2000, -1000, +1000, +2000, +5000],
-          fn: d => calcConDelta({ barco_timeCharter: Math.max(0, p.barco_timeCharter + d) }),
-          base_val: p.barco_timeCharter,
-          nota: "Impacta en todas las etapas proporcional a los días totales del ciclo.",
-        },
-        {
-          label: "Precio VLSFO",
-          unidad: "USD/T",
-          deltas: [-100, -50, +50, +100, +200],
-          fn: d => calcConDelta({ nav_escenarioVLSFO: "manual", nav_vlsfoManual: Math.max(200, p.nav_vlsfoManual + d) }),
-          base_val: p.nav_vlsfoManual,
-          nota: "Afecta navegación (mayor impacto) y estadía en puerto (menor impacto).",
-        },
-      ],
-    },
-    {
-      titulo: "Precio y merma de arena",
-      icon: "⛏️",
-      items: [
-        {
-          label: "Precio arena en origen",
-          unidad: "USD/Tn",
-          deltas: [-2, -1, +1, +2, +5],
-          fn: d => calcConDelta({ cap_precioArenaOrigen: Math.max(0, p.cap_precioArenaOrigen + d) }),
-          base_val: p.cap_precioArenaOrigen,
-          nota: "El precio de la arena es el componente de mayor peso absoluto en el costo total.",
-        },
-        {
-          label: "Merma de carga",
-          unidad: "%",
-          deltas: [-0.5, -0.25, +0.25, +0.5, +1],
-          fn: d => calcConDelta({ cap_pctMerma: Math.max(0, p.cap_pctMerma + d/100) }),
-          base_val: p.cap_pctMerma * 100,
-          nota: "Cada punto de merma extra significa más Tn compradas para el mismo embarque.",
-        },
-        {
-          label: "Merma de descarga",
-          unidad: "%",
-          deltas: [-0.5, -0.25, +0.25, +0.5, +1],
-          fn: d => calcConDelta({ des_pctMermaDescarga: Math.max(0, p.des_pctMermaDescarga + d/100) }),
-          base_val: p.des_pctMermaDescarga * 100,
-          nota: "Valorizada al precio equivalente (costo hasta llegada / Tn), no al precio origen.",
-        },
-      ],
-    },
-    {
-      titulo: "Capacidad operativa",
-      icon: "🏭",
-      items: [
-        {
-          label: "Horas de trabajo/día — Carga",
-          unidad: "hs",
-          deltas: [-4, -2, +2, +4],
-          fn: d => calcConDelta({ cap_horasDia: Math.min(24, Math.max(4, p.cap_horasDia + d)) }),
-          base_val: p.cap_horasDia,
-          nota: "Más horas por día → menor tiempo ideal → menor exposición climática y menos TC.",
-        },
-        {
-          label: "Horas de trabajo/día — Descarga",
-          unidad: "hs",
-          deltas: [-4, -2, +2, +4],
-          fn: d => calcConDelta({ des_horasDia: Math.min(24, Math.max(4, p.des_horasDia + d)) }),
-          base_val: p.des_horasDia,
-          nota: "Mismo efecto que en carga pero sobre el tiempo de descarga en BB.",
-        },
-      ],
-    },
-  ];
-
-  const fmtDelta = (v) => {
-    const d = v - base.usdTn;
-    const color = d > 0 ? C.red : d < 0 ? C.green : C.mid;
-    const sign  = d > 0 ? "+" : "";
-    return { color, text: `${sign}${d.toFixed(2)}`, abs: `$${v.toFixed(1)}` };
-  };
-
-  return (
-    <div>
-      <div className="card">
-        <div className="ct">📐 Análisis de Sensibilidades — Impacto en USD/Tn</div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:4}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (esperas y clima)</div>
-            <MesSelector value={mes} onChange={setMes}/>
-          </div>
-          <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Base actual</div>
-            <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD/Tn</span></div>
-          </div>
-        </div>
-        <div className="warn-note">Cada fila muestra el USD/Tn resultante si solo cambia esa variable. El color indica si el cambio sube (🔴) o baja (🟢) el costo.</div>
-      </div>
-
-      {grupos.map(grupo => (
-        <div key={grupo.titulo} className="card">
-          <div className="ct">{grupo.icon} {grupo.titulo}</div>
-          {grupo.items.map(item => {
-            const resultados = item.deltas.map(d => ({ d, usdTn: item.fn(d) }));
-            return (
-              <div key={item.label} style={{marginBottom:16}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6,flexWrap:"wrap",gap:4}}>
-                  <div>
-                    <span style={{fontSize:11,fontWeight:700,color:C.navy}}>{item.label}</span>
-                    {item.base_val !== null && (
-                      <span style={{fontSize:9,color:C.mid,marginLeft:6}}>base: <span style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{item.base_val} {item.unidad}</span></span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Tabla de resultados */}
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                    <thead>
-                      <tr style={{background:"#EEF2F7"}}>
-                        <th style={{padding:"5px 10px",textAlign:"left",fontSize:8,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5,width:120}}>Δ {item.unidad}</th>
-                        {resultados.map(r=>(
-                          <th key={r.d} style={{padding:"5px 10px",textAlign:"center",fontSize:10,fontWeight:700,
-                            color: r.d < 0 ? C.green : r.d > 0 ? C.red : C.mid}}>
-                            {r.d > 0 ? `+${r.d}` : r.d}
-                          </th>
-                        ))}
-                        <th style={{padding:"5px 10px",textAlign:"center",fontSize:9,fontWeight:700,color:C.gold,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>BASE</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td style={{padding:"6px 10px",fontSize:9,color:C.mid,fontWeight:600}}>USD/Tn resultado</td>
-                        {resultados.map(r => {
-                          const {color, abs} = fmtDelta(r.usdTn);
-                          return (
-                            <td key={r.d} style={{padding:"6px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontWeight:700,color}}>
-                              {abs}
-                            </td>
-                          );
-                        })}
-                        <td style={{padding:"6px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontWeight:800,color:C.gold,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>
-                          ${base.usdTn.toFixed(1)}
-                        </td>
-                      </tr>
-                      <tr style={{background:"#F9FAFB"}}>
-                        <td style={{padding:"4px 10px",fontSize:9,color:C.mid,fontWeight:600}}>Δ USD/Tn</td>
-                        {resultados.map(r => {
-                          const {color, text} = fmtDelta(r.usdTn);
-                          return (
-                            <td key={r.d} style={{padding:"4px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontSize:10,fontWeight:700,color}}>
-                              {text}
-                            </td>
-                          );
-                        })}
-                        <td style={{padding:"4px 10px",textAlign:"center",fontSize:10,color:C.mid,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>—</td>
-                      </tr>
-                      <tr>
-                        <td style={{padding:"4px 10px",fontSize:9,color:C.mid,fontWeight:600}}>Δ Costo total</td>
-                        {resultados.map(r => {
-                          const d = (r.usdTn - base.usdTn) * base.tnEnt;
-                          const color = d > 0 ? C.red : d < 0 ? C.green : C.mid;
-                          const sign = d > 0 ? "+" : "";
-                          return (
-                            <td key={r.d} style={{padding:"4px 10px",textAlign:"center",fontFamily:"DM Mono,monospace",fontSize:10,fontWeight:600,color}}>
-                              {sign}${Math.round(d/1000)}k
-                            </td>
-                          );
-                        })}
-                        <td style={{padding:"4px 10px",textAlign:"center",fontSize:10,color:C.mid,background:"#FFFBEB",borderLeft:`2px solid ${C.warnBorder}`}}>—</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Barra visual */}
-                <div style={{display:"flex",gap:3,marginTop:6,alignItems:"center",height:8}}>
-                  {resultados.map(r => {
-                    const d = r.usdTn - base.usdTn;
-                    const maxD = Math.max(...resultados.map(x=>Math.abs(x.usdTn-base.usdTn)), 0.01);
-                    const w = Math.abs(d) / maxD * 100;
-                    return (
-                      <div key={r.d} style={{flex:1,height:"100%",background:"#EEF2F7",borderRadius:3,overflow:"hidden",position:"relative"}}>
-                        <div style={{position:"absolute",[d<0?"right":"left"]:d<0?`${100-w}%`:"0",width:`${w}%`,height:"100%",
-                          background: d > 0 ? "#FCA5A5" : d < 0 ? "#86EFAC" : "transparent",borderRadius:3,transition:"width .3s"}}/>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {item.nota && (
-                  <div style={{fontSize:9,color:C.mid,marginTop:5,fontStyle:"italic"}}>{item.nota}</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── MAIN ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab,setTab]=useState("barco");
   const [params,setParams]=useState(DEFAULT_PARAMS);
