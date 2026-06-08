@@ -919,7 +919,7 @@ function TabCarga({p,set,tnEntregadas}) {
           <Campo label="Espera Zárate" value={p.cap_esperaDias}        onChange={v=>set("cap_esperaDias",v)}        tipo="usuario" unit="días"    min={0}    max={5}     step={0.25} nota="Puerto propio"/>
         </div>
         <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
-        <Campo label="Merma de carga" value={p.cap_pctMerma*100} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
+        <Campo label="Merma de carga" value={parseFloat((p.cap_pctMerma*100).toFixed(4))} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
       </div>
       <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e1.tIdeal_dias}
         climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
@@ -1226,8 +1226,8 @@ function TabDescarga({p,set,tnEntregadas}) {
         </div>
         <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
         <div className="g2">
-          <Campo label="Merma descarga" value={p.des_pctMermaDescarga*100} onChange={v=>set("des_pctMermaDescarga",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
-          <Campo label="Merma acopio"   value={p.des_pctMermaAcopio*100}   onChange={v=>set("des_pctMermaAcopio",v/100)}   tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
+          <Campo label="Merma descarga" value={parseFloat((p.des_pctMermaDescarga*100).toFixed(4))} onChange={v=>set("des_pctMermaDescarga",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
+          <Campo label="Merma acopio"   value={parseFloat((p.des_pctMermaAcopio*100).toFixed(4))}   onChange={v=>set("des_pctMermaAcopio",v/100)}   tipo="usuario" unit="%" min={0} max={10} step={0.1}/>
         </div>
       </div>
 
