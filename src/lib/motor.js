@@ -315,6 +315,19 @@ export const DEFAULT_PARAMS = {
   clima_zarate:              CLIMA_DB_DEFAULT.zarate,
   clima_bb:                  CLIMA_DB_DEFAULT.bb,
   vlsfo_historico:           VLSFO_HISTORICO_DEFAULT,
+
+  // MONTE CARLO — control de variables estocásticas
+  mc_vars: [
+    { id:"vlsfo",   label:"Precio VLSFO",     activa:true,  sigma:null,  unit:"USD/T",  nota:"σ calculado del historico de 12M — se actualiza automaticamente" },
+    { id:"tc",      label:"Time Charter",      activa:true,  sigma:1500,  unit:"USD/d",  nota:"Volatilidad del mercado spot de fletamento" },
+    { id:"velFact", label:"Factor velocidad",  activa:true,  sigma:0.08,  unit:"factor", nota:"Relativo sobre velocidad de todos los tramos (corrientes, estado del casco)" },
+    { id:"espBB",   label:"Espera en BB",      activa:true,  sigma:0.6,   unit:"dias",   nota:"Variabilidad alrededor de la espera media mensual configurada" },
+    { id:"espZ",    label:"Espera en Zarate",  activa:true,  sigma:0.2,   unit:"dias",   nota:"Variabilidad de la espera configurada en Etapa Carga" },
+    { id:"mCarga",  label:"Merma carga",       activa:true,  sigma:0.005, unit:"frac.",  nota:"Equivale a variabilidad alrededor del % configurado" },
+    { id:"mDesc",   label:"Merma descarga",    activa:true,  sigma:0.004, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
+    { id:"mAcopio", label:"Merma acopio",      activa:true,  sigma:0.003, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
+    { id:"inop",    label:"Inop. climatica",   activa:true,  sigma:0.20,  unit:"factor", nota:"sigma% multiplicado por pBase calculado del clima" },
+  ],
 };
 
 // ─── HELPERS AGENCIA ───────────────────────────────────────────────────────
@@ -636,102 +649,139 @@ function randn(){
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-function sampleInop(climaDB,mesIdx,umbralL,umbralV){
+function sampleInop(climaDB,mesIdx,umbralL,umbralV,sigmaFactor=0.20){
   const d=climaDB[mesIdx];
   const pL=probSuperaUmbral(d.lluviaProm,d.lluviaSigma,umbralL);
   const pV=probSuperaUmbral(d.vientoProm,d.vientoSigma,umbralV);
   const pBase=Math.min(pL+pV-pL*pV,0.90);
-  return Math.max(0,Math.min(0.50,pBase+randn()*pBase*0.2));
+  return Math.max(0,Math.min(0.50,pBase+randn()*pBase*sigmaFactor));
 }
 
-export function runMonteCarlo(p, n=5000, mesIdx=null) {
-  const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const basePrecio=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-  const results=[];
+export function runMonteCarlo(p, n=5000) {
+  // mc_vars: array de config de variables estocásticas (con fallback a defaults)
+  const mcVars = p.mc_vars || DEFAULT_PARAMS.mc_vars;
+  const cfg = {};
+  mcVars.forEach(v => { cfg[v.id] = v; });
+  const S = id => cfg[id]?.activa !== false; // ¿variable activa?
+  const sigma = id => cfg[id]?.sigma ?? DEFAULT_PARAMS.mc_vars.find(v=>v.id===id)?.sigma ?? 0;
 
-  for(let i=0;i<n;i++){
-    const mes  =mesIdx!==null?mesIdx:Math.floor(Math.random()*12);
-    const vlsfo=Math.max(300,basePrecio+randn()*vlsfoStats.sigma12m);
-    const tc   =Math.max(5000,p.barco_timeCharter+randn()*1500)+p.barco_tripulacion+(p.barco_miscPorDia||0);
-    const espBB=Math.max(0,p.des_esperaBBMes[mes]+randn()*0.6);
-    const espZ =Math.max(0,p.des_esperaZarateDias+randn()*0.2);
-    const mC   =Math.max(0,p.cap_pctMerma+randn()*0.005);
-    const mD   =Math.max(0,p.des_pctMermaDescarga+randn()*0.004);
-    const mA   =Math.max(0,p.des_pctMermaAcopio+randn()*0.003);
-    const vF   =Math.max(0.5,1+randn()*0.08);
-    const pa   =p.cap_arenaFijaPorMes?p.cap_precioArenaMes[mes]:p.cap_precioArenaOrigen;
-    const pZ   =sampleInop(p.clima_zarate,mes,p.cap_inopLluvia,p.cap_inopViento);
-    const pB   =sampleInop(p.clima_bb,mes,p.des_inopLluvia,p.des_inopViento);
+  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
+  const basePrecio = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
+  const sigmaVLSFO = sigma('vlsfo') !== null ? sigma('vlsfo') : vlsfoStats.sigma12m;
+  const results = [];
 
-    // E0 — Reposicionamiento (Rio Grande → Zárate, lastre)
-    const tramosR=(p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
-    const {diasNav:diasNavR}=velPromedioPonderada(tramosR);
-    const combRepoT=tramosR.reduce((acc,t)=>{const dist=(t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0));const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
-    const c0=combRepoT*vlsfo+diasNavR*tc+(p.barco_limpiezaBodega||0)+(p.barco_importacionWaiver||0)
-             +(p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
+  for (let i = 0; i < n; i++) {
+    // Mes sorteado al azar — siempre anualizado
+    const mes = Math.floor(Math.random() * 12);
 
-    // E1
-    const vH1=p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
-    const tI1=p.cap_capacidadBarco/vH1/p.cap_horasDia;
-    const tR1=tI1+tI1*pZ/Math.max(0.01,1-pZ)+p.cap_esperaDias;
-    const mCTn=p.cap_capacidadBarco*mC;
-    const tnPC=p.cap_capacidadBarco-mCTn;
-    const c1=pa*p.cap_capacidadBarco+pa*mCTn+p.cap_opexUSDTn*p.cap_capacidadBarco
-             +tR1*p.barco_consumoPuerto*vlsfo+tR1*tc+calcAgenciaZarate(p,tR1);
+    // Sorteo de variables según activa/fija
+    const vlsfo  = S('vlsfo')   ? Math.max(300, basePrecio + randn()*sigmaVLSFO)                          : basePrecio;
+    const tc     = S('tc')      ? Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'))
+                                    + p.barco_tripulacion + (p.barco_miscPorDia||0)
+                                : p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+    const espBB  = S('espBB')   ? Math.max(0, p.des_esperaBBMes[mes] + randn()*sigma('espBB'))            : p.des_esperaBBMes[mes];
+    const espZ   = S('espZ')    ? Math.max(0, p.des_esperaZarateDias + randn()*sigma('espZ'))             : p.des_esperaZarateDias;
+    const mC     = S('mCarga')  ? Math.max(0, p.cap_pctMerma + randn()*sigma('mCarga'))                   : p.cap_pctMerma;
+    const mD     = S('mDesc')   ? Math.max(0, p.des_pctMermaDescarga + randn()*sigma('mDesc'))            : p.des_pctMermaDescarga;
+    const mA     = S('mAcopio') ? Math.max(0, p.des_pctMermaAcopio + randn()*sigma('mAcopio'))            : p.des_pctMermaAcopio;
+    const vF     = S('velFact') ? Math.max(0.5, 1 + randn()*sigma('velFact'))                             : 1;
+    const pa     = p.cap_arenaFijaPorMes ? p.cap_precioArenaMes[mes] : p.cap_precioArenaOrigen;
 
-    // E2
-    const tramosV=p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
-    const {diasNav}=velPromedioPonderada(tramosV);
-    const combNavT=tramosV.reduce((acc,t)=>{const dist=(t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0));const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");},0);
-    const c2=combNavT*vlsfo+diasNav*tc;
+    // Inoperabilidad climática — con o sin ruido
+    let pZ, pB;
+    if (S('inop')) {
+      pZ = sampleInop(p.clima_zarate, mes, p.cap_inopLluvia, p.cap_inopViento, sigma('inop'));
+      pB = sampleInop(p.clima_bb,     mes, p.des_inopLluvia, p.des_inopViento, sigma('inop'));
+    } else {
+      const dZ = p.clima_zarate[mes];
+      const dB = p.clima_bb[mes];
+      const pLz = probSuperaUmbral(dZ.lluviaProm,dZ.lluviaSigma,p.cap_inopLluvia);
+      const pVz = probSuperaUmbral(dZ.vientoProm,dZ.vientoSigma,p.cap_inopViento);
+      pZ = Math.min(pLz+pVz-pLz*pVz, 0.90);
+      const pLb = probSuperaUmbral(dB.lluviaProm,dB.lluviaSigma,p.des_inopLluvia);
+      const pVb = probSuperaUmbral(dB.vientoProm,dB.vientoSigma,p.des_inopViento);
+      pB = Math.min(pLb+pVb-pLb*pVb, 0.90);
+    }
 
-    // E3
-    const vH3=p.des_gruas*p.des_grampada*p.cap_densidadArena*p.des_movGrampa*60;
-    const tI3=tnPC/vH3/p.des_horasDia;
-    const tR3=tI3+tI3*pB/Math.max(0.01,1-pB)+espBB+espZ;
-    const mDTn=tnPC*mD;const tnPD=tnPC-mDTn;
-    const tnAc=tnPD*p.des_pctAcopio;const tnDi=tnPD*(1-p.des_pctAcopio);
-    const mATn=tnAc*mA;const tnEnt=tnPD-mATn;
-    const precEq=tnPC>0?(c0+c1)/tnPC:pa;
-    const c3=p.des_opexUSDTn*tnPC+p.des_costoCamionesDirUSDTn*tnDi
-             +p.des_costoAcopioUSDTn*tnAc+tR3*p.barco_consumoPuerto*vlsfo+tR3*tc+calcAgenciaBB(p,tR3)
-             +mDTn*precEq;
+    // E0 — Reposicionamiento
+    const tramosR = (p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
+    const {diasNav:diasNavR} = velPromedioPonderada(tramosR);
+    const combRepoT = tramosR.reduce((acc,t)=>{
+      const dist = (t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0));
+      const hs = dist/t.velocidad;
+      return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
+    },0);
+    const c0 = combRepoT*vlsfo + diasNavR*tc + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
+             + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
+
+    // E1 — Carga
+    const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
+    const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
+    const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + p.cap_esperaDias;
+    const mCTn = p.cap_capacidadBarco*mC;
+    const tnPC = p.cap_capacidadBarco - mCTn;
+    const c1   = pa*p.cap_capacidadBarco + pa*mCTn + p.cap_opexUSDTn*p.cap_capacidadBarco
+               + tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + calcAgenciaZarate(p,tR1);
+
+    // E2 — Navegación ida
+    const tramosV = p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
+    const {diasNav} = velPromedioPonderada(tramosV);
+    const combNavT = tramosV.reduce((acc,t)=>{
+      const dist = (t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0));
+      const hs = dist/t.velocidad;
+      return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");
+    },0);
+    const c2 = combNavT*vlsfo + diasNav*tc;
+
+    // E3 — Descarga
+    const vH3  = p.des_gruas*p.des_grampada*p.cap_densidadArena*p.des_movGrampa*60;
+    const tI3  = tnPC/vH3/p.des_horasDia;
+    const tR3  = tI3 + tI3*pB/Math.max(0.01,1-pB) + espBB + espZ;
+    const mDTn = tnPC*mD; const tnPD = tnPC-mDTn;
+    const tnAc = tnPD*p.des_pctAcopio; const tnDi = tnPD*(1-p.des_pctAcopio);
+    const mATn = tnAc*mA; const tnEnt = tnPD-mATn;
+    const precEq = tnPC>0 ? (c0+c1)/tnPC : pa;
+    const c3 = p.des_opexUSDTn*tnPC + p.des_costoCamionesDirUSDTn*tnDi
+             + p.des_costoAcopioUSDTn*tnAc + tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
+             + calcAgenciaBB(p,tR3) + mDTn*precEq;
 
     results.push(parseFloat(((c0+c1+c2+c3)/tnEnt).toFixed(3)));
   }
 
   results.sort((a,b)=>a-b);
-  const pct=q=>results[Math.floor(q*n)];
-  const mean=results.reduce((a,b)=>a+b,0)/n;
-  const std=Math.sqrt(results.reduce((a,b)=>a+(b-mean)**2,0)/n);
-  const mn=results[0],mx=results[n-1],bins=40,bs=(mx-mn)/bins;
-  const hist=Array.from({length:bins},(_,i)=>({x:parseFloat((mn+i*bs+bs/2).toFixed(1)),count:0,pct:0}));
+  const pct  = q => results[Math.floor(q*n)];
+  const mean = results.reduce((a,b)=>a+b,0)/n;
+  const std  = Math.sqrt(results.reduce((a,b)=>a+(b-mean)**2,0)/n);
+  const mn=results[0], mx=results[n-1], bins=40, bs=(mx-mn)/bins;
+  const hist = Array.from({length:bins},(_,i)=>({x:parseFloat((mn+i*bs+bs/2).toFixed(1)),count:0,pct:0}));
   results.forEach(v=>{const bi=Math.min(Math.floor((v-mn)/bs),bins-1);hist[bi].count++;});
   hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(1)));
 
-  return {
-    hist,n,
-    mean:parseFloat(mean.toFixed(4)),
-    std:parseFloat(std.toFixed(4)),
-    p10:pct(0.10),p25:pct(0.25),p50:pct(0.50),p75:pct(0.75),p90:pct(0.90),
-    min:mn,max:mx,
-    vars:[
-      {label:"Precio VLSFO",     base:`$${basePrecio}/T (${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})`,dist:`Normal(base,σ=$${vlsfoStats.sigma12m.toFixed(0)}) volatilidad 12M`,tipo:"estadistico"},
-      {label:"Time Charter",     base:`$${p.barco_timeCharter}/día`,dist:"Normal(base,σ=$1.500)",tipo:"usuario"},
-      {label:"Velocidad barco",  base:`±8% relativo`,dist:"Factor Normal(1,σ=0.08)",tipo:"usuario"},
-      {label:"Espera BB",        base:`${p.des_esperaBBMes[mesIdx??5]}d`,dist:"Normal(base,σ=0.6d)",tipo:"estadistico"},
-      {label:"Espera Zárate",    base:`${p.des_esperaZarateDias}d`,dist:"Normal(base,σ=0.2d)",tipo:"usuario"},
-      {label:"Lluvia/Viento Z",  base:`μ=${p.clima_zarate[mesIdx??5].lluviaProm}mm,${p.clima_zarate[mesIdx??5].vientoProm}km/h`,dist:"Normal→vs umbral (cap 50%)",tipo:"estadistico"},
-      {label:"Lluvia/Viento BB", base:`μ=${p.clima_bb[mesIdx??5].lluviaProm}mm,${p.clima_bb[mesIdx??5].vientoProm}km/h`,dist:"Normal→vs umbral (cap 50%)",tipo:"estadistico"},
-      {label:"Mermas",           base:`C:${(p.cap_pctMerma*100).toFixed(1)}% D:${(p.des_pctMermaDescarga*100).toFixed(1)}% A:${(p.des_pctMermaAcopio*100).toFixed(1)}%`,dist:"Normal(base,σ~0.4%)",tipo:"usuario"},
-    ],
-  };
-}
-
-export function runMCMensual(p, n=2000) {
-  return MESES.map((_,i)=>{
-    const r  =runMonteCarlo(p,n,i);
-    const det=calcTotal(p,i);
-    return {mes:MESES[i],p10:r.p10,p25:r.p25,p50:r.p50,p75:r.p75,p90:r.p90,det:parseFloat(det.usdTn.toFixed(1))};
+  // Descripción de cada variable para el panel de la UI
+  const varsDesc = mcVars.map(v => {
+    let base = "";
+    switch(v.id) {
+      case "vlsfo":   base = `$${basePrecio}/T (${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})`; break;
+      case "tc":      base = `$${p.barco_timeCharter.toLocaleString()}/d`; break;
+      case "velFact": base = "100% (neutro)"; break;
+      case "espBB":   base = `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom. anual`; break;
+      case "espZ":    base = `${p.des_esperaZarateDias}d`; break;
+      case "mCarga":  base = `${(p.cap_pctMerma*100).toFixed(1)}%`; break;
+      case "mDesc":   base = `${(p.des_pctMermaDescarga*100).toFixed(1)}%`; break;
+      case "mAcopio": base = `${(p.des_pctMermaAcopio*100).toFixed(1)}%`; break;
+      case "inop":    base = "pBase calculado del clima"; break;
+      default:        base = "—";
+    }
+    const s = v.id==="vlsfo" ? sigmaVLSFO : (v.sigma??0);
+    return { ...v, base, sigmaEfectivo: s };
   });
+
+  return {
+    hist, n,
+    mean: parseFloat(mean.toFixed(4)),
+    std:  parseFloat(std.toFixed(4)),
+    p10:pct(0.10), p25:pct(0.25), p50:pct(0.50), p75:pct(0.75), p90:pct(0.90),
+    min:mn, max:mx,
+    varsDesc,
+  };
 }
