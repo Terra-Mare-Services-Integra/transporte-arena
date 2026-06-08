@@ -12,7 +12,7 @@ import {
   calcEtapaRepo, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal,
   calcAgenciaZarate, calcAgenciaBB,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
-  runMonteCarlo, runMCMensual,
+  runMonteCarlo,
 } from "./lib/motor";
 import { supabase } from "./lib/supabase";
 
@@ -1294,27 +1294,35 @@ function TabVuelta({p,set,tnEntregadas}) {
 }
 
 // ─── TAB MC: MONTE CARLO ───────────────────────────────────────────────────
-function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
+function TabMC({p,set,resultado,setResultado}) {
   const [n,setN]=useState(5000);
-  const [mes,setMes]=useState(null);
   const [running,setR]=useState(false);
-  const [runM,setRM]=useState(false);
   const [savingMC,setSavingMC]=useState(false);
   const [nomMC,setNomMC]=useState("");
   const [msgMC,setMsgMC]=useState("");
-  const det=calcTotal(p,mes??5);
+  const det=calcTotal(p,5);
   const res=resultado;
 
-  const run=useCallback(()=>{setR(true);setTimeout(()=>{setResultado(runMonteCarlo(p,n,mes));setR(false);},60);},[p,n,mes,setResultado]);
-  const runMCFn=useCallback(()=>{setRM(true);setTimeout(()=>{setMcMes(runMCMensual(p,2000));setRM(false);},80);},[p,setMcMes]);
+  // mc_vars vive en p — editamos a través de set("mc_vars", ...)
+  const mcVars = p.mc_vars || DEFAULT_PARAMS.mc_vars;
+  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
+
+  const updateVar=(id,field,val)=>{
+    const arr=mcVars.map(v=>v.id===id?{...v,[field]:val}:v);
+    set("mc_vars",arr);
+  };
+
+  const run=useCallback(()=>{
+    setR(true);
+    setTimeout(()=>{setResultado(runMonteCarlo(p,n));setR(false);},60);
+  },[p,n,setResultado]);
 
   const guardarMC=async()=>{
     if(!res){setMsgMC("Corré la simulación primero");return;}
     if(!nomMC.trim()){setMsgMC("Ingresá un nombre");return;}
     setSavingMC(true);
-    const stats=calcVLSFOStats(p.vlsfo_historico);
     const{error}=await supabase.from("corridas_montecarlo").insert({
-      escenario_nombre:nomMC.trim(),n_simulaciones:res.n,mes_analizado:mes,
+      escenario_nombre:nomMC.trim(),n_simulaciones:res.n,mes_analizado:null,
       p10:res.p10,p25:res.p25,p50:res.p50,p75:res.p75,p90:res.p90,
       mean_val:res.mean,std_val:res.std,
       spread:parseFloat((res.p90-res.p10).toFixed(1)),
@@ -1328,44 +1336,169 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
   };
 
   const pBadges=res?[
-    {l:"P10 — Optimista",   v:res.p10,bg:"#F0FDF4",bc:"#86EFAC",c:C.p10,  d:"Solo 10% de escenarios tiene costo menor. Condiciones favorables acumuladas."},
-    {l:"P25",               v:res.p25,bg:"#F0FDF4",bc:"#86EFAC",c:"#1a7a3a",d:"Cuartil optimista. 25% de escenarios es mejor."},
-    {l:"P50 — Más probable",v:res.p50,bg:"#FFFBEB",bc:"#D4B84A",c:C.p50,  d:"Mediana. 50% mejor y 50% peor. Caso más representativo."},
-    {l:"P75",               v:res.p75,bg:"#FEF3C7",bc:"#D4B84A",c:C.orange,d:"Cuartil pesimista. 75% de escenarios es mejor."},
-    {l:"P90 — Pesimista",   v:res.p90,bg:"#FEE2E2",bc:"#FECACA",c:C.p90,  d:"Solo 10% de escenarios tiene costo mayor. Condiciones adversas."},
+    {l:"P10 — Optimista",   v:res.p10,bg:"#F0FDF4",bc:"#86EFAC",c:C.p10,   d:"Solo 10% de escenarios tiene costo menor."},
+    {l:"P25",               v:res.p25,bg:"#F0FDF4",bc:"#86EFAC",c:"#1a7a3a",d:"Cuartil optimista."},
+    {l:"P50 — Más probable",v:res.p50,bg:"#FFFBEB",bc:"#D4B84A",c:C.p50,   d:"Mediana — caso más representativo."},
+    {l:"P75",               v:res.p75,bg:"#FEF3C7",bc:"#D4B84A",c:C.orange, d:"Cuartil pesimista."},
+    {l:"P90 — Pesimista",   v:res.p90,bg:"#FEE2E2",bc:"#FECACA",c:C.p90,   d:"Solo 10% de escenarios tiene costo mayor."},
   ]:[];
+
+  // Rango ±2σ para mostrar en la tabla
+  const rango=(v)=>{
+    const s = v.id==="vlsfo"
+      ? (v.sigma!==null&&v.sigma!==undefined ? v.sigma : vlsfoStats.sigma12m)
+      : (v.sigma??0);
+    if(!v.activa || s===0) return "Fijo";
+    const base=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
+    switch(v.id){
+      case "vlsfo":   return `$${(base-2*s).toFixed(0)} – $${(base+2*s).toFixed(0)}`;
+      case "tc":      return `$${(p.barco_timeCharter-2*s).toFixed(0)} – $${(p.barco_timeCharter+2*s).toFixed(0)}`;
+      case "velFact": return `${((1-2*s)*100).toFixed(0)}% – ${((1+2*s)*100).toFixed(0)}%`;
+      case "espBB": {const avg=p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;return `${Math.max(0,avg-2*s).toFixed(1)} – ${(avg+2*s).toFixed(1)} d`;}
+      case "espZ":    return `${Math.max(0,p.des_esperaZarateDias-2*s).toFixed(1)} – ${(p.des_esperaZarateDias+2*s).toFixed(1)} d`;
+      case "mCarga":  return `${Math.max(0,(p.cap_pctMerma-2*s)*100).toFixed(1)}% – ${((p.cap_pctMerma+2*s)*100).toFixed(1)}%`;
+      case "mDesc":   return `${Math.max(0,(p.des_pctMermaDescarga-2*s)*100).toFixed(1)}% – ${((p.des_pctMermaDescarga+2*s)*100).toFixed(1)}%`;
+      case "mAcopio": return `${Math.max(0,(p.des_pctMermaAcopio-2*s)*100).toFixed(1)}% – ${((p.des_pctMermaAcopio+2*s)*100).toFixed(1)}%`;
+      case "inop":    return `±${(s*100).toFixed(0)}% del pBase calculado`;
+      default: return "—";
+    }
+  };
+
+  const sigmaLabel=(v)=>{
+    if(v.id==="vlsfo") return v.sigma!==null&&v.sigma!==undefined ? `$${v.sigma}` : `$${vlsfoStats.sigma12m.toFixed(0)} (auto)`;
+    if(!v.sigma&&v.sigma!==0) return "—";
+    switch(v.id){
+      case "tc":      return `$${v.sigma}`;
+      case "velFact": return `${(v.sigma*100).toFixed(0)}%`;
+      case "inop":    return `${(v.sigma*100).toFixed(0)}%`;
+      default: return v.unit==="frac." ? `${(v.sigma*100).toFixed(1)}%` : `${v.sigma}`;
+    }
+  };
 
   return (
     <div>
       <div className="card" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
         <div className="ct" style={{color:"#0369A1"}}>¿Qué es el Monte Carlo?</div>
-        <p style={{fontSize:11,color:"#0369A1",lineHeight:1.7,marginBottom:6}}>
-          El modelo determinístico produce <strong>un solo número</strong>. El Monte Carlo corre el modelo <strong>N veces</strong>, sorteando valores aleatorios para cada variable según su distribución. El resultado es una <strong>distribución de probabilidad</strong> del costo: en lugar de "$68/Tn", obtenés "$67–$70/Tn con 80% de confianza".
+        <p style={{fontSize:11,color:"#0369A1",lineHeight:1.7}}>
+          Corre el modelo <strong>N veces</strong> sorteando valores aleatorios para cada variable activa según distribuciones Normal centradas en el valor base.
+          El mes se sortea al azar en cada iteración — el resultado representa el <strong>costo anualizado esperado</strong>, ponderando todos los meses según su clima y estacionalidad.
+          Las variables marcadas <strong>Fija</strong> se toman sin ruido.
         </p>
       </div>
+
+      {/* ── TABLA DE VARIABLES ── */}
+      <div className="card">
+        <div className="ct">Variables Estocásticas <TipoBadge tipo="usuario"/></div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead>
+              <tr style={{background:C.navy}}>
+                {["Variable","Valor base","σ (editable)","Rango ~95% (±2σ)","Activa","Nota"].map(h=>(
+                  <th key={h} style={{padding:"6px 9px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,
+                    textTransform:"uppercase",letterSpacing:.5,textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {mcVars.map((v,i)=>{
+                const esFija=!v.activa;
+                const sigmaAuto=v.id==="vlsfo"&&(v.sigma===null||v.sigma===undefined);
+                return (
+                  <tr key={v.id} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB",opacity:esFija?0.55:1}}>
+                    {/* Variable */}
+                    <td style={{padding:"7px 9px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{v.label}</td>
+                    {/* Valor base */}
+                    <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid,whiteSpace:"nowrap"}}>
+                      {v.id==="vlsfo" && `$${getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico)}/T`}
+                      {v.id==="tc"      && `$${p.barco_timeCharter.toLocaleString()}/d`}
+                      {v.id==="velFact" && "100%"}
+                      {v.id==="espBB"   && `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom.`}
+                      {v.id==="espZ"    && `${p.des_esperaZarateDias}d`}
+                      {v.id==="mCarga"  && `${(p.cap_pctMerma*100).toFixed(1)}%`}
+                      {v.id==="mDesc"   && `${(p.des_pctMermaDescarga*100).toFixed(1)}%`}
+                      {v.id==="mAcopio" && `${(p.des_pctMermaAcopio*100).toFixed(1)}%`}
+                      {v.id==="inop"    && "pBase clima"}
+                    </td>
+                    {/* Sigma editable */}
+                    <td style={{padding:"5px 9px"}}>
+                      {sigmaAuto ? (
+                        <div style={{display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{fontSize:10,fontFamily:"DM Mono,monospace",color:T.stat.text,
+                            background:T.stat.bg,border:`1px solid ${T.stat.border}`,borderRadius:4,padding:"2px 7px"}}>
+                            ${vlsfoStats.sigma12m.toFixed(0)} auto
+                          </span>
+                          <button onClick={()=>updateVar(v.id,"sigma",vlsfoStats.sigma12m)}
+                            style={{fontSize:8,padding:"2px 6px",borderRadius:4,border:`1px solid ${C.border}`,
+                            background:"#fff",color:C.mid,cursor:"pointer"}}>fijar</button>
+                        </div>
+                      ):(
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          <input type="number"
+                            value={v.id==="velFact"||v.id==="inop" ? (v.sigma??0)*100 : (v.sigma??0)}
+                            min={0} step={v.id==="vlsfo"?5:v.id==="tc"?50:v.id==="velFact"||v.id==="inop"?1:0.1}
+                            onChange={e=>{
+                              const val=parseFloat(e.target.value)||0;
+                              const stored=(v.id==="velFact"||v.id==="inop")?val/100:val;
+                              updateVar(v.id,"sigma",stored);
+                            }}
+                            disabled={esFija}
+                            style={{width:65,background:esFija?"#F3F4F6":T.usuario.bg,
+                              border:`1px solid ${esFija?C.border:T.usuario.border}`,
+                              borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
+                              color:esFija?C.mid:T.usuario.text,fontWeight:700,textAlign:"center"}}/>
+                          <span style={{fontSize:9,color:C.mid}}>{v.id==="velFact"||v.id==="inop"?"%":v.unit==="frac."%"":v.unit}</span>
+                          {v.id==="vlsfo"&&<button onClick={()=>updateVar(v.id,"sigma",null)}
+                            style={{fontSize:8,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.stat.border}`,
+                            background:T.stat.bg,color:T.stat.text,cursor:"pointer"}}>auto</button>}
+                        </div>
+                      )}
+                    </td>
+                    {/* Rango */}
+                    <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,
+                      color:esFija?C.mid:C.gold,fontWeight:esFija?400:700}}>
+                      {esFija?"—":rango(v)}
+                    </td>
+                    {/* Toggle activa/fija */}
+                    <td style={{padding:"7px 9px",textAlign:"center"}}>
+                      <button onClick={()=>updateVar(v.id,"activa",!v.activa)}
+                        style={{padding:"3px 10px",borderRadius:5,fontSize:9,fontWeight:700,cursor:"pointer",
+                          border:`1px solid ${v.activa?C.navy:C.border}`,
+                          background:v.activa?C.navy:"#fff",
+                          color:v.activa?"#fff":C.mid,transition:"all .15s"}}>
+                        {v.activa?"Activa":"Fija"}
+                      </button>
+                    </td>
+                    {/* Nota */}
+                    <td style={{padding:"7px 9px",fontSize:9,color:C.mid,maxWidth:220}}>{v.nota}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{marginTop:8,fontSize:9,color:C.mid,fontStyle:"italic"}}>
+          σ = desviación estándar de la distribución Normal. ~95% de los sorteos caen dentro de ±2σ del valor base.
+          El mes se sortea al azar en cada iteración (análisis anual ponderado).
+        </div>
+      </div>
+
+      {/* ── CONFIGURACIÓN Y CORRER ── */}
       <div className="card">
         <div className="ct">Configuración</div>
-        <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:8}}>
+        <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
           <div>
-            <div style={{fontSize:8,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>N simulaciones <TipoBadge tipo="usuario"/></div>
+            <div style={{fontSize:8,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>N simulaciones</div>
             <select className="campo-input" value={n} onChange={e=>setN(Number(e.target.value))}
               style={{width:130,background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}>
               {[1000,3000,5000,10000].map(v=><option key={v} value={v}>{v.toLocaleString()}</option>)}
             </select>
           </div>
-          <div>
-            <div style={{fontSize:8,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>Mes</div>
-            <select className="campo-input" value={mes??""} onChange={e=>setMes(e.target.value===""?null:Number(e.target.value))}
-              style={{width:160,background:T.stat.bg,borderColor:T.stat.border,color:T.stat.text}}>
-              <option value="">Año completo</option>
-              {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
-            </select>
-          </div>
           <button className="run" onClick={run} disabled={running}>{running?"Calculando...":"▶ Correr"}</button>
-          <span style={{fontSize:10,color:C.muted}}>Base det.: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
+          <span style={{fontSize:10,color:C.muted}}>Base det. (Jun): <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
         </div>
       </div>
 
+      {/* ── RESULTADOS ── */}
       {res&&(
         <>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
@@ -1382,9 +1515,9 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
               <div className="pbadge-d" style={{color:C.muted}}>σ=${res.std.toFixed(1)}</div>
             </div>
             <div className="pbadge" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
-              <div className="pbadge-l" style={{color:"#0369A1"}}>Media (4 dec.)</div>
-              <div className="pbadge-v" style={{color:"#0369A1",fontSize:14}}>${res.mean.toFixed(4)}</div>
-              <div className="pbadge-d" style={{color:"#0369A1"}}>varía ~±${(res.std/Math.sqrt(res.n)*2).toFixed(3)}</div>
+              <div className="pbadge-l" style={{color:"#0369A1"}}>Media</div>
+              <div className="pbadge-v" style={{color:"#0369A1",fontSize:14}}>${res.mean.toFixed(2)}</div>
+              <div className="pbadge-d" style={{color:"#0369A1"}}>±${(res.std/Math.sqrt(res.n)*2).toFixed(3)} error</div>
             </div>
           </div>
 
@@ -1392,7 +1525,7 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
             <div className="ct" style={{color:C.green}}>Guardar esta corrida</div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               <input type="text" value={nomMC} onChange={e=>setNomMC(e.target.value)}
-                placeholder="Ej: Junio 2026 — VLSFO hoy — 5000 sims"
+                placeholder="Ej: Anual 2026 — VLSFO hoy — 5000 sims"
                 style={{flex:2,minWidth:180,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,
                   borderRadius:6,padding:"6px 8px",color:T.usuario.text,fontSize:12,fontFamily:"Montserrat,sans-serif"}}/>
               <button className="run" onClick={guardarMC} disabled={savingMC} style={{background:C.green}}>
@@ -1401,12 +1534,12 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
               {msgMC&&<span style={{fontSize:11,color:msgMC.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msgMC}</span>}
             </div>
             <div style={{fontSize:9,color:C.green,marginTop:5}}>
-              Se guarda: P10=${res.p10} P50=${res.p50} P90=${res.p90} · Spread=${(res.p90-res.p10).toFixed(1)} · VLSFO: {VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}
+              Anualizado — P10=${res.p10} P50=${res.p50} P90=${res.p90} · Spread=${(res.p90-res.p10).toFixed(1)}
             </div>
           </div>
 
           <div className="card">
-            <div className="ct">Distribución de Probabilidad</div>
+            <div className="ct">Distribución de Probabilidad — Anual</div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={res.hist} margin={{top:8,right:8,left:0,bottom:5}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
@@ -1426,88 +1559,30 @@ function TabMC({p,resultado,setResultado,mcMes,setMcMes}) {
             </ResponsiveContainer>
           </div>
 
-          <div className="card">
-            <div className="ct">Variables en la Simulación</div>
-            <div className="mc-var-row" style={{fontWeight:700,fontSize:8,color:C.muted,background:"transparent",textTransform:"uppercase",letterSpacing:.5}}>
-              <span>Variable</span><span>Valor base</span><span>Distribución</span><span>Tipo</span>
-            </div>
-            {res.vars.map((v,i)=>(
-              <div key={i} className="mc-var-row">
-                <span style={{fontWeight:600,color:C.navy}}>{v.label}</span>
-                <span style={{fontFamily:"DM Mono,monospace",fontSize:9,color:v.tipo==="usuario"?T.usuario.text:T.stat.text}}>{v.base}</span>
-                <span style={{fontSize:9,color:C.muted}}>{v.dist}</span>
-                <TipoBadge tipo={v.tipo}/>
+          {/* Tabla de variables usadas en esta corrida */}
+          {res.varsDesc&&(
+            <div className="card">
+              <div className="ct">Variables en esta corrida</div>
+              <div className="mc-var-row" style={{fontWeight:700,fontSize:8,color:C.muted,background:"transparent",textTransform:"uppercase",letterSpacing:.5}}>
+                <span>Variable</span><span>Valor base</span><span>σ efectivo</span><span>Estado</span>
               </div>
-            ))}
-          </div>
+              {res.varsDesc.map((v,i)=>(
+                <div key={i} className="mc-var-row" style={{opacity:v.activa?1:0.5}}>
+                  <span style={{fontWeight:600,color:C.navy}}>{v.label}</span>
+                  <span style={{fontFamily:"DM Mono,monospace",fontSize:9,color:C.mid}}>{v.base}</span>
+                  <span style={{fontFamily:"DM Mono,monospace",fontSize:9,color:v.activa?T.usuario.text:C.mid}}>
+                    {v.activa?sigmaLabel(v):"—"}
+                  </span>
+                  <TipoBadge tipo={v.activa?"usuario":"formula"}/>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
-
-      <div className="card">
-        <div className="ct">Análisis de Estacionalidad — USD/Tn por Mes</div>
-        <p style={{fontSize:10,color:C.muted,lineHeight:1.6,marginBottom:8}}>
-          2.000 simulaciones por mes (24.000 total). Muestra variación estacional por clima, espera en BB y estacionalidad del combustible.
-        </p>
-        <button className="run" onClick={runMCFn} disabled={runM} style={{marginBottom:10}}>
-          {runM?"Calculando 24.000 simulaciones...":"▶ Correr Análisis Estacional"}
-        </button>
-        {mcMes&&(
-          <>
-            {[
-              {key:"p10",label:"P10 — Caso Optimista",color:C.p10,desc:"Solo el 10% de los viajes de ese mes costará menos. Buen clima, poca espera, combustible bajo."},
-              {key:"p50",label:"P50 — Caso Más Probable",color:C.p50,desc:"Mediana mensual. Resultado más representativo de un viaje típico de ese mes."},
-              {key:"p90",label:"P90 — Caso Pesimista",color:C.p90,desc:"Solo el 10% de los viajes costará más. Mal clima, demoras y combustible caro."},
-            ].map(({key,label,color,desc})=>(
-              <div key={key} style={{marginBottom:14}}>
-                <div style={{fontSize:10,fontWeight:700,color,marginBottom:2}}>{label}</div>
-                <div style={{fontSize:9,color:C.muted,marginBottom:5}}>{desc}</div>
-                <ResponsiveContainer width="100%" height={140}>
-                  <BarChart data={mcMes} margin={{top:5,right:8,left:0,bottom:5}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-                    <XAxis dataKey="mes" tick={{fill:C.muted,fontSize:10}}/>
-                    <YAxis tick={{fill:C.muted,fontSize:9}} domain={["auto","auto"]}/>
-                    <Tooltip {...TTip} formatter={v=>[`$${v.toFixed(1)} USD/Tn`]}/>
-                    <ReferenceLine y={mcMes.reduce((a,r)=>a+r[key],0)/12} stroke={color} strokeDasharray="4 4"
-                      label={{value:`Prom $${(mcMes.reduce((a,r)=>a+r[key],0)/12).toFixed(1)}`,fill:color,fontSize:9}}/>
-                    <Bar dataKey={key} radius={[3,3,0,0]}>
-                      {mcMes.map((d,i)=>{const avg=mcMes.reduce((a,r)=>a+r[key],0)/12;return <Cell key={i} fill={d[key]>avg?`${color}CC`:`${color}66`}/>;})};
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ))}
-            <div style={{overflowX:"auto"}}>
-              <table className="cost-table">
-                <thead><tr><th>Mes</th><th>P10</th><th>P25</th><th style={{color:"#FCD34D"}}>P50</th><th>P75</th><th>P90</th><th>Det.</th><th>Spread</th></tr></thead>
-                <tbody>
-                  {mcMes.map(r=>(
-                    <tr key={r.mes}>
-                      <td style={{fontWeight:700}}>{r.mes}</td>
-                      {[r.p10,r.p25,r.p50,r.p75,r.p90,r.det].map((v,j)=>(
-                        <td key={j} className="mono" style={{textAlign:"right",color:j===2?C.p50:j===5?C.blue:C.navy}}>${v.toFixed(1)}</td>
-                      ))}
-                      <td className="mono" style={{textAlign:"right",color:C.orange}}>${(r.p90-r.p10).toFixed(1)}</td>
-                    </tr>
-                  ))}
-                  <tr className="total">
-                    <td>PROM.</td>
-                    {["p10","p25","p50","p75","p90","det"].map(k=>(
-                      <td key={k} className="mono" style={{textAlign:"right",color:k==="p50"?C.p50:k==="det"?C.blue:"#fff"}}>
-                        ${(mcMes.reduce((a,r)=>a+r[k],0)/12).toFixed(1)}
-                      </td>
-                    ))}
-                    <td className="mono" style={{textAlign:"right",color:"#FCA5A5"}}>${(mcMes.reduce((a,r)=>a+(r.p90-r.p10),0)/12).toFixed(1)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }
-
 // ─── TAB EV: EVALUACIÓN TOTAL ──────────────────────────────────────────────
 function TabEvaluacion({p,tnEntregadas}) {
   const [mes,setMes]=useState(5);
@@ -2838,7 +2913,6 @@ export default function App() {
   const [tab,setTab]=useState("barco");
   const [params,setParams]=useState(DEFAULT_PARAMS);
   const [mcResultado,setMcResultado]=useState(null);
-  const [mcMensual,setMcMensual]=useState(null);
   const set=useCallback((k,v)=>setParams(prev=>({...prev,[k]:v})),[]);
   const tot=useMemo(()=>calcTotal(params),[params]);
 
@@ -2850,7 +2924,7 @@ export default function App() {
     e2:   <TabNavegacion p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     abb:  <TabAgenciaBB  p={params} set={set}/>,
     e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
-    mc:   <TabMC         p={params} resultado={mcResultado} setResultado={setMcResultado} mcMes={mcMensual} setMcMes={setMcMensual}/>,
+    mc:   <TabMC         p={params} set={set} resultado={mcResultado} setResultado={setMcResultado}/>,
     ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas}/>,
     sens: <TabSensibilidades p={params}/>,
     cl:   <TabClima      p={params} set={set}/>,
