@@ -1446,7 +1446,7 @@ function TabMC({p,set,resultado,setResultado}) {
                               border:`1px solid ${esFija?C.border:T.usuario.border}`,
                               borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
                               color:esFija?C.mid:T.usuario.text,fontWeight:700,textAlign:"center"}}/>
-                          <span style={{fontSize:9,color:C.mid}}>{v.id==="velFact"||v.id==="inop"?"%":v.unit==="frac."%"":v.unit}</span>
+                          <span style={{fontSize:9,color:C.mid}}>{v.id==="velFact"||v.id==="inop"?"%":v.unit==="frac."?"":v.unit}</span>
                           {v.id==="vlsfo"&&<button onClick={()=>updateVar(v.id,"sigma",null)}
                             style={{fontSize:8,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.stat.border}`,
                             background:T.stat.bg,color:T.stat.text,cursor:"pointer"}}>auto</button>}
