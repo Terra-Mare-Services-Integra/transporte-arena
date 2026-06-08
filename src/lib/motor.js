@@ -745,17 +745,55 @@ export function runMonteCarlo(p, n=5000) {
              + p.des_costoAcopioUSDTn*tnAc + tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
              + calcAgenciaBB(p,tR3) + mDTn*precEq;
 
-    results.push(parseFloat(((c0+c1+c2+c3)/tnEnt).toFixed(3)));
+    // Desglose de ítems para proforma MC
+    const combTotal = combRepoT + (tR1*p.barco_consumoPuerto) + combNavT + (tR3*p.barco_consumoPuerto);
+    const barcoTotal = (diasNavR + tR1 + diasNav + tR3) * tc;
+    const agZarate   = calcAgenciaZarate(p, tR1);
+    const agBB       = calcAgenciaBB(p, tR3);
+    const opex       = p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnPC;
+    const camiones   = p.des_costoCamionesDirUSDTn*tnDi + p.des_costoAcopioUSDTn*tnAc;
+    const arena      = pa*p.cap_capacidadBarco;
+    const mermas     = pa*mCTn + mDTn*precEq + mATn*precEq;
+    const repo       = c0;
+    const total      = c0+c1+c2+c3;
+
+    results.push({
+      total: parseFloat((total/tnEnt).toFixed(3)),
+      items: {
+        arena:    parseFloat((arena/tnEnt).toFixed(3)),
+        mermas:   parseFloat((mermas/tnEnt).toFixed(3)),
+        barco:    parseFloat((barcoTotal/tnEnt).toFixed(3)),
+        comb:     parseFloat((combTotal*vlsfo/tnEnt).toFixed(3)),
+        agZarate: parseFloat((agZarate/tnEnt).toFixed(3)),
+        agBB:     parseFloat((agBB/tnEnt).toFixed(3)),
+        opex:     parseFloat((opex/tnEnt).toFixed(3)),
+        camiones: parseFloat((camiones/tnEnt).toFixed(3)),
+        repo:     parseFloat((repo/tnEnt).toFixed(3)),
+      },
+    });
   }
 
-  results.sort((a,b)=>a-b);
-  const pct  = q => results[Math.floor(q*n)];
-  const mean = results.reduce((a,b)=>a+b,0)/n;
-  const std  = Math.sqrt(results.reduce((a,b)=>a+(b-mean)**2,0)/n);
-  const mn=results[0], mx=results[n-1], bins=40, bs=(mx-mn)/bins;
+  results.sort((a,b)=>a.total-b.total);
+  const pct  = q => results[Math.floor(q*n)].total;
+  const totals = results.map(r=>r.total);
+  const mean = totals.reduce((a,b)=>a+b,0)/n;
+  const std  = Math.sqrt(totals.reduce((a,b)=>a+(b-mean)**2,0)/n);
+  const mn=totals[0], mx=totals[n-1], bins=40, bs=(mx-mn)/bins;
   const hist = Array.from({length:bins},(_,i)=>({x:parseFloat((mn+i*bs+bs/2).toFixed(1)),count:0,pct:0}));
-  results.forEach(v=>{const bi=Math.min(Math.floor((v-mn)/bs),bins-1);hist[bi].count++;});
+  totals.forEach(v=>{const bi=Math.min(Math.floor((v-mn)/bs),bins-1);hist[bi].count++;});
   hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(1)));
+
+  // Percentiles por ítem — tomados en los índices P10/P50/P90 del total ordenado
+  const idxP10=Math.floor(0.10*n), idxP50=Math.floor(0.50*n), idxP90=Math.floor(0.90*n);
+  const ITEM_KEYS = ['arena','mermas','barco','comb','agZarate','agBB','opex','camiones','repo'];
+  const proforma = {};
+  ITEM_KEYS.forEach(k=>{
+    proforma[k] = {
+      p10: results[idxP10].items[k],
+      p50: results[idxP50].items[k],
+      p90: results[idxP90].items[k],
+    };
+  });
 
   // Descripción de cada variable para el panel de la UI
   const varsDesc = mcVars.map(v => {
@@ -782,6 +820,7 @@ export function runMonteCarlo(p, n=5000) {
     std:  parseFloat(std.toFixed(4)),
     p10:pct(0.10), p25:pct(0.25), p50:pct(0.50), p75:pct(0.75), p90:pct(0.90),
     min:mn, max:mx,
+    proforma,
     varsDesc,
   };
 }
