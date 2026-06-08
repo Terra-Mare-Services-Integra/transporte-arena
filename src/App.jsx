@@ -982,10 +982,16 @@ function TabNavegacion({p,set,tnEntregadas}) {
             })}
           </tbody>
         </table>
-        <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
-          <button className="run" style={{fontSize:10,padding:"5px 12px"}} onClick={agregarTramo}>+ Agregar tramo</button>
-          <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{e2.totalMn} mn · {e2.diasNav.toFixed(1)} días</strong></span>
-        </div>
+        {(()=>{
+          const totalMnLocal = tramos.reduce((a,t)=>a+(t.distancia||0),0);
+          const totalDiasLocal = tramos.reduce((a,t)=>t.velocidad>0?a+(t.distancia||0)/t.velocidad/24:a,0);
+          return (
+            <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
+              <button className="run" style={{fontSize:10,padding:"5px 12px"}} onClick={agregarTramo}>+ Agregar tramo</button>
+              <span style={{fontSize:10,color:C.mid}}>Total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{totalMnLocal.toFixed(1)} mn · {totalDiasLocal.toFixed(1)} días</strong></span>
+            </div>
+          );
+        })()}
       </div>
       <div className="card">
         <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
