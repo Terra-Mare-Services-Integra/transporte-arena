@@ -371,10 +371,10 @@ export function getInopDetalle(climaDB, umbralLluvia, umbralViento, mesIdx) {
 }
 
 export function velPromedioPonderada(tramos) {
-  // Distancia calculada de waypoints (Haversine) o del campo distancia si existe
+  // Prioridad: distancia manual del usuario (>0) → wpIds Haversine → 0
   const tramosConDist = tramos.map(t => ({
     ...t,
-    distanciaCalc: t.wpIds ? calcDistanciaTramo(t) : (t.distancia || 0),
+    distanciaCalc: (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0),
   }));
   const totalMn  = tramosConDist.reduce((a,t)=>a+t.distanciaCalc, 0);
   const totalHrs = tramosConDist.reduce((a,t)=>a+t.distanciaCalc/t.velocidad, 0);
@@ -458,9 +458,9 @@ export function calcEtapa2(p) {
   const tc=p.barco_timeCharter+p.barco_tripulacion;
   const nav=velPromedioPonderada(p.nav_tramos);
 
-  // Consumo interpolado por tramo — usa distancia Haversine si hay wpIds, sino distancia directa
+  // Consumo interpolado por tramo — prioridad: distancia manual (>0) → wpIds Haversine → 0
   const combNavTotal = p.nav_tramos.reduce((acc,t)=>{
-    const dist = t.wpIds ? calcDistanciaTramo(t) : (t.distancia||0);
+    const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
     const hs = dist/t.velocidad;
     const consumoDia = interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "cargado");
     return acc + (hs/24)*consumoDia;
@@ -575,7 +575,7 @@ export function calcEtapaRepo(p) {
   const nav      = velPromedioPonderada(tramos);
 
   const combTotal = tramos.reduce((acc, t) => {
-    const dist = t.wpIds ? calcDistanciaTramo(t) : (t.distancia || 0);
+    const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
     const hs   = dist / t.velocidad;
     // Viaje en lastre al puerto de carga
     const consumoDia = interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
@@ -666,7 +666,7 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     // E0 — Reposicionamiento (Rio Grande → Zárate, lastre)
     const tramosR=(p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
     const {diasNav:diasNavR}=velPromedioPonderada(tramosR);
-    const combRepoT=tramosR.reduce((acc,t)=>{const dist=t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0);const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
+    const combRepoT=tramosR.reduce((acc,t)=>{const dist=(t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0));const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");},0);
     const c0=combRepoT*vlsfo+diasNavR*tc+(p.barco_limpiezaBodega||0)+(p.barco_importacionWaiver||0)
              +(p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
 
@@ -682,7 +682,7 @@ export function runMonteCarlo(p, n=5000, mesIdx=null) {
     // E2
     const tramosV=p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
     const {diasNav}=velPromedioPonderada(tramosV);
-    const combNavT=tramosV.reduce((acc,t)=>{const dist=t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0);const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");},0);
+    const combNavT=tramosV.reduce((acc,t)=>{const dist=(t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0));const hs=dist/t.velocidad;return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");},0);
     const c2=combNavT*vlsfo+diasNav*tc;
 
     // E3
