@@ -1559,6 +1559,61 @@ function TabMC({p,set,resultado,setResultado}) {
             </ResponsiveContainer>
           </div>
 
+          {/* Proforma MC — desglose USD/Tn por ítem */}
+          {res.proforma&&(
+            <div className="card">
+              <div className="ct">Proforma de Costos — P10 / P50 / P90</div>
+              <div style={{fontSize:10,color:C.mid,marginBottom:8}}>
+                Cada línea muestra el percentil de ese ítem <strong>en el escenario P10/P50/P90 del costo total</strong> — no son percentiles independientes.
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                  <thead>
+                    <tr style={{background:C.navy}}>
+                      {["Concepto","P10 — Optimista","P50 — Base","P90 — Pesimista","Δ P90−P10"].map((h,i)=>(
+                        <th key={h} style={{padding:"6px 10px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,
+                          textTransform:"uppercase",letterSpacing:.5,textAlign:i===0?"left":"right"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      {k:"arena",    label:"Precio arena en origen",  color:C.navy},
+                      {k:"mermas",   label:"Mermas totales",           color:C.red},
+                      {k:"barco",    label:"Barco (TC+Trip+Misc)",     color:C.blue},
+                      {k:"comb",     label:"Combustible total",        color:C.orange},
+                      {k:"agZarate", label:"Agencia Zárate",           color:C.navy},
+                      {k:"agBB",     label:"Agencia BB",               color:C.navy},
+                      {k:"opex",     label:"Opex carga + descarga",    color:C.navy},
+                      {k:"camiones", label:"Camiones + Acopio",        color:C.navy},
+                      {k:"repo",     label:"Reposicionamiento",        color:C.mid},
+                    ].map(({k,label,color},i)=>{
+                      const r=res.proforma[k];
+                      const delta=(r.p90-r.p10).toFixed(1);
+                      return (
+                        <tr key={k} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB"}}>
+                          <td style={{padding:"6px 10px",fontWeight:600,color}}>{label}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p10,fontWeight:700}}>${r.p10.toFixed(1)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p50,fontWeight:700}}>${r.p50.toFixed(1)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p90,fontWeight:700}}>${r.p90.toFixed(1)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,
+                            color:parseFloat(delta)>0.5?C.red:C.mid}}>{parseFloat(delta)>0?"+ $"+delta:"$"+delta}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{background:C.navy}}>
+                      <td style={{padding:"7px 10px",fontWeight:800,color:"#fff",fontSize:12}}>TOTAL USD/Tn</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#86EFAC",fontSize:13}}>${res.p10.toFixed(1)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:13}}>${res.p50.toFixed(1)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCA5A5",fontSize:13}}>${res.p90.toFixed(1)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:"#FCA5A5",fontSize:12}}>+ ${(res.p90-res.p10).toFixed(1)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Tabla de variables usadas en esta corrida */}
           {res.varsDesc&&(
             <div className="card">
