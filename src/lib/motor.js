@@ -522,8 +522,11 @@ export function calcEtapa2(p) {
 // Modela el sistema tolva/compuerta con camiones directos (Neuquén) y calesitas
 // (depósito local). Toda la lógica sale de parámetros físicos — sin porcentajes forzados.
 export function calcScheduler(p, tnTotal) {
+  // Guard: tnTotal must be a positive number
+  const tn = (typeof tnTotal === 'number' && isFinite(tnTotal) && tnTotal > 0) ? tnTotal : 0;
+
   const densidad      = p.cap_densidadArena   || 1.45;
-  const nTolvas       = p.des_gruas           || 2;
+  const nTolvas       = Math.max(1, p.des_gruas || 2);
   const grampada_m3   = p.des_grampada        || 15;
   const movPorMin     = p.des_movGrampa       || 0.5;
   const tolva_m3      = p.des_tolva_vol_m3    || 60;
@@ -532,97 +535,73 @@ export function calcScheduler(p, tnTotal) {
   const tCierreMin    = p.des_t_cierre_min    || 1;
 
   // ── GRÚA ────────────────────────────────────────────────────────────────
-  const vel_grua_TnMin = grampada_m3 * densidad * movPorMin;   // Tn/min
-  const vel_grua_TnHr  = vel_grua_TnMin * 60;                  // Tn/hr
+  const vel_grua_TnMin = Math.max(0.001, grampada_m3 * densidad * movPorMin);
+  const vel_grua_TnHr  = vel_grua_TnMin * 60;
 
   // ── TOLVA ───────────────────────────────────────────────────────────────
-  const Tn_tolva   = tolva_m3 * densidad;                      // Tn capacidad
-  const t_llenar   = Tn_tolva / vel_grua_TnMin;                // min llenar tolva vacía
+  const Tn_tolva   = tolva_m3 * densidad;
+  const t_llenar   = Tn_tolva / vel_grua_TnMin;
 
-  // ── CICLO DE LA TOLVA (desde que un camión sale hasta que el siguiente carga)
-  // t_posicion: camión llega, se posiciona (grúa sigue llenando tolva si hay espacio)
-  // t_caida:    compuerta abre, arena cae al camión
-  // t_cierre:   compuerta cierra, camión arranca
-  const t_ciclo_tolva = tPosMin + tCaidaMin + tCierreMin;       // min
+  const t_ciclo_tolva = Math.max(0.1, tPosMin + tCaidaMin + tCierreMin);
 
-  // Validación: ¿la tolva puede rebosar durante el posicionamiento?
   const arena_durante_posicion = vel_grua_TnMin * tPosMin;
   const tolva_rebosa = arena_durante_posicion > Tn_tolva;
 
   // ── CAMIÓN DIRECTO ──────────────────────────────────────────────────────
-  const nDir        = p.des_camDir_cantidad   || 0;
+  const nDir        = Math.max(0, p.des_camDir_cantidad || 0);
   const volDir_m3   = p.des_camDir_volM3      || 30;
   const Tn_cam_dir  = volDir_m3 * densidad;
 
-  // El camión directo carga y no vuelve — desde la perspectiva de la tolva:
-  // cada t_ciclo_tolva min llega un nuevo directo (citados escalonados)
-  // El throughput de la tolva no depende del viaje a Neuquén
-
   // ── CAMIÓN CALESITA ─────────────────────────────────────────────────────
-  const nCal          = p.des_camAco_cantidad   || 0;
+  const nCal          = Math.max(0, p.des_camAco_cantidad || 0);
   const volCal_m3     = p.des_camAco_volM3      || 30;
   const Tn_cam_cal    = volCal_m3 * densidad;
   const distAcoKm     = p.des_camAco_distKm     || 15;
-  const velCamKmh     = p.des_camAco_velKmh     || 60;
+  const velCamKmh     = Math.max(1, p.des_camAco_velKmh || 60);
   const tDescDepMin   = p.des_tDescargaAcoMin   || 10;
-  const t_viaje       = (distAcoKm / velCamKmh) * 60;          // min ida
-  const t_ciclo_cal   = tPosMin + tCaidaMin + tCierreMin
-                      + t_viaje + tDescDepMin + t_viaje;        // ciclo completo calesita
+  const t_viaje       = (distAcoKm / velCamKmh) * 60;
+  const t_ciclo_cal   = t_ciclo_tolva + t_viaje + tDescDepMin + t_viaje;
 
-  // ── THROUGHPUT MÁXIMO POR TOLVA (limitado por la grúa) ──────────────────
-  // El throughput de una tolva no puede superar lo que la grúa produce
-  // ni más de una carga de camión por ciclo
-  const Tn_por_ciclo_dir = Math.min(Tn_cam_dir, Tn_tolva);     // Tn que salen por ciclo
+  // ── THROUGHPUT MÁXIMO POR TOLVA ──────────────────────────────────────────
+  const Tn_por_ciclo_dir = Math.min(Tn_cam_dir, Tn_tolva);
   const Tn_por_ciclo_cal = Math.min(Tn_cam_cal, Tn_tolva);
-  const tp_tolva_dir_max = (Tn_por_ciclo_dir / t_ciclo_tolva) * 60;  // Tn/hr
-  const tp_tolva_cal_max = (Tn_por_ciclo_cal / t_ciclo_tolva) * 60;
-  const tp_grua_max      = vel_grua_TnHr;                       // techo físico de la grúa
+  const tp_tolva_dir_max = (Tn_por_ciclo_dir / t_ciclo_tolva) * 60;
+  const tp_grua_max      = vel_grua_TnHr;
 
   // ── FASE 1: DIRECTOS con escalonamiento ─────────────────────────────────
-  // Con n_dir directos y n_tolvas tolvas, cada tolva recibe un directo cada:
-  //   intervalo = t_ciclo_tolva (citados exactamente cuando la tolva está lista)
-  // Si n_dir es suficiente para cubrir ambas tolvas en paralelo sin espera:
-  //   tasa consumo = 2 tolvas / t_ciclo_tolva camiones/min
-  // Fase 1 dura hasta que se agotan los directos
-
-  const tasa_consumo_dir_total = nTolvas / t_ciclo_tolva;       // camiones/min
+  const tasa_consumo_dir_total = nTolvas / t_ciclo_tolva;
   const t_fase1_min  = nDir > 0 ? nDir / tasa_consumo_dir_total : 0;
   const t_fase1_hrs  = t_fase1_min / 60;
-  const Tn_directos  = nDir * Tn_por_ciclo_dir;
+  const Tn_directos  = Math.min(nDir * Tn_por_ciclo_dir, tn);
 
-  // Durante fase 1, las calesitas cubren huecos si hay tolvas sin directo asignado
-  // (esto ocurre si nDir < nTolvas — alguna tolva solo puede recibir calesitas)
-  const tolvas_con_dir   = Math.min(nDir > 0 ? nTolvas : 0, nTolvas);
+  const tolvas_con_dir     = nDir > 0 ? nTolvas : 0;
   const tolvas_solo_cal_f1 = nTolvas - tolvas_con_dir;
 
-  // tp en fase 1: directos ocupan todas las tolvas, calesitas en las sobrantes
   const tp_fase1_dir = tolvas_con_dir * Math.min(tp_tolva_dir_max, tp_grua_max);
-  // calesitas en tolvas sobrantes durante fase 1
   const n_cal_min_por_tolva = t_ciclo_cal > 0
     ? Math.ceil(t_ciclo_cal / t_ciclo_tolva)
     : 1;
   const cal_para_tolvas_sobrantes = tolvas_solo_cal_f1 * n_cal_min_por_tolva;
-  const cal_disponibles_f1 = Math.max(0, nCal - cal_para_tolvas_sobrantes);
   const tp_fase1_cal = tolvas_solo_cal_f1 > 0
-    ? calcTpCalesitas(Math.min(cal_para_tolvas_sobrantes + cal_disponibles_f1, nCal),
+    ? calcTpCalesitas(Math.min(nCal, cal_para_tolvas_sobrantes + Math.max(0, nCal - cal_para_tolvas_sobrantes)),
                       tolvas_solo_cal_f1, t_ciclo_cal, t_ciclo_tolva,
                       Tn_por_ciclo_cal, tp_grua_max)
     : 0;
   const tp_fase1 = tp_fase1_dir + tp_fase1_cal;
 
   // ── FASE 2: SOLO CALESITAS ───────────────────────────────────────────────
-  const Tn_calesitas = Math.max(0, tnTotal - Tn_directos);
+  const Tn_calesitas = Math.max(0, tn - Tn_directos);
   const tp_fase2     = calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva,
                                        Tn_por_ciclo_cal, tp_grua_max);
 
   // Tiempo de descarga total
-  const horas_dia    = p.des_horasDia || 14;
-  const t_fase2_hrs  = tp_fase2 > 0 ? Tn_calesitas / tp_fase2 : 999;
+  const horas_dia    = Math.max(1, p.des_horasDia || 14);
+  const t_fase2_hrs  = (tp_fase2 > 0 && Tn_calesitas > 0) ? Tn_calesitas / tp_fase2 : (Tn_calesitas > 0 ? 999 : 0);
   const t_total_hrs  = t_fase1_hrs + t_fase2_hrs;
   const t_total_dias = t_total_hrs / horas_dia;
 
   // ── SPLIT Y COSTOS ───────────────────────────────────────────────────────
-  const pct_dir      = tnTotal > 0 ? Tn_directos / tnTotal : 0;
+  const pct_dir      = tn > 0 ? Tn_directos / tn : 0;
   const pct_cal      = 1 - pct_dir;
   const costoDir     = (p.des_costoCamionesDirUSDTn || 0) * Tn_directos;
   const costoKmTon   = p.des_camAco_costoKmTon  || 0.08;
@@ -633,40 +612,46 @@ export function calcScheduler(p, tnTotal) {
   // ── ALERTAS ──────────────────────────────────────────────────────────────
   const alertas = [];
   if (tolva_rebosa)
-    alertas.push(`⚠️ Posicionamiento (${tPosMin}min) llena la tolva en exceso — considerá reducir t_posición o aumentar volumen tolva`);
+    alertas.push(`⚠️ Posicionamiento (${tPosMin}min) llena la tolva en exceso — reducí t_posicionamiento o aumentá volumen tolva`);
   if (nDir === 0 && nCal === 0)
     alertas.push(`🚫 Sin camiones asignados — throughput = 0`);
   if (nCal < n_cal_min_por_tolva * nTolvas && nDir === 0)
-    alertas.push(`⚠️ Calesitas insuficientes para flujo continuo — necesitás ≥${n_cal_min_por_tolva * nTolvas} (tenés ${nCal})`);
-  if (Tn_directos > tnTotal)
-    alertas.push(`⚠️ Los directos superan las Tn totales — reducí cantidad de camiones directos`);
+    alertas.push(`⚠️ Calesitas insuficientes — necesitás ≥${n_cal_min_por_tolva * nTolvas} para flujo continuo (tenés ${nCal})`);
+  if (tn > 0 && Tn_directos >= tn)
+    alertas.push(`⚠️ Los directos cubren todas las Tn — calesitas sin carga asignada`);
+
+  // Helper para devolver siempre un número finito
+  const safe = (v, fallback = 0) => (isFinite(v) ? parseFloat(v.toFixed(4)) : fallback);
 
   return {
-    // Grúa
-    vel_grua_TnMin, vel_grua_TnHr,
-    // Tolva
-    Tn_tolva, t_llenar, t_ciclo_tolva, tolva_rebosa,
-    // Ciclo camiones
-    t_ciclo_cal, t_viaje, n_cal_min_por_tolva,
-    Tn_cam_dir, Tn_cam_cal,
-    // Fases
+    vel_grua_TnMin:     safe(vel_grua_TnMin),
+    vel_grua_TnHr:      safe(vel_grua_TnHr),
+    Tn_tolva:           safe(Tn_tolva),
+    t_llenar:           safe(t_llenar),
+    t_ciclo_tolva:      safe(t_ciclo_tolva),
+    tolva_rebosa,
+    t_ciclo_cal:        safe(t_ciclo_cal),
+    t_viaje:            safe(t_viaje),
+    n_cal_min_por_tolva,
+    Tn_cam_dir:         safe(Tn_cam_dir),
+    Tn_cam_cal:         safe(Tn_cam_cal),
     nDir, nCal,
-    Tn_directos: parseFloat(Tn_directos.toFixed(1)),
-    Tn_calesitas: parseFloat(Tn_calesitas.toFixed(1)),
-    pct_dir, pct_cal,
-    tp_fase1: parseFloat(tp_fase1.toFixed(1)),
-    tp_fase2: parseFloat(tp_fase2.toFixed(1)),
-    t_fase1_hrs: parseFloat(t_fase1_hrs.toFixed(2)),
-    t_fase2_hrs: parseFloat(t_fase2_hrs.toFixed(2)),
-    t_total_hrs: parseFloat(t_total_hrs.toFixed(2)),
-    t_total_dias: parseFloat(t_total_dias.toFixed(2)),
-    // Costos
-    costoDir, costoCal, costoCalUSDTn,
-    costoTotalCamiones: costoDir + costoCal,
-    // Alertas
+    Tn_directos:        safe(Tn_directos),
+    Tn_calesitas:       safe(Tn_calesitas),
+    pct_dir:            safe(pct_dir),
+    pct_cal:            safe(pct_cal),
+    tp_fase1:           safe(tp_fase1),
+    tp_fase2:           safe(tp_fase2),
+    t_fase1_hrs:        safe(t_fase1_hrs),
+    t_fase2_hrs:        safe(t_fase2_hrs >= 990 ? 0 : t_fase2_hrs),  // 999 = sin calesitas, no mostrar
+    t_total_hrs:        safe(t_total_hrs >= 990 ? 999 : t_total_hrs, 999),
+    t_total_dias:       safe(t_total_dias >= 999/horas_dia ? 999 : t_total_dias, 999),
+    costoDir:           safe(costoDir),
+    costoCal:           safe(costoCal),
+    costoCalUSDTn:      safe(costoCalUSDTn),
+    costoTotalCamiones: safe(costoDir + costoCal),
     alertas,
-    // Para UI
-    tp_grua_max_total: tp_grua_max * nTolvas,
+    tp_grua_max_total:  safe(tp_grua_max * nTolvas),
   };
 }
 
@@ -697,10 +682,12 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
 
   // ── Scheduler: throughput y split desde la logística real de camiones ──
   const sch = calcScheduler(p, tn);
-  // tIdeal usa el throughput real del scheduler (limitado por grúas y camiones)
-  const tp_total_TnHr = sch.tp_fase1 > 0 ? sch.tp_fase1 : (sch.tp_fase2 || 1);
-  const tIdeal_dias   = sch.t_total_dias;   // días de descarga pura del scheduler
-  const velIdeal_TnHr = sch.vel_grua_TnHr;  // para mostrar en hover
+  // t_total_dias puede ser 999 si no hay calesitas y quedan Tn sin cubrir
+  // En ese caso usamos solo la fase 1 como base del tiempo ideal
+  const tIdeal_dias   = isFinite(sch.t_total_dias) && sch.t_total_dias < 500
+    ? sch.t_total_dias
+    : (sch.t_fase1_hrs / Math.max(1, p.des_horasDia || 14));
+  const velIdeal_TnHr = sch.vel_grua_TnHr;
 
   // ── Inoperabilidad climática ────────────────────────────────────────────
   const inopDet = getInopDetalle(p.clima_bb, p.des_inopLluvia, p.des_inopViento, mesIdx);
