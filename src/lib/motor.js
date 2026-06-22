@@ -274,13 +274,33 @@ export const DEFAULT_PARAMS = {
   nav_vlsfoManual:           990,
 
   // ETAPA 3 — DESCARGA
-  des_grampada:              15,
-  des_gruas:                 2,
-  des_movGrampa:             0.5,
+  des_grampada:              15,    // m³ por grampa
+  des_gruas:                 2,     // número de grúas/tolvas
+  des_movGrampa:             0.5,   // mov/min por grúa
   des_horasDia:              14,
   des_esperaBBMes:           [3.2,2.8,2.1,1.9,1.5,1.2,0.9,1.1,1.4,2.0,2.5,3.0],
   des_esperaZarateDias:      0.5,   // espera vuelta a Zárate — acá en descarga
   des_agenciaBB:             106204,  // calculado desde items abajo
+
+  // ─── TOLVA ───────────────────────────────────────────────────────────────
+  des_tolva_vol_m3:          60,    // volumen de cada tolva [m³]
+  des_t_posicion_min:        3,     // tiempo posicionamiento camión bajo tolva [min]
+  des_t_caida_min:           4,     // tiempo vaciado tolva → camión por gravedad [min]
+  des_t_cierre_min:          1,     // tiempo cierre compuerta [min]
+
+  // ─── CAMIONES DIRECTOS (NEUQUÉN) ─────────────────────────────────────────
+  des_camDir_cantidad:       20,    // total de camiones directos disponibles
+  des_camDir_volM3:          30,    // volumen por camión [m³]
+  des_costoCamionesDirUSDTn: 37.14, // USD/Tn flete BB → Neuquén
+
+  // ─── CAMIONES CALESITA (DEPÓSITO LOCAL) ──────────────────────────────────
+  des_camAco_cantidad:       6,     // total de calesitas disponibles
+  des_camAco_volM3:          30,    // volumen por camión [m³]
+  des_camAco_distKm:         15,    // distancia tolva → depósito [km, solo ida]
+  des_camAco_velKmh:         60,    // velocidad del camión [km/h]
+  des_tDescargaAcoMin:       10,    // tiempo descarga en depósito [min]
+  des_camAco_costoKmTon:     0.08,  // USD/(Tn·km) ida+vuelta
+  des_alquilerPredioUSDTn:   0,     // USD/Tn almacenada en predio
 
   // ─── AGENCIA BAHÍA BLANCA (ARGELAN) ──────────────────────────────────────
   // tipo: "fijo" = USD fijo por escala | "diario" = USD/día × tReal_dias_descarga
@@ -306,10 +326,7 @@ export const DEFAULT_PARAMS = {
   des_inopViento:            35,
   des_pctMermaDescarga:      0.015,
   des_pctMermaAcopio:        0.01,
-  des_pctAcopio:             0.30,
   des_opexUSDTn:             8,
-  des_costoAcopioUSDTn:      2.5,
-  des_costoCamionesDirUSDTn: 37.14,
 
   // BASE DE DATOS
   clima_zarate:              CLIMA_DB_DEFAULT.zarate,
@@ -501,55 +518,229 @@ export function calcEtapa2(p) {
   };
 }
 
-// ─── ETAPA 3: DESCARGA ─────────────────────────────────────────────────────
-export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
-  const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-  const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion;
-  const tn=tnEntrada??(p.cap_capacidadBarco*(1-p.cap_pctMerma));
+// ─── SCHEDULER DE DESCARGA ────────────────────────────────────────────────
+// Modela el sistema tolva/compuerta con camiones directos (Neuquén) y calesitas
+// (depósito local). Toda la lógica sale de parámetros físicos — sin porcentajes forzados.
+export function calcScheduler(p, tnTotal) {
+  const densidad      = p.cap_densidadArena   || 1.45;
+  const nTolvas       = p.des_gruas           || 2;
+  const grampada_m3   = p.des_grampada        || 15;
+  const movPorMin     = p.des_movGrampa       || 0.5;
+  const tolva_m3      = p.des_tolva_vol_m3    || 60;
+  const tPosMin       = p.des_t_posicion_min  || 3;
+  const tCaidaMin     = p.des_t_caida_min     || 4;
+  const tCierreMin    = p.des_t_cierre_min    || 1;
 
-  const velIdeal_TnMin=p.des_gruas*p.des_grampada*p.cap_densidadArena*p.des_movGrampa;
-  const velIdeal_TnHr =velIdeal_TnMin*60;
-  const tIdeal_hr     =tn/velIdeal_TnHr;
-  const tIdeal_dias   =tIdeal_hr/p.des_horasDia;
+  // ── GRÚA ────────────────────────────────────────────────────────────────
+  const vel_grua_TnMin = grampada_m3 * densidad * movPorMin;   // Tn/min
+  const vel_grua_TnHr  = vel_grua_TnMin * 60;                  // Tn/hr
 
-  const inopDet =getInopDetalle(p.clima_bb,p.des_inopLluvia,p.des_inopViento,mesIdx);
-  const pInop   =inopDet.pInop;
-  const diasInop=tIdeal_dias*pInop/Math.max(0.01,1-pInop);
-  const esperaBB=p.des_esperaBBMes[mesIdx];
-  // Espera vuelta Zárate incluida acá
-  const tReal_dias=tIdeal_dias+diasInop+esperaBB+p.des_esperaZarateDias;
+  // ── TOLVA ───────────────────────────────────────────────────────────────
+  const Tn_tolva   = tolva_m3 * densidad;                      // Tn capacidad
+  const t_llenar   = Tn_tolva / vel_grua_TnMin;                // min llenar tolva vacía
 
-  const mermaDescarga_Tn=tn*p.des_pctMermaDescarga;
-  const tnPostDescarga  =tn-mermaDescarga_Tn;
-  const tnAcopio        =tnPostDescarga*p.des_pctAcopio;
-  const tnDirecto       =tnPostDescarga*(1-p.des_pctAcopio);
-  const mermaAcopio_Tn  =tnAcopio*p.des_pctMermaAcopio;
-  const tnEntregadas    =tnPostDescarga-mermaAcopio_Tn;
+  // ── CICLO DE LA TOLVA (desde que un camión sale hasta que el siguiente carga)
+  // t_posicion: camión llega, se posiciona (grúa sigue llenando tolva si hay espacio)
+  // t_caida:    compuerta abre, arena cae al camión
+  // t_cierre:   compuerta cierra, camión arranca
+  const t_ciclo_tolva = tPosMin + tCaidaMin + tCierreMin;       // min
 
-  const costoOpex    =p.des_opexUSDTn*tn;
-  const costoCamiones=p.des_costoCamionesDirUSDTn*tnDirecto;
-  const costoAcopio  =p.des_costoAcopioUSDTn*tnAcopio;
-  const combPuerto   =tReal_dias*p.barco_consumoPuerto*vlsfo;
-  const fleteEtapa   =tReal_dias*tc;
-  const agencia      =calcAgenciaBB(p, tReal_dias);
-  // Merma de descarga valorizada al precio equivalente de la arena (costo total hasta llegada / tn)
-  // precioArenaEq se calcula externamente desde App y se puede pasar; si no se puede, se aproxima
-  // con costo de etapa 1 ya calculado. Para evitar circularidad, se pasa costosHastaLlegada como parámetro opcional.
-  const precioArenaEq = (p._costoArenaEq != null && p._costoArenaEq > 0)
-    ? p._costoArenaEq
-    : (p.cap_precioArenaOrigen || 13.5); // fallback al precio origen como proxy
-  const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq;
-  const costoTotal   =costoOpex+costoCamiones+costoAcopio+combPuerto+fleteEtapa+agencia+costoMermaDescarga;
+  // Validación: ¿la tolva puede rebosar durante el posicionamiento?
+  const arena_durante_posicion = vel_grua_TnMin * tPosMin;
+  const tolva_rebosa = arena_durante_posicion > Tn_tolva;
+
+  // ── CAMIÓN DIRECTO ──────────────────────────────────────────────────────
+  const nDir        = p.des_camDir_cantidad   || 0;
+  const volDir_m3   = p.des_camDir_volM3      || 30;
+  const Tn_cam_dir  = volDir_m3 * densidad;
+
+  // El camión directo carga y no vuelve — desde la perspectiva de la tolva:
+  // cada t_ciclo_tolva min llega un nuevo directo (citados escalonados)
+  // El throughput de la tolva no depende del viaje a Neuquén
+
+  // ── CAMIÓN CALESITA ─────────────────────────────────────────────────────
+  const nCal          = p.des_camAco_cantidad   || 0;
+  const volCal_m3     = p.des_camAco_volM3      || 30;
+  const Tn_cam_cal    = volCal_m3 * densidad;
+  const distAcoKm     = p.des_camAco_distKm     || 15;
+  const velCamKmh     = p.des_camAco_velKmh     || 60;
+  const tDescDepMin   = p.des_tDescargaAcoMin   || 10;
+  const t_viaje       = (distAcoKm / velCamKmh) * 60;          // min ida
+  const t_ciclo_cal   = tPosMin + tCaidaMin + tCierreMin
+                      + t_viaje + tDescDepMin + t_viaje;        // ciclo completo calesita
+
+  // ── THROUGHPUT MÁXIMO POR TOLVA (limitado por la grúa) ──────────────────
+  // El throughput de una tolva no puede superar lo que la grúa produce
+  // ni más de una carga de camión por ciclo
+  const Tn_por_ciclo_dir = Math.min(Tn_cam_dir, Tn_tolva);     // Tn que salen por ciclo
+  const Tn_por_ciclo_cal = Math.min(Tn_cam_cal, Tn_tolva);
+  const tp_tolva_dir_max = (Tn_por_ciclo_dir / t_ciclo_tolva) * 60;  // Tn/hr
+  const tp_tolva_cal_max = (Tn_por_ciclo_cal / t_ciclo_tolva) * 60;
+  const tp_grua_max      = vel_grua_TnHr;                       // techo físico de la grúa
+
+  // ── FASE 1: DIRECTOS con escalonamiento ─────────────────────────────────
+  // Con n_dir directos y n_tolvas tolvas, cada tolva recibe un directo cada:
+  //   intervalo = t_ciclo_tolva (citados exactamente cuando la tolva está lista)
+  // Si n_dir es suficiente para cubrir ambas tolvas en paralelo sin espera:
+  //   tasa consumo = 2 tolvas / t_ciclo_tolva camiones/min
+  // Fase 1 dura hasta que se agotan los directos
+
+  const tasa_consumo_dir_total = nTolvas / t_ciclo_tolva;       // camiones/min
+  const t_fase1_min  = nDir > 0 ? nDir / tasa_consumo_dir_total : 0;
+  const t_fase1_hrs  = t_fase1_min / 60;
+  const Tn_directos  = nDir * Tn_por_ciclo_dir;
+
+  // Durante fase 1, las calesitas cubren huecos si hay tolvas sin directo asignado
+  // (esto ocurre si nDir < nTolvas — alguna tolva solo puede recibir calesitas)
+  const tolvas_con_dir   = Math.min(nDir > 0 ? nTolvas : 0, nTolvas);
+  const tolvas_solo_cal_f1 = nTolvas - tolvas_con_dir;
+
+  // tp en fase 1: directos ocupan todas las tolvas, calesitas en las sobrantes
+  const tp_fase1_dir = tolvas_con_dir * Math.min(tp_tolva_dir_max, tp_grua_max);
+  // calesitas en tolvas sobrantes durante fase 1
+  const n_cal_min_por_tolva = t_ciclo_cal > 0
+    ? Math.ceil(t_ciclo_cal / t_ciclo_tolva)
+    : 1;
+  const cal_para_tolvas_sobrantes = tolvas_solo_cal_f1 * n_cal_min_por_tolva;
+  const cal_disponibles_f1 = Math.max(0, nCal - cal_para_tolvas_sobrantes);
+  const tp_fase1_cal = tolvas_solo_cal_f1 > 0
+    ? calcTpCalesitas(Math.min(cal_para_tolvas_sobrantes + cal_disponibles_f1, nCal),
+                      tolvas_solo_cal_f1, t_ciclo_cal, t_ciclo_tolva,
+                      Tn_por_ciclo_cal, tp_grua_max)
+    : 0;
+  const tp_fase1 = tp_fase1_dir + tp_fase1_cal;
+
+  // ── FASE 2: SOLO CALESITAS ───────────────────────────────────────────────
+  const Tn_calesitas = Math.max(0, tnTotal - Tn_directos);
+  const tp_fase2     = calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva,
+                                       Tn_por_ciclo_cal, tp_grua_max);
+
+  // Tiempo de descarga total
+  const horas_dia    = p.des_horasDia || 14;
+  const t_fase2_hrs  = tp_fase2 > 0 ? Tn_calesitas / tp_fase2 : 999;
+  const t_total_hrs  = t_fase1_hrs + t_fase2_hrs;
+  const t_total_dias = t_total_hrs / horas_dia;
+
+  // ── SPLIT Y COSTOS ───────────────────────────────────────────────────────
+  const pct_dir      = tnTotal > 0 ? Tn_directos / tnTotal : 0;
+  const pct_cal      = 1 - pct_dir;
+  const costoDir     = (p.des_costoCamionesDirUSDTn || 0) * Tn_directos;
+  const costoKmTon   = p.des_camAco_costoKmTon  || 0.08;
+  const costoAlq     = p.des_alquilerPredioUSDTn || 0;
+  const costoCalUSDTn= distAcoKm * 2 * costoKmTon + costoAlq;
+  const costoCal     = costoCalUSDTn * Tn_calesitas;
+
+  // ── ALERTAS ──────────────────────────────────────────────────────────────
+  const alertas = [];
+  if (tolva_rebosa)
+    alertas.push(`⚠️ Posicionamiento (${tPosMin}min) llena la tolva en exceso — considerá reducir t_posición o aumentar volumen tolva`);
+  if (nDir === 0 && nCal === 0)
+    alertas.push(`🚫 Sin camiones asignados — throughput = 0`);
+  if (nCal < n_cal_min_por_tolva * nTolvas && nDir === 0)
+    alertas.push(`⚠️ Calesitas insuficientes para flujo continuo — necesitás ≥${n_cal_min_por_tolva * nTolvas} (tenés ${nCal})`);
+  if (Tn_directos > tnTotal)
+    alertas.push(`⚠️ Los directos superan las Tn totales — reducí cantidad de camiones directos`);
 
   return {
-    tnEntrada:tn, velIdeal_TnMin, velIdeal_TnHr, tIdeal_hr, tIdeal_dias,
+    // Grúa
+    vel_grua_TnMin, vel_grua_TnHr,
+    // Tolva
+    Tn_tolva, t_llenar, t_ciclo_tolva, tolva_rebosa,
+    // Ciclo camiones
+    t_ciclo_cal, t_viaje, n_cal_min_por_tolva,
+    Tn_cam_dir, Tn_cam_cal,
+    // Fases
+    nDir, nCal,
+    Tn_directos: parseFloat(Tn_directos.toFixed(1)),
+    Tn_calesitas: parseFloat(Tn_calesitas.toFixed(1)),
+    pct_dir, pct_cal,
+    tp_fase1: parseFloat(tp_fase1.toFixed(1)),
+    tp_fase2: parseFloat(tp_fase2.toFixed(1)),
+    t_fase1_hrs: parseFloat(t_fase1_hrs.toFixed(2)),
+    t_fase2_hrs: parseFloat(t_fase2_hrs.toFixed(2)),
+    t_total_hrs: parseFloat(t_total_hrs.toFixed(2)),
+    t_total_dias: parseFloat(t_total_dias.toFixed(2)),
+    // Costos
+    costoDir, costoCal, costoCalUSDTn,
+    costoTotalCamiones: costoDir + costoCal,
+    // Alertas
+    alertas,
+    // Para UI
+    tp_grua_max_total: tp_grua_max * nTolvas,
+  };
+}
+
+// Helper interno — throughput real de n_cal calesitas en n_tolvas tolvas
+function calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva, Tn_por_ciclo, tp_grua_max) {
+  if (nCal <= 0 || nTolvas <= 0) return 0;
+  // Cuántas calesitas tiene en promedio cada tolva
+  const cal_por_tolva = nCal / nTolvas;
+  const n_cal_min     = t_ciclo_cal / t_ciclo_tolva;  // mínimo para flujo sin espera
+  let tp_por_tolva;
+  if (cal_por_tolva >= n_cal_min) {
+    // Flujo continuo — cuello es la grúa
+    tp_por_tolva = Math.min(Tn_por_ciclo / t_ciclo_tolva * 60, tp_grua_max);
+  } else {
+    // Tolva espera camión — penalización
+    const t_espera   = t_ciclo_cal / cal_por_tolva - t_ciclo_tolva;
+    tp_por_tolva = Tn_por_ciclo / (t_ciclo_tolva + t_espera) * 60;
+  }
+  return tp_por_tolva * nTolvas;
+}
+
+// ─── ETAPA 3: DESCARGA ─────────────────────────────────────────────────────
+export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
+  const vlsfo     = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
+  const vlsfoStats= calcVLSFOStats(p.vlsfo_historico);
+  const tc        = p.barco_timeCharter + p.barco_tripulacion;
+  const tn        = tnEntrada ?? (p.cap_capacidadBarco * (1 - p.cap_pctMerma));
+
+  // ── Scheduler: throughput y split desde la logística real de camiones ──
+  const sch = calcScheduler(p, tn);
+  // tIdeal usa el throughput real del scheduler (limitado por grúas y camiones)
+  const tp_total_TnHr = sch.tp_fase1 > 0 ? sch.tp_fase1 : (sch.tp_fase2 || 1);
+  const tIdeal_dias   = sch.t_total_dias;   // días de descarga pura del scheduler
+  const velIdeal_TnHr = sch.vel_grua_TnHr;  // para mostrar en hover
+
+  // ── Inoperabilidad climática ────────────────────────────────────────────
+  const inopDet = getInopDetalle(p.clima_bb, p.des_inopLluvia, p.des_inopViento, mesIdx);
+  const pInop   = inopDet.pInop;
+  const diasInop= tIdeal_dias * pInop / Math.max(0.01, 1 - pInop);
+  const esperaBB= p.des_esperaBBMes[mesIdx];
+  const tReal_dias = tIdeal_dias + diasInop + esperaBB + p.des_esperaZarateDias;
+
+  // ── Mermas ──────────────────────────────────────────────────────────────
+  const mermaDescarga_Tn = tn * p.des_pctMermaDescarga;
+  const tnPostDescarga   = tn - mermaDescarga_Tn;
+  // Split sale del scheduler (proporcional a Tn_directos / Tn_calesitas)
+  const tnDirecto        = Math.min(sch.Tn_directos, tnPostDescarga);
+  const tnAcopio         = tnPostDescarga - tnDirecto;
+  const mermaAcopio_Tn   = tnAcopio * p.des_pctMermaAcopio;
+  const tnEntregadas     = tnPostDescarga - mermaAcopio_Tn;
+
+  // ── Costos ──────────────────────────────────────────────────────────────
+  const costoOpex    = p.des_opexUSDTn * tn;
+  const costoCamiones= sch.costoDir;
+  const costoAcopio  = sch.costoCal;
+  const combPuerto   = tReal_dias * p.barco_consumoPuerto * vlsfo;
+  const fleteEtapa   = tReal_dias * tc;
+  const agencia      = calcAgenciaBB(p, tReal_dias);
+  const precioArenaEq= (p._costoArenaEq != null && p._costoArenaEq > 0)
+    ? p._costoArenaEq
+    : (p.cap_precioArenaOrigen || 13.5);
+  const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq;
+  const costoTotal   = costoOpex + costoCamiones + costoAcopio
+                     + combPuerto + fleteEtapa + agencia + costoMermaDescarga;
+
+  return {
+    tnEntrada: tn, velIdeal_TnHr, tIdeal_dias,
     pInop, diasInop, esperaBB, tReal_dias, vlsfo, vlsfoStats, tc,
     mermaDescarga_Tn, tnPostDescarga, tnAcopio, tnDirecto, mermaAcopio_Tn, tnEntregadas,
     costoOpex, costoCamiones, costoAcopio, combPuerto, fleteEtapa, agencia,
     precioArenaEq, costoMermaDescarga, costoTotal,
-    hoverVel:`${p.des_gruas}×${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${velIdeal_TnMin.toFixed(1)}Tn/min`,
-    hoverTReal:`${tIdeal_dias.toFixed(1)}+${diasInop.toFixed(1)}+${esperaBB}+${p.des_esperaZarateDias}(Z) = ${tReal_dias.toFixed(1)}días`,
+    sch,  // scheduler completo disponible para la UI
+    hoverVel:`Grúa: ${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${(p.des_grampada*p.cap_densidadArena*p.des_movGrampa).toFixed(2)}Tn/min`,
+    hoverTReal:`${tIdeal_dias.toFixed(1)}(scheduler)+${diasInop.toFixed(1)}(inop)+${esperaBB}(espBB)+${p.des_esperaZarateDias}(Z) = ${tReal_dias.toFixed(1)}días`,
     hoverInop:[
       `Lluvia BB: μ=${inopDet.lluviaProm}mm σ=${inopDet.lluviaSigma}mm → P(>${inopDet.umbralLluvia}mm) = ${(inopDet.pL*100).toFixed(2)}%`,
       `Viento BB: μ=${inopDet.vientoProm}km/h σ=${inopDet.vientoSigma}km/h → P(>${inopDet.umbralViento}km/h) = ${(inopDet.pV*100).toFixed(2)}%`,
@@ -564,13 +755,13 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
     ],
     hoverTC:[
       `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d = $${tc}/d`,
-      `Incluye: t_ideal + inop + espera BB + espera Zárate`,
+      `Incluye: t_scheduler + inop + espera BB + espera Zárate`,
       `${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
       `Opex: $${p.des_opexUSDTn}/Tn×${tn.toFixed(0)}Tn = $${costoOpex.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Camiones: $${p.des_costoCamionesDirUSDTn}/Tn×${tnDirecto.toFixed(0)}Tn = $${costoCamiones.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Acopio: $${p.des_costoAcopioUSDTn}/Tn×${tnAcopio.toFixed(0)}Tn = $${costoAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Directos: ${sch.nDir} cam×${sch.Tn_cam_dir.toFixed(1)}Tn = ${sch.Tn_directos.toFixed(0)}Tn → $${costoCamiones.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Calesitas: ${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn → $${costoAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `TC+Trip: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Agencia BB: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
