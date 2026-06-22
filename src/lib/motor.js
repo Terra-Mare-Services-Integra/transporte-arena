@@ -299,7 +299,8 @@ export const DEFAULT_PARAMS = {
   des_camAco_distKm:         15,    // distancia tolva → depósito [km, solo ida]
   des_camAco_velKmh:         60,    // velocidad del camión [km/h]
   des_tDescargaAcoMin:       10,    // tiempo descarga en depósito [min]
-  des_camAco_costoKmTon:     0.08,  // USD/(Tn·km) ida+vuelta
+  des_camAco_costoKmTon:     0.08,  // USD/(Tn·km) ida+vuelta — usado si costoUSDTn no está seteado
+  des_camAco_costoUSDTn:     null,  // USD/Tn directo (override); null = calcular desde km
   des_alquilerPredioUSDTn:   0,     // USD/Tn almacenada en predio
 
   // ─── AGENCIA BAHÍA BLANCA (ARGELAN) ──────────────────────────────────────
@@ -606,7 +607,10 @@ export function calcScheduler(p, tnTotal) {
   const costoDir     = (p.des_costoCamionesDirUSDTn || 0) * Tn_directos;
   const costoKmTon   = p.des_camAco_costoKmTon  || 0.08;
   const costoAlq     = p.des_alquilerPredioUSDTn || 0;
-  const costoCalUSDTn= distAcoKm * 2 * costoKmTon + costoAlq;
+  // Si el usuario ingresó directamente USD/Tn, usar ese valor; si no, calcular desde km
+  const costoCalUSDTn= p.des_camAco_costoUSDTn != null
+    ? p.des_camAco_costoUSDTn
+    : distAcoKm * 2 * costoKmTon + costoAlq;
   const costoCal     = costoCalUSDTn * Tn_calesitas;
 
   // ── ALERTAS ──────────────────────────────────────────────────────────────
