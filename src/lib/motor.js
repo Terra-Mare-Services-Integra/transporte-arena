@@ -721,12 +721,16 @@ export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
 
   return {
     tnEntrada: tn, velIdeal_TnHr, tIdeal_dias,
+    // Propiedades de compatibilidad para SeccionFormulas y SeccionInop
+    velIdeal_TnMin: isFinite(sch.vel_grua_TnMin) ? sch.vel_grua_TnMin : 0,
+    tIdeal_dias,
     pInop, diasInop, esperaBB, tReal_dias, vlsfo, vlsfoStats, tc,
     mermaDescarga_Tn, tnPostDescarga, tnAcopio, tnDirecto, mermaAcopio_Tn, tnEntregadas,
     costoOpex, costoCamiones, costoAcopio, combPuerto, fleteEtapa, agencia,
     precioArenaEq, costoMermaDescarga, costoTotal,
     sch,  // scheduler completo disponible para la UI
-    hoverVel:`Grúa: ${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${(p.des_grampada*p.cap_densidadArena*p.des_movGrampa).toFixed(2)}Tn/min`,
+    hoverVel:`Grúa: ${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${(p.des_grampada*(p.cap_densidadArena||1.45)*(p.des_movGrampa||0.5)).toFixed(2)}Tn/min`,
+    hoverTIdeal:`${tn.toFixed(0)}Tn ÷ ${velIdeal_TnHr.toFixed(0)}Tn/hr ÷ ${p.des_horasDia||14}hr/día = ${tIdeal_dias.toFixed(1)}días`,
     hoverTReal:`${tIdeal_dias.toFixed(1)}(scheduler)+${diasInop.toFixed(1)}(inop)+${esperaBB}(espBB)+${p.des_esperaZarateDias}(Z) = ${tReal_dias.toFixed(1)}días`,
     hoverInop:[
       `Lluvia BB: μ=${inopDet.lluviaProm}mm σ=${inopDet.lluviaSigma}mm → P(>${inopDet.umbralLluvia}mm) = ${(inopDet.pL*100).toFixed(2)}%`,
