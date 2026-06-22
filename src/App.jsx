@@ -1027,24 +1027,33 @@ function TabDescarga({p,set,tnEntregadas}) {
   const sch=e3.sch;
   const densidad=p.cap_densidadArena||1.45;
 
-  // Tabla de sensibilidad: barrido de n_dir y n_cal
+  // Tabla de sensibilidad: rango dinámico centrado en los valores actuales
+  const centeredRange = (center, count) => {
+    if (center === 0) return Array.from({length:count}, (_,i) => i);
+    const step = Math.max(1, Math.round(center / Math.floor(count / 2)));
+    const mid  = Math.floor(count / 2);
+    const vals = Array.from({length:count}, (_,i) => Math.max(0, center + (i - mid) * step));
+    // dedup y ordenar
+    return [...new Set(vals)].sort((a,b)=>a-b);
+  };
+  const sensFilas = useMemo(()=> centeredRange(sch.nDir, 9),  [sch.nDir]);
+  const sensCols  = useMemo(()=> centeredRange(sch.nCal, 11), [sch.nCal]);
+
   const sensDatos = useMemo(()=>{
     const tnBase = e1.tnPostCarga;
     const rows = [];
-    for(let nd=0; nd<=40; nd+=5){
-      for(let nc=0; nc<=15; nc+=1){
-        if(nd===0 && nc===0) continue;
+    for(const nd of sensFilas){
+      for(const nc of sensCols){
         const pp={...p, des_camDir_cantidad:nd, des_camAco_cantidad:nc};
         const s=calcScheduler(pp, tnBase);
         rows.push({nd, nc,
           dias: parseFloat(s.t_total_dias.toFixed(1)),
-          tp: parseFloat((s.tp_fase1||s.tp_fase2||0).toFixed(0)),
           alerta: s.alertas.length>0,
         });
       }
     }
     return rows;
-  },[p, e1.tnPostCarga]);
+  },[p, e1.tnPostCarga, sensFilas, sensCols]);
 
   const costoRows=[
     {label:"Opex descarga",     eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                          total:e3.costoOpex,          hover:[`${e3.hoverTotal[0]}`]},
@@ -1273,7 +1282,7 @@ function TabDescarga({p,set,tnEntregadas}) {
                 <th style={{padding:"4px 8px",background:C.navy,color:"rgba(255,255,255,.6)",fontSize:8,fontWeight:700,textAlign:"left",position:"sticky",left:0}}>
                   Dir ↓ Cal →
                 </th>
-                {[0,1,2,3,4,5,6,7,8,9,10].map(nc=>(
+                {sensCols.map(nc=>(
                   <th key={nc} style={{padding:"4px 8px",background:nc===sch.nCal?C.gold:C.navy,color:"rgba(255,255,255,.8)",fontSize:8,fontWeight:700,textAlign:"center",minWidth:44}}>
                     {nc}🔄
                   </th>
@@ -1281,12 +1290,12 @@ function TabDescarga({p,set,tnEntregadas}) {
               </tr>
             </thead>
             <tbody>
-              {[0,5,10,15,20,25,30,35,40].map(nd=>(
+              {sensFilas.map(nd=>(
                 <tr key={nd}>
                   <td style={{padding:"4px 8px",background:nd===sch.nDir?C.gold:"#EEF2F7",fontWeight:700,fontSize:9,color:nd===sch.nDir?"#fff":C.navy,position:"sticky",left:0}}>
                     {nd}🚛
                   </td>
-                  {[0,1,2,3,4,5,6,7,8,9,10].map(nc=>{
+                  {sensCols.map(nc=>{
                     const row=sensDatos.find(r=>r.nd===nd&&r.nc===nc);
                     const isCurrent=nd===sch.nDir&&nc===sch.nCal;
                     const isGood=row&&!row.alerta;
@@ -1295,7 +1304,7 @@ function TabDescarga({p,set,tnEntregadas}) {
                     return (
                       <td key={nc} style={{padding:"4px 8px",textAlign:"center",background:bg,
                         border:isCurrent?`2px solid ${C.gold}`:"1px solid #EEF2F7",fontFamily:"DM Mono,monospace",fontWeight:isCurrent?800:600,color:co}}>
-                        {row?`${row.dias}d`:"—"}
+                        {row ? (row.dias >= 500 ? "—" : `${row.dias}d`) : "—"}
                       </td>
                     );
                   })}
