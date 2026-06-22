@@ -1088,28 +1088,33 @@ function TabDescarga({p,set,tnEntregadas}) {
       <div className="card">
         <div className="ct">🏗️ Grúa y Tolva <TipoBadge tipo="usuario"/></div>
         <div className="g3">
+          <Campo label="Número de grúas/tolvas" value={p.des_gruas} onChange={v=>set("des_gruas",Math.max(1,Math.round(v)))} tipo="usuario" unit="unidades" min={1} max={6} step={1}
+            nota="Cada grúa alimenta su propia tolva en paralelo"/>
           <Campo label="Grampada" value={p.des_grampada} onChange={v=>set("des_grampada",v)} tipo="usuario" unit="m³"
             nota={`Vel grúa: ${(p.des_grampada*densidad*(p.des_movGrampa||0.5)).toFixed(2)} Tn/min`}/>
           <Campo label="Movimientos/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={3} step={0.1}/>
-          <Campo label="Volumen tolva" value={p.des_tolva_vol_m3||60} onChange={v=>set("des_tolva_vol_m3",v)} tipo="usuario" unit="m³"
-            nota={`${((p.des_tolva_vol_m3||60)*densidad).toFixed(1)} Tn capacidad`}/>
         </div>
         <div className="g3">
+          <Campo label="Volumen tolva" value={p.des_tolva_vol_m3||60} onChange={v=>set("des_tolva_vol_m3",v)} tipo="usuario" unit="m³"
+            nota={`${((p.des_tolva_vol_m3||60)*densidad).toFixed(1)} Tn capacidad`}/>
           <Campo label="T. posicionamiento" value={p.des_t_posicion_min||3} onChange={v=>set("des_t_posicion_min",v)} tipo="usuario" unit="min" min={0.5} max={20} step={0.5} nota="Camión se ubica bajo tolva"/>
           <Campo label="T. caída (tolva→camión)" value={p.des_t_caida_min||4} onChange={v=>set("des_t_caida_min",v)} tipo="usuario" unit="min" min={0.5} max={15} step={0.5} nota="Apertura compuerta, arena cae"/>
+        </div>
+        <div className="g3">
           <Campo label="T. cierre compuerta" value={p.des_t_cierre_min||1} onChange={v=>set("des_t_cierre_min",v)} tipo="usuario" unit="min" min={0.1} max={5} step={0.1} nota="Compuerta cierra, camión arranca"/>
         </div>
         {/* Resumen ciclo tolva */}
         <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
           {[
-            {l:"Vel. grúa",   v:`${sch.vel_grua_TnMin.toFixed(2)} Tn/min`},
-            {l:"Llenar tolva",v:`${sch.t_llenar.toFixed(1)} min`},
-            {l:"Ciclo tolva", v:`${sch.t_ciclo_tolva.toFixed(1)} min`},
-            {l:"Tp máx/tolva",v:`${(sch.tp_grua_max_total/( p.des_gruas||2)).toFixed(0)} Tn/hr`},
-          ].map(({l,v})=>(
+            {l:"Vel. grúa",   v:`${sch.vel_grua_TnMin.toFixed(2)} Tn/min`, eq:`${p.des_grampada}m³ × ${densidad} × ${p.des_movGrampa} mov/min`},
+            {l:"Llenar tolva",v:`${sch.t_llenar.toFixed(1)} min`,           eq:`${((p.des_tolva_vol_m3||60)*densidad).toFixed(1)} Tn ÷ ${sch.vel_grua_TnMin.toFixed(2)} Tn/min`},
+            {l:"Ciclo tolva", v:`${sch.t_ciclo_tolva.toFixed(1)} min`,      eq:`pos ${p.des_t_posicion_min||3} + caída ${p.des_t_caida_min||4} + cierre ${p.des_t_cierre_min||1}`},
+            {l:"Tp máx/tolva",v:`${(sch.tp_grua_max_total/(p.des_gruas||2)).toFixed(0)} Tn/hr`, eq:`${sch.vel_grua_TnHr.toFixed(0)} Tn/hr (techo grúa)`},
+          ].map(({l,v,eq})=>(
             <div key={l} style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:7,padding:"7px 10px"}}>
               <div style={{fontSize:8,color:"#0369A1",textTransform:"uppercase",letterSpacing:.5,fontWeight:700,marginBottom:3}}>{l}</div>
               <div style={{fontSize:13,fontWeight:800,color:C.navy,fontFamily:"DM Mono,monospace"}}>{v}</div>
+              <div style={{fontSize:8,color:"#64748B",marginTop:2,fontFamily:"DM Mono,monospace"}}>{eq}</div>
             </div>
           ))}
         </div>
@@ -1144,9 +1149,37 @@ function TabDescarga({p,set,tnEntregadas}) {
         {/* Calesitas */}
         <div className="card" style={{borderTop:`3px solid ${C.gold}`}}>
           <div className="ct" style={{color:C.gold}}>🔄 Calesitas — Depósito BB</div>
-          <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
-            Ciclo cerrado. Necesitás ≥<strong style={{fontFamily:"DM Mono,monospace"}}>{sch.n_cal_min_por_tolva * (p.des_gruas||2)}</strong> para flujo continuo en fase 2.
-          </p>
+
+          {/* Explicación lógica matemática */}
+          <div style={{background:"#FAFAF7",border:"1px solid #E5E0C8",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:10,color:"#4B4530",lineHeight:1.7}}>
+            <div style={{fontWeight:700,marginBottom:6,color:C.gold,textTransform:"uppercase",letterSpacing:.5,fontSize:9}}>¿Cómo se calcula el mínimo de calesitas?</div>
+            <div>La tolva necesita un camión nuevo cada <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_ciclo_tolva.toFixed(1)} min</strong> (= ciclo tolva).</div>
+            <div style={{marginTop:4}}>Cada calesita tarda <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_ciclo_cal.toFixed(1)} min</strong> en completar su ciclo:</div>
+            <div style={{fontFamily:"DM Mono,monospace",fontSize:9,marginTop:4,padding:"4px 8px",background:"rgba(0,0,0,.04)",borderRadius:5}}>
+              {sch.t_ciclo_tolva.toFixed(1)} min (pos+carga+cierre)
+              + {sch.t_viaje.toFixed(1)} min (ida {p.des_camAco_distKm||15}km)
+              + {p.des_tDescargaAcoMin||10} min (descarga)
+              + {sch.t_viaje.toFixed(1)} min (vuelta)
+              = <strong>{sch.t_ciclo_cal.toFixed(1)} min</strong>
+            </div>
+            <div style={{marginTop:6}}>
+              Para que <em>ninguna tolva espere</em>, se necesita al menos <strong style={{fontFamily:"DM Mono,monospace"}}>⌈{sch.t_ciclo_cal.toFixed(1)} ÷ {sch.t_ciclo_tolva.toFixed(1)}⌉ = {sch.n_cal_min_por_tolva}</strong> calesitas por tolva.
+            </div>
+            <div style={{marginTop:4}}>
+              Con <strong>{p.des_gruas||2} tolvas</strong> → mínimo total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{sch.n_cal_min_por_tolva} × {p.des_gruas||2} = {sch.n_cal_min_por_tolva*(p.des_gruas||2)} calesitas</strong>
+            </div>
+            {sch.nCal > 0 && sch.nCal < sch.n_cal_min_por_tolva*(p.des_gruas||2) && (
+              <div style={{marginTop:6,color:C.red,fontWeight:700}}>
+                ⚠️ Con {sch.nCal} calesitas la tolva espera {((sch.t_ciclo_cal/sch.nCal*(p.des_gruas||2))-sch.t_ciclo_tolva).toFixed(1)} min por ciclo → throughput reducido.
+              </div>
+            )}
+            {sch.nCal >= sch.n_cal_min_por_tolva*(p.des_gruas||2) && sch.nCal > 0 && (
+              <div style={{marginTop:6,color:C.green,fontWeight:700}}>
+                ✓ Flujo continuo garantizado — las tolvas nunca esperan.
+              </div>
+            )}
+          </div>
+
           <div className="g2">
             <Campo label="Cantidad total" value={p.des_camAco_cantidad||0} onChange={v=>set("des_camAco_cantidad",Math.max(0,Math.round(v)))} tipo="usuario" unit="camiones" min={0} max={50} step={1}/>
             <Campo label="Volumen/camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
@@ -1160,7 +1193,15 @@ function TabDescarga({p,set,tnEntregadas}) {
             <Campo label="T. descarga en depósito" value={p.des_tDescargaAcoMin||10} onChange={v=>set("des_tDescargaAcoMin",v)} tipo="usuario" unit="min" min={2} max={60} step={1}/>
             <Campo label="Alquiler predio" value={p.des_alquilerPredioUSDTn||0} onChange={v=>set("des_alquilerPredioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.1}/>
           </div>
-          <Campo label="Costo transporte" value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01} nota="Tarifa ida+vuelta por Tn·km"/>
+          <Campo label="Costo transporte" value={p.des_camAco_costoUSDTn != null ? p.des_camAco_costoUSDTn : parseFloat((((p.des_camAco_costoKmTon||0.08)*(p.des_camAco_distKm||15)*2)).toFixed(2))}
+            onChange={v=>{
+              set("des_camAco_costoUSDTn", v);
+              // también actualizamos costoKmTon para compatibilidad con motor
+              const dist=(p.des_camAco_distKm||15);
+              set("des_camAco_costoKmTon", dist>0 ? v/(dist*2) : 0.08);
+            }}
+            tipo="usuario" unit="USD/Tn" min={0} step={0.5}
+            nota={`Flete total ida+vuelta por Tn transportada`}/>
           <div style={{marginTop:8,padding:"8px 12px",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:8}}>
             <div style={{fontSize:9,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Fase 2 — solo calesitas</div>
             <div style={{fontSize:15,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace"}}>{sch.Tn_calesitas.toFixed(0)} Tn · {sch.t_fase2_hrs.toFixed(1)} hrs</div>
@@ -1216,9 +1257,15 @@ function TabDescarga({p,set,tnEntregadas}) {
       {/* ── TABLA SENSIBILIDAD ── */}
       <div className="card">
         <div className="ct">🔍 Sensibilidad — Días de descarga por combinación de camiones</div>
-        <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
-          Configuración actual marcada en amarillo. Verde = flujo continuo garantizado.
-        </p>
+        <div style={{padding:"8px 12px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,marginBottom:10,fontSize:10,color:"#475569",lineHeight:1.7}}>
+          <strong>Cómo leer esta tabla:</strong> cada celda muestra los días totales de descarga para una combinación de camiones directos (filas 🚛) y calesitas (columnas 🔄).
+          <br/>
+          <span style={{color:C.green,fontWeight:700}}>Verde</span> = flujo continuo garantizado (hay calesitas suficientes para que las tolvas nunca esperen).
+          <span style={{color:C.red,fontWeight:700}}> Rojo</span> = las tolvas tendrán tiempo muerto — throughput reducido.
+          La celda <span style={{color:C.gold,fontWeight:700}}>amarilla</span> es tu configuración actual.
+          <br/>
+          <em>Nota: al agregar más directos los días bajan rápido (fase 1 más larga); al agregar más calesitas los días bajan más suavemente (mejora fase 2).</em>
+        </div>
         <div style={{overflowX:"auto"}}>
           <table style={{borderCollapse:"collapse",fontSize:10,whiteSpace:"nowrap"}}>
             <thead>
@@ -1263,7 +1310,6 @@ function TabDescarga({p,set,tnEntregadas}) {
       <div className="card">
         <div className="ct">Parámetros Operativos <TipoBadge tipo="usuario"/></div>
         <div className="g2">
-          <Campo label="Número de grúas / tolvas" value={p.des_gruas} onChange={v=>set("des_gruas",Math.max(1,Math.round(v)))} tipo="usuario" unit="unidades" min={1} max={6} step={1}/>
           <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
         </div>
         <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
