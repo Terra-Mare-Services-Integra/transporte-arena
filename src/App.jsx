@@ -10,7 +10,7 @@ import {
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
   calcEtapaRepo, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal,
-  calcAgenciaZarate, calcAgenciaBB,
+  calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo,
 } from "./lib/motor";
@@ -1006,59 +1006,9 @@ function TabNavegacion({p,set,tnEntregadas}) {
 }
 
 // ─── TAB E3: DESCARGA ──────────────────────────────────────────────────────
-// calcScheduler kept for MC compatibility but TabDescarga uses simple inputs
-function calcScheduler(p, tnTotal) {
-  const nTolvas     = p.des_nTolvas || 2;
-  const velGruaTnHr = p.des_velGruaTnHr || 400;
-  const tPosMin     = p.des_tPosicionMin || 5;
-  const volDirM3    = p.des_camDir_volM3 || 30;
-  const volAcoM3    = p.des_camAco_volM3 || 30;
-  const densidad    = p.cap_densidadArena || 1.5;
-  const distAcoKm   = p.des_camAco_distKm || 15;
-  const velAcoKmh   = p.des_camAco_velKmh || 60;
-  const tDescAcoMin = p.des_tDescargaAcoMin || 15;
-  const nDir        = p.des_camDir_cantidad || 10;
-  const nAco        = p.des_camAco_cantidad || 5;
-  const tnPorDir    = volDirM3 * densidad;
-  const tnPorAco    = volAcoM3 * densidad;
-  const tCargaDirMin= (tnPorDir / velGruaTnHr) * 60;
-  const tCargaAcoMin= (tnPorAco / velGruaTnHr) * 60;
-  const tViajeMin   = (distAcoKm / velAcoKmh) * 60;
-  const tCicloDirMin= tPosMin + tCargaDirMin;
-  const tCicloAcoMin= tPosMin + tCargaAcoMin + tViajeMin + tDescAcoMin + tViajeMin;
-  const tpDir  = nDir > 0 ? (nDir * tnPorDir / tCicloDirMin) * 60 : 0;
-  const tpAco  = nAco > 0 ? (nAco * tnPorAco / tCicloAcoMin) * 60 : 0;
-  const tpRetiro = tpDir + tpAco;
-  const tpGruas  = nTolvas * velGruaTnHr;
-  const tpReal   = Math.min(tpRetiro, tpGruas);
-  const horasDia = p.des_horasDia || 14;
-  const tIdealHrs  = tpReal > 0 ? tnTotal / tpReal : 0;
-  const tIdealDias = tIdealHrs / horasDia;
-  const pctDir = tpRetiro > 0 ? tpDir / tpRetiro : 0;
-  const pctAco = 1 - pctDir;
-  const tnDir  = tnTotal * pctDir;
-  const tnAco  = tnTotal * pctAco;
-  const cuello = tpRetiro < tpGruas ? "camiones" : "grúas";
-  const tiempoMuertoHr = tpRetiro < tpGruas ? (tpGruas - tpRetiro) / tpGruas * tIdealHrs : 0;
-  const costoKmTon    = p.des_camAco_costoKmTon || 0.08;
-  const costoAlquiler = p.des_alquilerPredioUSDTn || 0;
-  const costoAcoUSDTn = distAcoKm * 2 * costoKmTon + costoAlquiler;
-  const costoAcoTotal = tnAco * costoAcoUSDTn;
-  return {
-    nDir, nAco, tpDir, tpAco, tpRetiro, tpGruas, tpReal,
-    tIdealDias, tIdealHrs, pctDir, pctAco, tnDir, tnAco,
-    cuello, tiempoMuertoHr, utilizacionGruas: Math.min(tpRetiro/tpGruas, 1),
-    costoAcoUSDTn, costoAcoTotal,
-    tCicloDirMin, tCicloAcoMin, tCargaDirMin, tCargaAcoMin,
-    tnPorDir, tnPorAco, throughputRealHr: tpReal,
-    throughputDirHr: tpDir, throughputAcoHr: tpAco, throughputGruasHr: tpGruas,
-  };
-}
-
 function TabDescarga({p,set,tnEntregadas}) {
   const mesWorst = useMemo(()=>{
-    const e0=calcEtapaRepo(p);
-    const e2=calcEtapa2(p);
+    const e0=calcEtapaRepo(p); const e2=calcEtapa2(p);
     let worstMes=0, worstInop=0;
     for(let i=0;i<12;i++){
       const e1=calcEtapa1(p,i);
@@ -1074,154 +1024,246 @@ function TabDescarga({p,set,tnEntregadas}) {
   const e2=calcEtapa2(p);
   const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mesWorst,e1.tnPostCarga);
-  const sch=useMemo(()=>calcScheduler(p,e3.tnEntrada),[p,e3.tnEntrada]);
+  const sch=e3.sch;
+  const densidad=p.cap_densidadArena||1.45;
+
+  // Tabla de sensibilidad: barrido de n_dir y n_cal
+  const sensDatos = useMemo(()=>{
+    const tnBase = e1.tnPostCarga;
+    const rows = [];
+    for(let nd=0; nd<=40; nd+=5){
+      for(let nc=0; nc<=15; nc+=1){
+        if(nd===0 && nc===0) continue;
+        const pp={...p, des_camDir_cantidad:nd, des_camAco_cantidad:nc};
+        const s=calcScheduler(pp, tnBase);
+        rows.push({nd, nc,
+          dias: parseFloat(s.t_total_dias.toFixed(1)),
+          tp: parseFloat((s.tp_fase1||s.tp_fase2||0).toFixed(0)),
+          alerta: s.alertas.length>0,
+        });
+      }
+    }
+    return rows;
+  },[p, e1.tnPostCarga]);
 
   const costoRows=[
-    {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                  total:e3.costoOpex,    hover:[e3.hoverTotal[0]]},
-    {label:"Camiones directo",        eq:`$${p.des_costoCamionesDirUSDTn||0}/Tn×${sch.tnDir.toFixed(0)}Tn`,       total:(p.des_costoCamionesDirUSDTn||0)*sch.tnDir, hover:[`${sch.nDir} cam × ${sch.tnPorDir.toFixed(1)}Tn/cam`]},
-    {label:"Acopio (transp.+predio)", eq:`$${sch.costoAcoUSDTn.toFixed(2)}/Tn×${sch.tnAco.toFixed(0)}Tn`,        total:sch.costoAcoTotal, hover:[`$${((p.des_camAco_costoKmTon||0.08)*(p.des_camAco_distKm||15)*2).toFixed(2)}/Tn transp + $${p.des_alquilerPredioUSDTn||0}/Tn predio`]},
-    {label:"Combustible puerto",      eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`, total:e3.combPuerto,   hover:e3.hoverComb},
-    {label:"Time Charter+Trip.",      eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                              total:e3.fleteEtapa,   hover:e3.hoverTC},
-    {label:"Merma descarga",          eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`, total:e3.costoMermaDescarga, hover:[e3.hoverTotal[6]]},
-    {label:"Merma acopio",            eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,  total:e3.mermaAcopio_Tn*e3.precioArenaEq, hover:[`${e3.mermaAcopio_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
-    {label:"TOTAL ETAPA 3",           eq:"Σ costos descarga",                                                     total:e3.costoTotal,   hover:e3.hoverTotal, isTotal:true},
+    {label:"Opex descarga",     eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                          total:e3.costoOpex,          hover:[`${e3.hoverTotal[0]}`]},
+    {label:"Camiones directos", eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,  total:e3.costoCamiones, hover:[`$${p.des_costoCamionesDirUSDTn}/Tn × ${sch.Tn_directos.toFixed(0)}Tn`]},
+    {label:"Calesitas (transp+predio)", eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoCalUSDTn.toFixed(2)}/Tn`, total:e3.costoAcopio, hover:[`dist ${p.des_camAco_distKm}km × 2 × $${p.des_camAco_costoKmTon}/Tn·km + $${p.des_alquilerPredioUSDTn||0}/Tn predio`]},
+    {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,         total:e3.combPuerto,         hover:e3.hoverComb},
+    {label:"Time Charter+Trip.",eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                      total:e3.fleteEtapa,         hover:e3.hoverTC},
+    {label:"Merma descarga",    eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,    total:e3.costoMermaDescarga, hover:[`${e3.mermaDescarga_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
+    {label:"Merma acopio",      eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,      total:e3.mermaAcopio_Tn*e3.precioArenaEq, hover:[`${e3.mermaAcopio_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
+    {label:"TOTAL ETAPA 3",     eq:"Σ costos descarga",                                                              total:e3.costoTotal,         hover:e3.hoverTotal, isTotal:true},
   ];
-
-  const densidad = p.cap_densidadArena || 1.5;
 
   return (
     <div>
       <EspejoCheck p={p}/>
+
+      {/* ── KPIs ── */}
       <div className="kpis">
-        <KPI label="Tn entrada"     value={e3.tnEntrada.toFixed(0)}                       unit="post merma carga" color={T.formula.text}/>
-        <KPI label="T. ideal"       value={`${e3.tIdeal_dias.toFixed(1)}d`}               color={T.formula.text}/>
-        <KPI label="T. real"        value={`${e3.tReal_dias.toFixed(1)}d`}                color={C.gold}/>
-        <KPI label="Inop. clima BB" value={`${(e3.pInop*100).toFixed(1)}%`}               color={C.orange}/>
-        <KPI label="Tn entregadas"  value={e3.tnEntregadas.toFixed(0)}                    color={C.green}/>
-        <KPI label="USD/Tn etapa"   value={`$${(e3.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
+        <KPI label="Días descarga" value={`${sch.t_total_dias.toFixed(1)}d`}          unit="scheduler puro"   color={C.navy}/>
+        <KPI label="Días real"     value={`${e3.tReal_dias.toFixed(1)}d`}              unit="+inop+espera"     color={C.gold}/>
+        <KPI label="Inop. clima"   value={`${(e3.pInop*100).toFixed(1)}%`}            unit={`mes ${MESES[mesWorst]}`} color={C.orange}/>
+        <KPI label="Throughput"    value={`${(sch.tp_fase1||sch.tp_fase2||0).toFixed(0)} Tn/hr`} unit="fase 1" color={C.blue}/>
+        <KPI label="Tn entregadas" value={e3.tnEntregadas.toFixed(0)}                  color={C.green}/>
+        <KPI label="USD/Tn etapa"  value={`$${tnEntregadas>0?(e3.costoTotal/tnEntregadas).toFixed(1):"—"}`} color={C.gold}/>
       </div>
+
       <div style={{padding:"6px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,fontSize:10,color:"#64748B",marginBottom:8}}>
         ℹ️ Mes más pesimista: <strong>{MESES[mesWorst]}</strong> ({(e3.pInop*100).toFixed(1)}% inop). Editá umbrales en <strong>Base Clima</strong>.
       </div>
 
-      {/* ── LOGÍSTICA DE CAMIONES ── */}
+      {/* ── ALERTAS ── */}
+      {sch.alertas.length>0 && (
+        <div style={{marginBottom:8}}>
+          {sch.alertas.map((a,i)=>(
+            <div key={i} style={{padding:"7px 12px",background:"#FEF3C7",border:`1px solid ${C.warnBorder}`,borderRadius:8,fontSize:10,color:C.orange,marginBottom:4}}>{a}</div>
+          ))}
+        </div>
+      )}
+
+      {/* ── GRÚA Y TOLVA ── */}
+      <div className="card">
+        <div className="ct">🏗️ Grúa y Tolva <TipoBadge tipo="usuario"/></div>
+        <div className="g3">
+          <Campo label="Grampada" value={p.des_grampada} onChange={v=>set("des_grampada",v)} tipo="usuario" unit="m³"
+            nota={`Vel grúa: ${(p.des_grampada*densidad*(p.des_movGrampa||0.5)).toFixed(2)} Tn/min`}/>
+          <Campo label="Movimientos/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={3} step={0.1}/>
+          <Campo label="Volumen tolva" value={p.des_tolva_vol_m3||60} onChange={v=>set("des_tolva_vol_m3",v)} tipo="usuario" unit="m³"
+            nota={`${((p.des_tolva_vol_m3||60)*densidad).toFixed(1)} Tn capacidad`}/>
+        </div>
+        <div className="g3">
+          <Campo label="T. posicionamiento" value={p.des_t_posicion_min||3} onChange={v=>set("des_t_posicion_min",v)} tipo="usuario" unit="min" min={0.5} max={20} step={0.5} nota="Camión se ubica bajo tolva"/>
+          <Campo label="T. caída (tolva→camión)" value={p.des_t_caida_min||4} onChange={v=>set("des_t_caida_min",v)} tipo="usuario" unit="min" min={0.5} max={15} step={0.5} nota="Apertura compuerta, arena cae"/>
+          <Campo label="T. cierre compuerta" value={p.des_t_cierre_min||1} onChange={v=>set("des_t_cierre_min",v)} tipo="usuario" unit="min" min={0.1} max={5} step={0.1} nota="Compuerta cierra, camión arranca"/>
+        </div>
+        {/* Resumen ciclo tolva */}
+        <div style={{marginTop:8,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+          {[
+            {l:"Vel. grúa",   v:`${sch.vel_grua_TnMin.toFixed(2)} Tn/min`},
+            {l:"Llenar tolva",v:`${sch.t_llenar.toFixed(1)} min`},
+            {l:"Ciclo tolva", v:`${sch.t_ciclo_tolva.toFixed(1)} min`},
+            {l:"Tp máx/tolva",v:`${(sch.tp_grua_max_total/( p.des_gruas||2)).toFixed(0)} Tn/hr`},
+          ].map(({l,v})=>(
+            <div key={l} style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:7,padding:"7px 10px"}}>
+              <div style={{fontSize:8,color:"#0369A1",textTransform:"uppercase",letterSpacing:.5,fontWeight:700,marginBottom:3}}>{l}</div>
+              <div style={{fontSize:13,fontWeight:800,color:C.navy,fontFamily:"DM Mono,monospace"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {sch.tolva_rebosa && (
+          <div style={{marginTop:8,padding:"6px 10px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:7,fontSize:10,color:C.red}}>
+            ⚠️ El posicionamiento ({p.des_t_posicion_min||3}min) llenaría la tolva antes de que el camión esté listo. Reducí t_posicionamiento o aumentá el volumen de la tolva.
+          </div>
+        )}
+      </div>
+
+      {/* ── CAMIONES ── */}
       <div className="g2">
-        {/* Camiones directos */}
+        {/* Directos */}
         <div className="card" style={{borderTop:`3px solid ${C.green}`}}>
-          <div className="ct" style={{color:C.green}}>🚛 Camiones Directos — Neuquén</div>
+          <div className="ct" style={{color:C.green}}>🚛 Directos — Neuquén/Añelo</div>
           <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
-            Cargan en la tolva y se van directo a destino. No vuelven.
+            Prioridad absoluta. Cargan y no vuelven. Se citan escalonados cada <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_ciclo_tolva.toFixed(1)} min</strong> por tolva.
           </p>
           <div className="g2">
-            <Campo label="Cantidad" value={p.des_camDir_cantidad||10} onChange={v=>set("des_camDir_cantidad",Math.max(0,Math.round(v)))} tipo="usuario" unit="camiones" min={0} max={50} step={1}/>
-            <Campo label="Volumen por camión" value={p.des_camDir_volM3||30} onChange={v=>set("des_camDir_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
-              nota={`≈ ${((p.des_camDir_volM3||30)*densidad).toFixed(1)} Tn/cam`}/>
+            <Campo label="Cantidad total" value={p.des_camDir_cantidad||0} onChange={v=>set("des_camDir_cantidad",Math.max(0,Math.round(v)))} tipo="usuario" unit="camiones" min={0} max={200} step={1}/>
+            <Campo label="Volumen/camión" value={p.des_camDir_volM3||30} onChange={v=>set("des_camDir_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+              nota={`${((p.des_camDir_volM3||30)*densidad).toFixed(1)} Tn/cam`}/>
           </div>
-          <Campo label="Tarifa flete" value={p.des_costoCamionesDirUSDTn||0} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5} nota="BB → Neuquén/Añelo"/>
+          <Campo label="Tarifa flete" value={p.des_costoCamionesDirUSDTn||0} onChange={v=>set("des_costoCamionesDirUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5} nota="BB → Neuquén/Añelo (sin retorno)"/>
           <div style={{marginTop:8,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8}}>
-            <div style={{fontSize:9,color:C.green,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Capacidad retiro directos</div>
-            <div style={{fontSize:16,fontWeight:800,color:C.green,fontFamily:"DM Mono,monospace"}}>{sch.tpDir.toFixed(0)} Tn/hr</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{sch.nDir} cam × {sch.tnPorDir.toFixed(1)}Tn ÷ {sch.tCicloDirMin.toFixed(1)}min × 60</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:1}}>{sch.tnDir.toFixed(0)} Tn en total · {(sch.pctDir*100).toFixed(1)}% del total</div>
+            <div style={{fontSize:9,color:C.green,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Fase 1 — solo directos</div>
+            <div style={{fontSize:15,fontWeight:800,color:C.green,fontFamily:"DM Mono,monospace"}}>{sch.Tn_directos.toFixed(0)} Tn · {sch.t_fase1_hrs.toFixed(1)} hrs</div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>{sch.nDir} cam × {sch.Tn_cam_dir.toFixed(1)} Tn/cam · intervalo {sch.t_ciclo_tolva.toFixed(1)} min/tolva</div>
           </div>
         </div>
 
-        {/* Camiones calesita */}
+        {/* Calesitas */}
         <div className="card" style={{borderTop:`3px solid ${C.gold}`}}>
-          <div className="ct" style={{color:C.gold}}>🔄 Camiones Calesita — Acopio BB</div>
+          <div className="ct" style={{color:C.gold}}>🔄 Calesitas — Depósito BB</div>
           <p style={{fontSize:10,color:C.mid,marginBottom:10,lineHeight:1.5}}>
-            Ciclo continuo: cargan, van al acopio, descargan, vuelven.
+            Ciclo cerrado. Necesitás ≥<strong style={{fontFamily:"DM Mono,monospace"}}>{sch.n_cal_min_por_tolva * (p.des_gruas||2)}</strong> para flujo continuo en fase 2.
           </p>
           <div className="g2">
-            <Campo label="Cantidad" value={p.des_camAco_cantidad||5} onChange={v=>set("des_camAco_cantidad",Math.max(0,Math.round(v)))} tipo="usuario" unit="camiones" min={0} max={50} step={1}/>
-            <Campo label="Volumen por camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
-              nota={`≈ ${((p.des_camAco_volM3||30)*densidad).toFixed(1)} Tn/cam`}/>
+            <Campo label="Cantidad total" value={p.des_camAco_cantidad||0} onChange={v=>set("des_camAco_cantidad",Math.max(0,Math.round(v)))} tipo="usuario" unit="camiones" min={0} max={50} step={1}/>
+            <Campo label="Volumen/camión" value={p.des_camAco_volM3||30} onChange={v=>set("des_camAco_volM3",v)} tipo="usuario" unit="m³" min={5} max={80} step={1}
+              nota={`${((p.des_camAco_volM3||30)*densidad).toFixed(1)} Tn/cam`}/>
           </div>
           <div className="g2">
-            <Campo label="Distancia tolva→acopio" value={p.des_camAco_distKm||15} onChange={v=>set("des_camAco_distKm",v)} tipo="usuario" unit="km" min={1} max={100} step={1} nota="Solo ida"/>
+            <Campo label="Dist. tolva→depósito" value={p.des_camAco_distKm||15} onChange={v=>set("des_camAco_distKm",v)} tipo="usuario" unit="km" min={1} max={100} step={1} nota="Solo ida"/>
             <Campo label="Velocidad" value={p.des_camAco_velKmh||60} onChange={v=>set("des_camAco_velKmh",v)} tipo="usuario" unit="km/h" min={10} max={120} step={5}/>
           </div>
           <div className="g2">
-            <Campo label="Tiempo descarga acopio" value={p.des_tDescargaAcoMin||15} onChange={v=>set("des_tDescargaAcoMin",v)} tipo="usuario" unit="min" min={2} max={60} step={1} nota="Tiempo de volcado en el predio"/>
-            <Campo label="Posicionamiento" value={p.des_tPosicionMin||5} onChange={v=>set("des_tPosicionMin",v)} tipo="usuario" unit="min" min={1} max={30} step={1} nota="Arrancar, posicionarse bajo tolva"/>
+            <Campo label="T. descarga en depósito" value={p.des_tDescargaAcoMin||10} onChange={v=>set("des_tDescargaAcoMin",v)} tipo="usuario" unit="min" min={2} max={60} step={1}/>
+            <Campo label="Alquiler predio" value={p.des_alquilerPredioUSDTn||0} onChange={v=>set("des_alquilerPredioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.1}/>
           </div>
-          <div className="g2">
-            <Campo label="Costo transp." value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01} nota="Tarifa por Tn·km (ida+vuelta)"/>
-            <Campo label="Alquiler predio" value={p.des_alquilerPredioUSDTn||0} onChange={v=>set("des_alquilerPredioUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.1} nota="Por Tn almacenada"/>
-          </div>
+          <Campo label="Costo transporte" value={p.des_camAco_costoKmTon||0.08} onChange={v=>set("des_camAco_costoKmTon",v)} tipo="usuario" unit="USD/(Tn·km)" min={0} max={1} step={0.01} nota="Tarifa ida+vuelta por Tn·km"/>
           <div style={{marginTop:8,padding:"8px 12px",background:"#FFFBEB",border:`1px solid ${C.warnBorder}`,borderRadius:8}}>
-            <div style={{fontSize:9,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Capacidad retiro calesita</div>
-            <div style={{fontSize:16,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace"}}>{sch.tpAco.toFixed(0)} Tn/hr</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:2}}>Ciclo: {sch.tCicloAcoMin.toFixed(1)} min (pos + carga + ida + desc + vuelta)</div>
-            <div style={{fontSize:9,color:C.mid,marginTop:1}}>{sch.tnAco.toFixed(0)} Tn en total · {(sch.pctAco*100).toFixed(1)}% · costo ${sch.costoAcoUSDTn.toFixed(2)}/Tn</div>
+            <div style={{fontSize:9,color:C.orange,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:3}}>Fase 2 — solo calesitas</div>
+            <div style={{fontSize:15,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace"}}>{sch.Tn_calesitas.toFixed(0)} Tn · {sch.t_fase2_hrs.toFixed(1)} hrs</div>
+            <div style={{fontSize:9,color:C.mid,marginTop:2}}>
+              Ciclo cam: {sch.t_ciclo_cal.toFixed(1)} min · mín. {sch.n_cal_min_por_tolva*(p.des_gruas||2)} cam para flujo continuo
+              {sch.nCal < sch.n_cal_min_por_tolva*(p.des_gruas||2) && sch.nCal>0 &&
+                <span style={{color:C.red,fontWeight:700}}> ⚠️ faltan {sch.n_cal_min_por_tolva*(p.des_gruas||2)-sch.nCal}</span>}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── RESULTADO DEL MIX ── */}
+      {/* ── RESUMEN DE FASES ── */}
       <div className="card" style={{borderTop:`3px solid ${C.navy}`}}>
-        <div className="ct">📊 Resultado del Mix de Camiones</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+        <div className="ct">📊 Plan de Descarga</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
           {[
-            {l:"Capacidad retiro total", v:`${sch.tpRetiro.toFixed(0)} Tn/hr`, sub:`Dir ${sch.tpDir.toFixed(0)} + Cal ${sch.tpAco.toFixed(0)}`, c:C.navy},
-            {l:"Capacidad grúas",        v:`${sch.tpGruas.toFixed(0)} Tn/hr`,  sub:`${p.des_nTolvas||2} tolvas × ${p.des_velGruaTnHr||400} Tn/hr`, c:C.blue},
-            {l:"Throughput real",        v:`${sch.tpReal.toFixed(0)} Tn/hr`,   sub:`min(retiro, grúas)`, c:C.green},
+            {l:"Throughput fase 1", v:`${sch.tp_fase1.toFixed(0)} Tn/hr`, sub:`directos + calesitas`,      c:C.green},
+            {l:"Throughput fase 2", v:`${sch.tp_fase2.toFixed(0)} Tn/hr`, sub:`solo calesitas`,            c:C.gold},
+            {l:"Techo grúas",       v:`${sch.tp_grua_max_total.toFixed(0)} Tn/hr`, sub:`${p.des_gruas||2} grúas × ${sch.vel_grua_TnHr.toFixed(0)} Tn/hr`, c:C.blue},
           ].map(({l,v,sub,c})=>(
             <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"10px 12px"}}>
               <div style={{fontSize:9,color:"#64748B",textTransform:"uppercase",letterSpacing:.5,fontWeight:600,marginBottom:4}}>{l}</div>
-              <div style={{fontSize:16,fontWeight:700,color:c,fontFamily:"ui-monospace,monospace"}}>{v}</div>
+              <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"ui-monospace,monospace"}}>{v}</div>
               <div style={{fontSize:9,color:"#94A3B8",marginTop:2}}>{sub}</div>
             </div>
           ))}
         </div>
 
-        {/* Cuello de botella */}
-        {sch.cuello==="camiones"?(
-          <div style={{padding:"8px 12px",background:"#FEF3C7",border:`1px solid ${C.warnBorder}`,borderRadius:8,fontSize:10,color:C.orange,marginBottom:10}}>
-            ⚠️ <strong>Cuello de botella: camiones.</strong> Las grúas producen {sch.tpGruas.toFixed(0)} Tn/hr pero los camiones solo retiran {sch.tpRetiro.toFixed(0)} Tn/hr.
-            La grúa espera <strong>{sch.tiempoMuertoHr.toFixed(1)} hs</strong> durante la descarga — agregá camiones para reducir tiempo muerto.
-          </div>
-        ):(
-          <div style={{padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:C.green,marginBottom:10}}>
-            ✓ <strong>Cuello de botella: grúas.</strong> Los camiones tienen capacidad ({sch.tpRetiro.toFixed(0)} Tn/hr) mayor que las grúas ({sch.tpGruas.toFixed(0)} Tn/hr). Agregar más camiones no reduce el tiempo de descarga.
-          </div>
-        )}
-
-        {/* Barra distribución */}
-        <div style={{marginBottom:8}}>
+        {/* Barra fases */}
+        <div style={{marginBottom:6}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-            <span style={{fontSize:10,fontWeight:700,color:C.green}}>Directos {(sch.pctDir*100).toFixed(1)}% · {sch.tnDir.toFixed(0)} Tn</span>
-            <span style={{fontSize:10,fontWeight:700,color:C.gold}}>Calesita {(sch.pctAco*100).toFixed(1)}% · {sch.tnAco.toFixed(0)} Tn</span>
+            <span style={{fontSize:10,fontWeight:700,color:C.green}}>Fase 1 — Directos · {sch.Tn_directos.toFixed(0)} Tn · {sch.t_fase1_hrs.toFixed(1)} hrs</span>
+            <span style={{fontSize:10,fontWeight:700,color:C.gold}}>Fase 2 — Calesitas · {sch.Tn_calesitas.toFixed(0)} Tn · {sch.t_fase2_hrs.toFixed(1)} hrs</span>
           </div>
-          <div style={{height:18,borderRadius:6,overflow:"hidden",display:"flex",border:`1px solid ${C.border}`}}>
-            <div style={{width:`${sch.pctDir*100}%`,background:C.green,display:"flex",alignItems:"center",justifyContent:"center",transition:"width .3s"}}>
-              {sch.pctDir>0.12&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{sch.nDir} cam</span>}
-            </div>
-            <div style={{flex:1,background:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              {sch.pctAco>0.12&&<span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{sch.nAco} cam</span>}
-            </div>
+          <div style={{height:20,borderRadius:6,overflow:"hidden",display:"flex",border:`1px solid ${C.border}`}}>
+            {sch.t_total_hrs > 0 && <>
+              <div style={{width:`${(sch.t_fase1_hrs/sch.t_total_hrs)*100}%`,background:C.green,display:"flex",alignItems:"center",justifyContent:"center",transition:"width .3s"}}>
+                {sch.t_fase1_hrs/sch.t_total_hrs>0.15 && <span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{sch.t_fase1_hrs.toFixed(1)}h</span>}
+              </div>
+              <div style={{flex:1,background:C.gold,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {sch.t_fase2_hrs/sch.t_total_hrs>0.15 && <span style={{fontSize:9,fontWeight:800,color:"#fff"}}>{sch.t_fase2_hrs.toFixed(1)}h</span>}
+              </div>
+            </>}
           </div>
         </div>
-        <div style={{fontSize:9,color:C.mid,textAlign:"center"}}>
-          Tiempo descarga ideal: <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.tIdealDias.toFixed(2)} días</strong> · Uso grúas: <strong style={{fontFamily:"DM Mono,monospace"}}>{(sch.utilizacionGruas*100).toFixed(0)}%</strong>
+        <div style={{fontSize:10,color:C.mid,textAlign:"center"}}>
+          Tiempo total scheduler: <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_total_dias.toFixed(2)} días</strong>
+          &nbsp;·&nbsp; Con inop + espera: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{e3.tReal_dias.toFixed(1)} días</strong>
         </div>
       </div>
 
-      {/* ── PARÁMETROS FÍSICOS ── */}
+      {/* ── TABLA SENSIBILIDAD ── */}
       <div className="card">
-        <div className="ct">Tolvas y Grúas <TipoBadge tipo="usuario"/></div>
+        <div className="ct">🔍 Sensibilidad — Días de descarga por combinación de camiones</div>
+        <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
+          Configuración actual marcada en amarillo. Verde = flujo continuo garantizado.
+        </p>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",fontSize:10,whiteSpace:"nowrap"}}>
+            <thead>
+              <tr>
+                <th style={{padding:"4px 8px",background:C.navy,color:"rgba(255,255,255,.6)",fontSize:8,fontWeight:700,textAlign:"left",position:"sticky",left:0}}>
+                  Dir ↓ Cal →
+                </th>
+                {[0,1,2,3,4,5,6,7,8,9,10].map(nc=>(
+                  <th key={nc} style={{padding:"4px 8px",background:nc===sch.nCal?C.gold:C.navy,color:"rgba(255,255,255,.8)",fontSize:8,fontWeight:700,textAlign:"center",minWidth:44}}>
+                    {nc}🔄
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[0,5,10,15,20,25,30,35,40].map(nd=>(
+                <tr key={nd}>
+                  <td style={{padding:"4px 8px",background:nd===sch.nDir?C.gold:"#EEF2F7",fontWeight:700,fontSize:9,color:nd===sch.nDir?"#fff":C.navy,position:"sticky",left:0}}>
+                    {nd}🚛
+                  </td>
+                  {[0,1,2,3,4,5,6,7,8,9,10].map(nc=>{
+                    const row=sensDatos.find(r=>r.nd===nd&&r.nc===nc);
+                    const isCurrent=nd===sch.nDir&&nc===sch.nCal;
+                    const isGood=row&&!row.alerta;
+                    const bg=isCurrent?"#FFFBEB":isGood?"#F0FDF4":row?"#FEF2F2":"#F9FAFB";
+                    const co=isCurrent?C.gold:isGood?C.green:C.red;
+                    return (
+                      <td key={nc} style={{padding:"4px 8px",textAlign:"center",background:bg,
+                        border:isCurrent?`2px solid ${C.gold}`:"1px solid #EEF2F7",fontFamily:"DM Mono,monospace",fontWeight:isCurrent?800:600,color:co}}>
+                        {row?`${row.dias}d`:"—"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── PARÁMETROS FÍSICOS DESCARGA ── */}
+      <div className="card">
+        <div className="ct">Parámetros Operativos <TipoBadge tipo="usuario"/></div>
         <div className="g2">
-          <Campo label="N° tolvas (= N° grúas)" value={p.des_nTolvas||2} onChange={v=>set("des_nTolvas",Math.max(1,Math.round(v)))} tipo="usuario" unit="tolvas" min={1} max={8} step={1} nota="Cada tolva tiene su propia grúa"/>
-          <Campo label="Velocidad grúa / tolva" value={p.des_velGruaTnHr||400} onChange={v=>set("des_velGruaTnHr",v)} tipo="usuario" unit="Tn/hr" min={50} max={2000} step={50} nota="Vel. descarga = vel. llenado tolva"/>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="ct">Parámetros Físicos — Descarga <TipoBadge tipo="usuario"/></div>
-        <div className="g3">
-          <Campo label="Grampada" value={p.des_grampada} onChange={v=>set("des_grampada",v)} tipo="usuario" unit="m³" min={5} max={30}/>
-          <Campo label="Grúas" value={p.des_gruas} onChange={v=>set("des_gruas",v)} tipo="usuario" min={1} max={4}/>
-          <Campo label="Mov/min" value={p.des_movGrampa} onChange={v=>set("des_movGrampa",v)} tipo="usuario" unit="mov/min" min={0.1} max={2} step={0.1}/>
+          <Campo label="Número de grúas / tolvas" value={p.des_gruas} onChange={v=>set("des_gruas",Math.max(1,Math.round(v)))} tipo="usuario" unit="unidades" min={1} max={6} step={1}/>
           <Campo label="Opex descarga" value={p.des_opexUSDTn} onChange={v=>set("des_opexUSDTn",v)} tipo="usuario" unit="USD/Tn" min={0} step={0.5}/>
         </div>
         <Toggle label="Horas trabajo/día" options={[4,8,12,14,24]} value={p.des_horasDia} onChange={v=>set("des_horasDia",v)} tipo="usuario"/>
@@ -1231,6 +1273,7 @@ function TabDescarga({p,set,tnEntregadas}) {
         </div>
       </div>
 
+      {/* ── ESPERA BB ── */}
       <div className="card">
         <div className="ct">Espera BB por Mes (días) <TipoBadge tipo="estadistico"/> <FuenteLink fuente={FUENTES.esperaBB}/></div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4}}>
@@ -1257,6 +1300,7 @@ function TabDescarga({p,set,tnEntregadas}) {
     </div>
   );
 }
+
 
 // ─── TAB E4: VUELTA EN LASTRE ──────────────────────────────────────────────
 function TabVuelta({p,set,tnEntregadas}) {
