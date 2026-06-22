@@ -1161,30 +1161,35 @@ function TabDescarga({p,set,tnEntregadas}) {
 
           {/* Explicación lógica matemática */}
           <div style={{background:"#FAFAF7",border:"1px solid #E5E0C8",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:10,color:"#4B4530",lineHeight:1.7}}>
-            <div style={{fontWeight:700,marginBottom:6,color:C.gold,textTransform:"uppercase",letterSpacing:.5,fontSize:9}}>¿Cómo se calcula el mínimo de calesitas?</div>
-            <div>La tolva necesita un camión nuevo cada <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_ciclo_tolva.toFixed(1)} min</strong> (= ciclo tolva).</div>
-            <div style={{marginTop:4}}>Cada calesita tarda <strong style={{fontFamily:"DM Mono,monospace"}}>{sch.t_ciclo_cal.toFixed(1)} min</strong> en completar su ciclo:</div>
+            <div style={{fontWeight:700,marginBottom:6,color:C.gold,textTransform:"uppercase",letterSpacing:.5,fontSize:9}}>¿Cómo operan los dos pools en paralelo?</div>
+            <div>Ambos pools (<strong>directos + calesitas</strong>) cargan simultáneamente desde el minuto 0. Los directos tienen prioridad — la tolva los atiende primero.</div>
+            <div style={{marginTop:6,fontWeight:700}}>Ciclo de cada calesita:</div>
             <div style={{fontFamily:"DM Mono,monospace",fontSize:9,marginTop:4,padding:"4px 8px",background:"rgba(0,0,0,.04)",borderRadius:5}}>
               {sch.t_ciclo_tolva.toFixed(1)} min (pos+carga+cierre)
               + {sch.t_viaje.toFixed(1)} min (ida {p.des_camAco_distKm||15}km)
-              + {p.des_tDescargaAcoMin||10} min (descarga)
+              + {p.des_tDescargaAcoMin||10} min (descarga dep.)
               + {sch.t_viaje.toFixed(1)} min (vuelta)
               = <strong>{sch.t_ciclo_cal.toFixed(1)} min</strong>
             </div>
-            <div style={{marginTop:6}}>
-              Para que <em>ninguna tolva espere</em>, se necesita al menos <strong style={{fontFamily:"DM Mono,monospace"}}>⌈{sch.t_ciclo_cal.toFixed(1)} ÷ {sch.t_ciclo_tolva.toFixed(1)}⌉ = {sch.n_cal_min_por_tolva}</strong> calesitas por tolva.
-            </div>
-            <div style={{marginTop:4}}>
-              Con <strong>{p.des_gruas||2} tolvas</strong> → mínimo total: <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{sch.n_cal_min_por_tolva} × {p.des_gruas||2} = {sch.n_cal_min_por_tolva*(p.des_gruas||2)} calesitas</strong>
-            </div>
-            {sch.nCal > 0 && sch.nCal < sch.n_cal_min_por_tolva*(p.des_gruas||2) && (
-              <div style={{marginTop:6,color:C.red,fontWeight:700}}>
-                ⚠️ Con {sch.nCal} calesitas la tolva espera {((sch.t_ciclo_cal/sch.nCal*(p.des_gruas||2))-sch.t_ciclo_tolva).toFixed(1)} min por ciclo → throughput reducido.
-              </div>
-            )}
-            {sch.nCal >= sch.n_cal_min_por_tolva*(p.des_gruas||2) && sch.nCal > 0 && (
+            {sch.Tn_calesitas > 0 ? (
+              <>
+                <div style={{marginTop:6}}>
+                  Para que <em>ninguna tolva espere en fase 2</em>, se necesita al menos{' '}
+                  <strong style={{fontFamily:"DM Mono,monospace"}}>⌈{sch.t_ciclo_cal.toFixed(1)} ÷ {sch.t_ciclo_tolva.toFixed(1)}⌉ = {sch.n_cal_min_por_tolva}</strong> calesitas por tolva.
+                  Con <strong>{p.des_gruas||2} tolvas</strong> → mínimo:{' '}
+                  <strong style={{fontFamily:"DM Mono,monospace",color:C.gold}}>{sch.n_cal_min_por_tolva} × {p.des_gruas||2} = {sch.n_cal_min_total}</strong>
+                </div>
+                {sch.nCal >= sch.n_cal_min_total ? (
+                  <div style={{marginTop:6,color:C.green,fontWeight:700}}>✓ Flujo continuo garantizado en fase 2.</div>
+                ) : (
+                  <div style={{marginTop:6,color:C.red,fontWeight:700}}>
+                    ⚠️ Con {sch.nCal} calesitas la tolva espera en fase 2 — throughput reducido.
+                  </div>
+                )}
+              </>
+            ) : (
               <div style={{marginTop:6,color:C.green,fontWeight:700}}>
-                ✓ Flujo continuo garantizado — las tolvas nunca esperan.
+                ✓ Los directos cubren todas las Tn — no se necesitan calesitas para completar la descarga.
               </div>
             )}
           </div>
@@ -1228,8 +1233,8 @@ function TabDescarga({p,set,tnEntregadas}) {
         <div className="ct">📊 Plan de Descarga</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
           {[
-            {l:"Throughput fase 1", v:`${sch.tp_fase1.toFixed(0)} Tn/hr`, sub:`directos + calesitas`,      c:C.green},
-            {l:"Throughput fase 2", v:`${sch.tp_fase2.toFixed(0)} Tn/hr`, sub:`solo calesitas`,            c:C.gold},
+            {l:"Throughput fase 1", v:`${sch.tp_fase1.toFixed(0)} Tn/hr`, sub:`directos + calesitas en paralelo`, c:C.green},
+            {l:"Throughput fase 2", v:`${sch.tp_fase2.toFixed(0)} Tn/hr`, sub:`solo calesitas (directos agotados)`, c:C.gold},
             {l:"Techo grúas",       v:`${sch.tp_grua_max_total.toFixed(0)} Tn/hr`, sub:`${p.des_gruas||2} grúas × ${sch.vel_grua_TnHr.toFixed(0)} Tn/hr`, c:C.blue},
           ].map(({l,v,sub,c})=>(
             <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"10px 12px"}}>
