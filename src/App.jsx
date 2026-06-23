@@ -1063,8 +1063,9 @@ function TabDescarga({p,set,tnEntregadas}) {
   const costoRows=[
     {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                          total:e3.costoOpex,          hover:[`${e3.hoverTotal[0]}`]},
     {label:"Directos → Neuquén",      eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,  total:e3.costoCamiones, hover:[`$${p.des_costoCamionesDirUSDTn}/Tn × ${sch.Tn_directos.toFixed(0)}Tn`]},
-    {label:"Calesitas (ciclo BB)",     eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoCalUSDTn.toFixed(2)}/Tn`, total:e3.costoAcopio, hover:[`dist ${p.des_camAco_distKm}km × 2 × $${p.des_camAco_costoKmTon}/Tn·km + $${p.des_alquilerPredioUSDTn||0}/Tn predio`]},
-    {label:"Acopio → Neuquén",        eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`, total:e3.costoFleteAcopio, hover:[e3.hoverTotal[3]]},
+    {label:"Calesitas (transp. local)",  eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn`, total:sch.costoTranspUSDTn*sch.Tn_calesitas, hover:[`dist ${p.des_camAco_distKm}km × 2 × $${p.des_camAco_costoKmTon}/Tn·km`]},
+    {label:"Alquiler predio (acopio)",   eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                         total:sch.costoAlqTotal,                    hover:[`$${p.des_alquilerPredioUSDTn||0}/Tn × ${sch.Tn_calesitas.toFixed(0)}Tn`]},
+    {label:"Acopio → Neuquén",           eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,            total:e3.costoFleteAcopio,                  hover:[e3.hoverTotal[4]]},
     {label:"Combustible puerto",      eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,         total:e3.combPuerto,         hover:e3.hoverComb},
     {label:"Time Charter+Trip.",      eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                      total:e3.fleteEtapa,         hover:e3.hoverTC},
     {label:"Merma descarga",          eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,    total:e3.costoMermaDescarga, hover:[`${e3.mermaDescarga_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
@@ -1828,8 +1829,9 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
       rows:[
         {label:"Opex descarga",          eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                       total:e3.costoOpex,          hover:[e3.hoverTotal[0]]},
         {label:"Camiones directos",      eq:`${e3.sch?.nDir||0} cam → ${e3.tnDirecto.toFixed(0)}Tn`,                                                     total:e3.costoCamiones,      hover:[e3.hoverTotal[1]]},
-        {label:"Calesitas (ciclo local)",eq:`${e3.sch?.nCal||0} cam → ${e3.tnAcopio.toFixed(0)}Tn × $${(e3.sch?.costoCalUSDTn||0).toFixed(2)}/Tn`,      total:e3.costoAcopio,        hover:[e3.hoverTotal[2]]},
-        {label:"Flete acopio → Neuquén", eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                     total:e3.costoFleteAcopio,   hover:[e3.hoverTotal[3]]},
+        {label:"Calesitas (transp. local)",  eq:`${e3.sch?.nCal||0} cam → ${e3.tnAcopio.toFixed(0)}Tn × $${(e3.sch?.costoTranspUSDTn||0).toFixed(2)}/Tn`, total:(e3.sch?.costoTranspUSDTn||0)*(e3.sch?.Tn_calesitas||0), hover:[e3.hoverTotal[2]]},
+        {label:"Alquiler predio (acopio)",   eq:`${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(p.des_alquilerPredioUSDTn||0).toFixed(2)}/Tn`,              total:(e3.sch?.costoAlqTotal||0),                              hover:[e3.hoverTotal[3]]},
+        {label:"Flete acopio → Neuquén",     eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                      total:e3.costoFleteAcopio,                                     hover:[e3.hoverTotal[4]]},
         {label:"Combustible puerto",     eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                                     total:e3.combPuerto,         hover:e3.hoverComb},
         {label:"Time Charter+Trip.",     eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                                  total:e3.fleteEtapa,         hover:e3.hoverTC},
         {label:"Agencia BB",             eq:"desde ítems Ag. BB",                                                                                         total:e3.agencia,            hover:[e3.hoverTotal[6]]},
