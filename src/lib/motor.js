@@ -372,8 +372,8 @@ export function calcAgenciaBB(p, tReal_dias) {
   }, 0);
 }
 // Precio equivalente de la arena en descarga = costo total hasta llegada / tn entregadas
-export function precioArenaEquivalenteDescarga(p, mesIdx=5) {
-  const e1 = calcEtapa1(p, mesIdx);
+export function precioArenaEquivalenteDescarga(p) {
+  const e1 = calcEtapa1(p);
   const e2 = calcEtapa2(p);
   const costoHastaLlegada = e1.costoTotal + e2.costoTotal;
   return e1.tnPostCarga > 0 ? costoHastaLlegada / e1.tnPostCarga : 0;
@@ -399,8 +399,20 @@ export function getPctInopFromDB(climaDB, umbralLluvia, umbralViento) {
   });
 }
 
-export function getInopDetalle(climaDB, umbralLluvia, umbralViento, mesIdx) {
-  const d=climaDB[mesIdx];
+// Promedia los 12 meses del climaDB en un único registro anual
+export function getClimaAnual(climaDB) {
+  const n = climaDB.length || 1;
+  return {
+    lluviaProm:  climaDB.reduce((s,d)=>s+d.lluviaProm, 0)  / n,
+    lluviaSigma: climaDB.reduce((s,d)=>s+d.lluviaSigma, 0) / n,
+    vientoProm:  climaDB.reduce((s,d)=>s+d.vientoProm, 0)  / n,
+    vientoSigma: climaDB.reduce((s,d)=>s+d.vientoSigma, 0) / n,
+  };
+}
+
+// getInopDetalle ahora trabaja sobre el promedio anual — sin mesIdx
+export function getInopDetalle(climaDB, umbralLluvia, umbralViento) {
+  const d = getClimaAnual(climaDB);
   const pL=probSuperaUmbral(d.lluviaProm,d.lluviaSigma,umbralLluvia);
   const pV=probSuperaUmbral(d.vientoProm,d.vientoSigma,umbralViento);
   return {pL,pV,pInop:Math.min(pL+pV-pL*pV,0.95),
@@ -425,7 +437,7 @@ export function checkEspejo(p) {
 }
 
 // ─── ETAPA 1: CARGA ────────────────────────────────────────────────────────
-export function calcEtapa1(p, mesIdx=5) {
+export function calcEtapa1(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
   const tc=p.barco_timeCharter+p.barco_tripulacion;
@@ -435,14 +447,14 @@ export function calcEtapa1(p, mesIdx=5) {
   const tIdeal_hr     =p.cap_capacidadBarco/velIdeal_TnHr;
   const tIdeal_dias   =tIdeal_hr/p.cap_horasDia;
 
-  const inopDet =getInopDetalle(p.clima_zarate,p.cap_inopLluvia,p.cap_inopViento,mesIdx);
+  const inopDet =getInopDetalle(p.clima_zarate,p.cap_inopLluvia,p.cap_inopViento);
   const pInop   =inopDet.pInop;
   const diasInop=tIdeal_dias*pInop/Math.max(0.01,1-pInop);
   const tReal_dias=tIdeal_dias+diasInop+p.cap_esperaDias;
 
   const mermaTn    =p.cap_capacidadBarco*p.cap_pctMerma;
-  const tnPostCarga=p.cap_capacidadBarco; // zarpa siempre lleno
-  const precioArena=p.cap_arenaFijaPorMes?p.cap_precioArenaMes[mesIdx]:p.cap_precioArenaOrigen;
+  const tnPostCarga=p.cap_capacidadBarco;
+  const precioArena=p.cap_precioArenaOrigen;
 
   const costoArena =precioArena*p.cap_capacidadBarco;
   const costoMerma =precioArena*mermaTn;
@@ -714,26 +726,26 @@ function calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva, Tn_por_ciclo
 }
 
 // ─── ETAPA 3: DESCARGA ─────────────────────────────────────────────────────
-export function calcEtapa3(p, mesIdx=5, tnEntrada=null) {
+export function calcEtapa3(p, tnEntrada=null) {
   const vlsfo     = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const vlsfoStats= calcVLSFOStats(p.vlsfo_historico);
   const tc        = p.barco_timeCharter + p.barco_tripulacion;
   const tn        = tnEntrada ?? (p.cap_capacidadBarco * (1 - p.cap_pctMerma));
 
-  // ── Scheduler: throughput y split desde la logística real de camiones ──
   const sch = calcScheduler(p, tn);
-  // t_total_dias puede ser 999 si no hay calesitas y quedan Tn sin cubrir
-  // En ese caso usamos solo la fase 1 como base del tiempo ideal
   const tIdeal_dias   = isFinite(sch.t_total_dias) && sch.t_total_dias < 500
     ? sch.t_total_dias
     : (sch.t_fase1_hrs / Math.max(1, p.des_horasDia || 14));
   const velIdeal_TnHr = sch.vel_grua_TnHr;
 
-  // ── Inoperabilidad climática ────────────────────────────────────────────
-  const inopDet = getInopDetalle(p.clima_bb, p.des_inopLluvia, p.des_inopViento, mesIdx);
+  // Inoperabilidad — promedio anual
+  const inopDet = getInopDetalle(p.clima_bb, p.des_inopLluvia, p.des_inopViento);
   const pInop   = inopDet.pInop;
   const diasInop= tIdeal_dias * pInop / Math.max(0.01, 1 - pInop);
-  const esperaBB= p.des_esperaBBMes[mesIdx];
+  // Espera BB — promedio anual del array (o valor escalar si ya migrado)
+  const esperaBB= Array.isArray(p.des_esperaBBMes)
+    ? p.des_esperaBBMes.reduce((s,v)=>s+v,0) / p.des_esperaBBMes.length
+    : (p.des_esperaBB ?? 1.97);
   const tReal_dias = tIdeal_dias + diasInop + esperaBB + p.des_esperaZarateDias;
 
   // ── Mermas ──────────────────────────────────────────────────────────────
@@ -968,26 +980,13 @@ export function calcNViajes(p, tot) {
 
 // ─── TOTAL ─────────────────────────────────────────────────────────────────
 // Mes más pesimista (mayor inoperabilidad en BB — afecta E3)
-export function calcMesWorst(p) {
-  const e0 = calcEtapaRepo(p);
-  const e2 = calcEtapa2(p);
-  let worstMes = 0, worstInop = 0;
-  for (let i = 0; i < 12; i++) {
-    const e1  = calcEtapa1(p, i);
-    const cAEq = e1.tnPostCarga > 0 ? (e0.costoTotal + e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen || 13.5);
-    const e3  = calcEtapa3({...p, _costoArenaEq: cAEq}, i, e1.tnPostCarga);
-    if (e3.pInop > worstInop) { worstInop = e3.pInop; worstMes = i; }
-  }
-  return worstMes;
-}
-
-export function calcTotal(p, mesIdx=5) {
+export function calcTotal(p) {
   const e0=calcEtapaRepo(p);
-  const e1=calcEtapa1(p,mesIdx);
+  const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
   const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal+e2.costoTotal+e0.costoTotal)/e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const pConEq = {...p, _costoArenaEq: costoArenaEq};
-  const e3=calcEtapa3(pConEq,mesIdx,e1.tnPostCarga);
+  const e3=calcEtapa3(pConEq,e1.tnPostCarga);
   const costoTotal =e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
   const usdTn      =costoTotal/e3.tnEntregadas;
   const diasTotales=e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias;
@@ -1002,8 +1001,9 @@ function randn(){
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
-function sampleInop(climaDB,mesIdx,umbralL,umbralV,sigmaFactor=0.20){
-  const d=climaDB[mesIdx];
+// sampleInop usa promedio anual — sin selección de mes
+function sampleInop(climaDB, umbralL, umbralV, sigmaFactor=0.20){
+  const d = getClimaAnual(climaDB);
   const pL=probSuperaUmbral(d.lluviaProm,d.lluviaSigma,umbralL);
   const pV=probSuperaUmbral(d.vientoProm,d.vientoSigma,umbralV);
   const pBase=Math.min(pL+pV-pL*pV,0.90);
@@ -1011,49 +1011,53 @@ function sampleInop(climaDB,mesIdx,umbralL,umbralV,sigmaFactor=0.20){
 }
 
 export function runMonteCarlo(p, n=5000) {
-  // mc_vars: array de config de variables estocásticas (con fallback a defaults)
   const mcVars = p.mc_vars || DEFAULT_PARAMS.mc_vars;
   const cfg = {};
   mcVars.forEach(v => { cfg[v.id] = v; });
-  const S = id => cfg[id]?.activa !== false; // ¿variable activa?
+  const S = id => cfg[id]?.activa !== false;
   const sigma = id => cfg[id]?.sigma ?? DEFAULT_PARAMS.mc_vars.find(v=>v.id===id)?.sigma ?? 0;
 
   const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
   const basePrecio = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const sigmaVLSFO = sigma('vlsfo') !== null ? sigma('vlsfo') : vlsfoStats.sigma12m;
+
+  // Promedio anual de esperaBB
+  const esperaBBBase = Array.isArray(p.des_esperaBBMes)
+    ? p.des_esperaBBMes.reduce((s,v)=>s+v,0) / p.des_esperaBBMes.length
+    : (p.des_esperaBB ?? 1.97);
+
+  // Inop base anual para rama S('inop')=false
+  const dZanual = getClimaAnual(p.clima_zarate);
+  const dBanual = getClimaAnual(p.clima_bb);
+  const pLzBase = probSuperaUmbral(dZanual.lluviaProm,dZanual.lluviaSigma,p.cap_inopLluvia);
+  const pVzBase = probSuperaUmbral(dZanual.vientoProm,dZanual.vientoSigma,p.cap_inopViento);
+  const pZbase  = Math.min(pLzBase+pVzBase-pLzBase*pVzBase, 0.90);
+  const pLbBase = probSuperaUmbral(dBanual.lluviaProm,dBanual.lluviaSigma,p.des_inopLluvia);
+  const pVbBase = probSuperaUmbral(dBanual.vientoProm,dBanual.vientoSigma,p.des_inopViento);
+  const pBbase  = Math.min(pLbBase+pVbBase-pLbBase*pVbBase, 0.90);
+
   const results = [];
 
   for (let i = 0; i < n; i++) {
-    // Mes sorteado al azar — siempre anualizado
-    const mes = Math.floor(Math.random() * 12);
-
-    // Sorteo de variables según activa/fija
-    const vlsfo  = S('vlsfo')   ? Math.max(300, basePrecio + randn()*sigmaVLSFO)                          : basePrecio;
+    const vlsfo  = S('vlsfo')   ? Math.max(300, basePrecio + randn()*sigmaVLSFO)                      : basePrecio;
     const tc     = S('tc')      ? Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'))
                                     + p.barco_tripulacion + (p.barco_miscPorDia||0)
                                 : p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
-    const espBB  = S('espBB')   ? Math.max(0, p.des_esperaBBMes[mes] + randn()*sigma('espBB'))            : p.des_esperaBBMes[mes];
-    const espZ   = S('espZ')    ? Math.max(0, p.des_esperaZarateDias + randn()*sigma('espZ'))             : p.des_esperaZarateDias;
-    const mC     = S('mCarga')  ? Math.max(0, p.cap_pctMerma + randn()*sigma('mCarga'))                   : p.cap_pctMerma;
-    const mD     = S('mDesc')   ? Math.max(0, p.des_pctMermaDescarga + randn()*sigma('mDesc'))            : p.des_pctMermaDescarga;
-    const mA     = S('mAcopio') ? Math.max(0, p.des_pctMermaAcopio + randn()*sigma('mAcopio'))            : p.des_pctMermaAcopio;
-    const vF     = S('velFact') ? Math.max(0.5, 1 + randn()*sigma('velFact'))                             : 1;
-    const pa     = p.cap_arenaFijaPorMes ? p.cap_precioArenaMes[mes] : p.cap_precioArenaOrigen;
+    const espBB  = S('espBB')   ? Math.max(0, esperaBBBase + randn()*sigma('espBB'))                  : esperaBBBase;
+    const espZ   = S('espZ')    ? Math.max(0, p.des_esperaZarateDias + randn()*sigma('espZ'))         : p.des_esperaZarateDias;
+    const mC     = S('mCarga')  ? Math.max(0, p.cap_pctMerma + randn()*sigma('mCarga'))               : p.cap_pctMerma;
+    const mD     = S('mDesc')   ? Math.max(0, p.des_pctMermaDescarga + randn()*sigma('mDesc'))        : p.des_pctMermaDescarga;
+    const mA     = S('mAcopio') ? Math.max(0, p.des_pctMermaAcopio + randn()*sigma('mAcopio'))        : p.des_pctMermaAcopio;
+    const vF     = S('velFact') ? Math.max(0.5, 1 + randn()*sigma('velFact'))                         : 1;
+    const pa     = p.cap_precioArenaOrigen;
 
-    // Inoperabilidad climática — con o sin ruido
     let pZ, pB;
     if (S('inop')) {
-      pZ = sampleInop(p.clima_zarate, mes, p.cap_inopLluvia, p.cap_inopViento, sigma('inop'));
-      pB = sampleInop(p.clima_bb,     mes, p.des_inopLluvia, p.des_inopViento, sigma('inop'));
+      pZ = sampleInop(p.clima_zarate, p.cap_inopLluvia, p.cap_inopViento, sigma('inop'));
+      pB = sampleInop(p.clima_bb,     p.des_inopLluvia, p.des_inopViento, sigma('inop'));
     } else {
-      const dZ = p.clima_zarate[mes];
-      const dB = p.clima_bb[mes];
-      const pLz = probSuperaUmbral(dZ.lluviaProm,dZ.lluviaSigma,p.cap_inopLluvia);
-      const pVz = probSuperaUmbral(dZ.vientoProm,dZ.vientoSigma,p.cap_inopViento);
-      pZ = Math.min(pLz+pVz-pLz*pVz, 0.90);
-      const pLb = probSuperaUmbral(dB.lluviaProm,dB.lluviaSigma,p.des_inopLluvia);
-      const pVb = probSuperaUmbral(dB.vientoProm,dB.vientoSigma,p.des_inopViento);
-      pB = Math.min(pLb+pVb-pLb*pVb, 0.90);
+      pZ = pZbase;
+      pB = pBbase;
     }
 
     // E0 — Reposicionamiento
