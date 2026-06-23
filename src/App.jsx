@@ -1694,7 +1694,6 @@ function TabMC({p,set,resultado,setResultado}) {
                       {k:"agBB",     label:"Agencia BB",               color:C.navy},
                       {k:"opex",     label:"Opex carga + descarga",    color:C.navy},
                       {k:"camiones", label:"Camiones + Acopio",        color:C.navy},
-                      {k:"repo",     label:"Reposicionamiento",        color:C.mid},
                     ].map(({k,label,color},i)=>{
                       const r=res.proforma[k];
                       const delta=(r.p90-r.p10).toFixed(1);
@@ -2044,7 +2043,6 @@ function TabEvaluacion({p,tnEntregadas}) {
                       {l:"Agencia BB",           v: e3.agencia||0},
                       {l:"Opex carga+desc.",     v: (e1.costoOpex||0)+(e3.costoOpex||0)},
                       {l:"Camiones+Acopio",      v: (e3.costoCamiones||0)+(e3.costoAcopio||0)+(e3.costoFleteAcopio||0)},
-                      {l:"Reposicionamiento",    v: (e0.limpiezaBodega||0)+(e0.importacionWaiver||0)},
                     ].map(({l,v})=>(
                       <tr key={l} style={{borderBottom:"1px solid #EDE9FE"}}>
                         <td style={{padding:"4px 0",color:"#6D28D9",fontSize:9}}>{l}</td>
