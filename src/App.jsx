@@ -865,15 +865,12 @@ function TabRepo({p,set}) {
             </tbody>
           </table>
         </div>
-        <div style={{marginTop:8,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{marginTop:8}}>
           <button className="run" style={{fontSize:10,padding:"5px 12px"}}
             onClick={()=>{
               const nuevo={id:`repo_${Date.now()}`,label:"Nuevo concepto",usd:0,activo:true};
               set("repo_itemsExtra",[...(p.repo_itemsExtra||[]),nuevo]);
             }}>+ Agregar fila</button>
-          <div className="warn-note" style={{flex:1,margin:0}}>
-            El costo total de este viaje se distribuye entre las {p.cap_capacidadBarco.toLocaleString()} Tn cargadas → <strong>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"} USD/Tn</strong>.
-          </div>
         </div>
       </div>
     </div>
@@ -1067,14 +1064,15 @@ function TabDescarga({p,set,tnEntregadas}) {
   },[p, e1.tnPostCarga, sensFilas, sensCols]);
 
   const costoRows=[
-    {label:"Opex descarga",     eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                          total:e3.costoOpex,          hover:[`${e3.hoverTotal[0]}`]},
-    {label:"Camiones directos", eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,  total:e3.costoCamiones, hover:[`$${p.des_costoCamionesDirUSDTn}/Tn × ${sch.Tn_directos.toFixed(0)}Tn`]},
-    {label:"Calesitas (transp+predio)", eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoCalUSDTn.toFixed(2)}/Tn`, total:e3.costoAcopio, hover:[`dist ${p.des_camAco_distKm}km × 2 × $${p.des_camAco_costoKmTon}/Tn·km + $${p.des_alquilerPredioUSDTn||0}/Tn predio`]},
-    {label:"Combustible puerto",eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,         total:e3.combPuerto,         hover:e3.hoverComb},
-    {label:"Time Charter+Trip.",eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                      total:e3.fleteEtapa,         hover:e3.hoverTC},
-    {label:"Merma descarga",    eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,    total:e3.costoMermaDescarga, hover:[`${e3.mermaDescarga_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
-    {label:"Merma acopio",      eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,      total:e3.mermaAcopio_Tn*e3.precioArenaEq, hover:[`${e3.mermaAcopio_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
-    {label:"TOTAL ETAPA 3",     eq:"Σ costos descarga",                                                              total:e3.costoTotal,         hover:e3.hoverTotal, isTotal:true},
+    {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                          total:e3.costoOpex,          hover:[`${e3.hoverTotal[0]}`]},
+    {label:"Directos → Neuquén",      eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,  total:e3.costoCamiones, hover:[`$${p.des_costoCamionesDirUSDTn}/Tn × ${sch.Tn_directos.toFixed(0)}Tn`]},
+    {label:"Calesitas (ciclo BB)",     eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoCalUSDTn.toFixed(2)}/Tn`, total:e3.costoAcopio, hover:[`dist ${p.des_camAco_distKm}km × 2 × $${p.des_camAco_costoKmTon}/Tn·km + $${p.des_alquilerPredioUSDTn||0}/Tn predio`]},
+    {label:"Acopio → Neuquén",        eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`, total:e3.costoFleteAcopio, hover:[e3.hoverTotal[3]]},
+    {label:"Combustible puerto",      eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,         total:e3.combPuerto,         hover:e3.hoverComb},
+    {label:"Time Charter+Trip.",      eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                      total:e3.fleteEtapa,         hover:e3.hoverTC},
+    {label:"Merma descarga",          eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,    total:e3.costoMermaDescarga, hover:[`${e3.mermaDescarga_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
+    {label:"Merma acopio",            eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,      total:e3.mermaAcopio_Tn*e3.precioArenaEq, hover:[`${e3.mermaAcopio_Tn.toFixed(0)}Tn × $${e3.precioArenaEq.toFixed(2)}`]},
+    {label:"TOTAL ETAPA 3",           eq:"Σ costos descarga",                                                              total:e3.costoTotal,         hover:e3.hoverTotal, isTotal:true},
   ];
 
   return (
@@ -1847,11 +1845,6 @@ function TabEvaluacion({p,tnEntregadas}) {
   ];
   return (
     <div>
-      <div style={{marginBottom:8}}>
-        <div style={{fontSize:8,color:C.mid,marginBottom:4,fontWeight:700,letterSpacing:.5,textTransform:"uppercase"}}>Mes de análisis</div>
-        <MesSelector value={mes} onChange={setMes}/>
-      </div>
-
       {/* KPIs globales */}
       <div className="kpis">
         <KPI label="USD/Tn final"  value={`$${tot.usdTn.toFixed(1)}`}             color={C.gold}/>
@@ -2545,7 +2538,7 @@ function TabAgenciaZarate({p,set}) {
                 );
               })}
               <tr className="total">
-                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE CARGA</td>
+                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE CARGA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
                 <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnRef).toFixed(2)}/Tn</td>
                 <td/>
@@ -2680,7 +2673,7 @@ function TabAgenciaBB({p,set}) {
                 );
               })}
               <tr className="total">
-                <td colSpan={4} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE DESCARGA</td>
+                <td colSpan={5} style={{textAlign:"right",fontSize:11}}>TOTAL AGENCIA PUERTO DE DESCARGA</td>
                 <td className="mono" style={{textAlign:"right",fontSize:13}}>${totalActivo.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
                 <td className="mono" style={{textAlign:"right",fontSize:11,color:C.mid}}>${(totalActivo/tnRef).toFixed(2)}/Tn</td>
                 <td/>
