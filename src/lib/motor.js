@@ -649,9 +649,11 @@ export function calcScheduler(p, tnTotal) {
   const costoDir      = (p.des_costoCamionesDirUSDTn || 0) * Tn_directos;
   const costoKmTon    = p.des_camAco_costoKmTon  || 0.08;
   const costoAlq      = p.des_alquilerPredioUSDTn || 0;
-  const costoCalUSDTn = p.des_camAco_costoUSDTn != null
+  const costoTranspUSDTn = p.des_camAco_costoUSDTn != null
     ? p.des_camAco_costoUSDTn
-    : distAcoKm * 2 * costoKmTon + costoAlq;
+    : distAcoKm * 2 * costoKmTon;
+  const costoCalUSDTn = costoTranspUSDTn + costoAlq;  // alquiler siempre se suma
+  const costoAlqTotal = costoAlq * Tn_calesitas;
   const costoCal      = costoCalUSDTn * Tn_calesitas;
 
   const pct_dir = tn > 0 ? Tn_directos / tn : 0;
@@ -702,6 +704,9 @@ export function calcScheduler(p, tnTotal) {
     costoDir:            safe(costoDir),
     costoCal:            safe(costoCal),
     costoCalUSDTn:       safe(costoCalUSDTn),
+    costoTranspUSDTn:    safe(costoTranspUSDTn),
+    costoAlqTotal:       safe(costoAlqTotal),
+    costoAlqUSDTn:       safe(costoAlq),
     costoTotalCamiones:  safe(costoDir + costoCal),
     alertas,
   };
@@ -805,7 +810,8 @@ export function calcEtapa3(p, tnEntrada=null) {
     hoverTotal:[
       `Opex: $${p.des_opexUSDTn}/Tn×${tn.toFixed(0)}Tn = $${costoOpex.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Directos: ${sch.nDir} cam×${sch.Tn_cam_dir.toFixed(1)}Tn = ${sch.Tn_directos.toFixed(0)}Tn → $${costoCamiones.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Calesitas (ciclo local): ${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn → $${costoAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Calesitas transp: ${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn = $${(sch.costoTranspUSDTn*sch.Tn_calesitas).toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Alquiler predio: ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn = $${sch.costoAlqTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Flete acopio → Neuquén: ${tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn = $${costoFleteAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `TC+Trip: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
