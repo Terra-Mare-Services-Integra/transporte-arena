@@ -9,7 +9,7 @@ import {
   VLSFO_ESCENARIOS, TABLA_VEL_CONSUMO_DEFAULT, TRAMOS_REPO_DEFAULT,
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
-  calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcMesWorst, calcNViajes,
+  calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcNViajes, getClimaAnual,
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo,
@@ -204,6 +204,21 @@ button{font-family:'Montserrat',sans-serif;cursor:pointer}
 @media(max-width:600px){
   .eval-table th:nth-child(2),.eval-table td:nth-child(2){display:none}
   .eval-table th:nth-child(3),.eval-table td:nth-child(3){display:none}
+}
+@media print{
+  @page{margin:15mm 12mm;size:A4}
+  body{background:#fff!important}
+  .hdr,.tabs,#btn-print,.back,.run,.warn-note,.espejo-ok,.espejo-warn{display:none!important}
+  .screen-only{display:none!important}
+  #print-all{display:block!important}
+  .print-section{page-break-before:always;padding:8px 0}
+  .print-section:first-child{page-break-before:avoid}
+  .print-title{font-size:13px;font-weight:800;color:#213363;border-bottom:2px solid #213363;padding-bottom:4px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+  .card{box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid}
+  .kpis{break-inside:avoid}
+  button{display:none!important}
+  input,select{border:none!important;background:transparent!important;padding:0!important}
+  .tipo-badge{display:none!important}
 }
 `;
 
@@ -607,9 +622,9 @@ function TabBarco({p,set}) {
 }
 
 // ─── SECCIÓN INOP (compartida entre carga y descarga) ──────────────────────
-function SeccionInop({puerto,p,set,mesIdx,climaKey,umbralLluviaKey,umbralVientoKey,tIdeal_dias}) {
+function SeccionInop({puerto,p,set,climaKey,umbralLluviaKey,umbralVientoKey,tIdeal_dias}) {
   const inopMes=getPctInopFromDB(p[climaKey],p[umbralLluviaKey],p[umbralVientoKey]);
-  const inopDet=getInopDetalle(p[climaKey],p[umbralLluviaKey],p[umbralVientoKey],mesIdx);
+  const inopDet=getInopDetalle(p[climaKey],p[umbralLluviaKey],p[umbralVientoKey]);
   const pInop=inopDet.pInop;
   const diasInop=tIdeal_dias!=null ? tIdeal_dias*pInop/Math.max(0.01,1-pInop) : 0;
   return (
@@ -651,7 +666,7 @@ function SeccionInop({puerto,p,set,mesIdx,climaKey,umbralLluviaKey,umbralVientoK
         <Campo label="Viento inoperable desde" value={p[umbralVientoKey]} onChange={v=>set(umbralVientoKey,v)} tipo="usuario" unit="km/h" min={5} max={100} step={5}/>
       </div>
       <div className="g2">
-        <Campo tipo="formula" label="% días inhábiles (mes sel.)" value={`${(pInop*100).toFixed(1)}%`}/>
+        <Campo tipo="formula" label="% días inhábiles (promedio anual)" value={`${(pInop*100).toFixed(1)}%`}/>
         <Campo tipo="formula" label="Días extra clima" value={`${diasInop.toFixed(1)} días`}/>
       </div>
       <div style={{marginTop:6,height:100}}>
@@ -880,13 +895,8 @@ function TabRepo({p,set}) {
 }
 
 // ─── TAB E1: CARGA ─────────────────────────────────────────────────────────
-function TabCarga({p,set,tnEntregadas,mesIdx}) {
-  const mesWorst = mesIdx ?? useMemo(()=>{
-    let worst=0, worstInop=0;
-    for(let i=0;i<12;i++){const e=calcEtapa1(p,i);if(e.pInop>worstInop){worstInop=e.pInop;worst=i;}}
-    return worst;
-  },[p]);
-  const e1=calcEtapa1(p,mesWorst);
+function TabCarga({p,set,tnEntregadas}) {
+  const e1=calcEtapa1(p);
 
   const costRows=[
     {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]]},
@@ -908,7 +918,7 @@ function TabCarga({p,set,tnEntregadas,mesIdx}) {
         <KPI label="USD/Tn etapa" value={`$${(e1.costoTotal/tnEntregadas).toFixed(1)}`} color={C.gold}/>
       </div>
       <div style={{padding:"6px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,fontSize:10,color:"#64748B",marginBottom:8}}>
-        ℹ️ Usando mes más pesimista: <strong>{MESES[mesWorst]}</strong> ({(e1.pInop*100).toFixed(1)}% inop. climática). Editá umbrales en <strong>Base Clima</strong>.
+        ℹ️ Inoperabilidad promedio anual: {(e1.pInop*100).toFixed(1)}%. Editá umbrales en <strong>Base Clima</strong>.
       </div>
       <div className="card">
         <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
@@ -927,7 +937,7 @@ function TabCarga({p,set,tnEntregadas,mesIdx}) {
         <Toggle label="Horas trabajo/día" options={[4,8,12,24]} value={p.cap_horasDia} onChange={v=>set("cap_horasDia",v)} tipo="usuario"/>
         <Campo label="Merma de carga" value={parseFloat((p.cap_pctMerma*100).toFixed(4))} onChange={v=>set("cap_pctMerma",v/100)} tipo="usuario" unit="%" min={0} max={10} step={0.1} nota="Derrames grampa, vuelo de material"/>
       </div>
-      <SeccionInop puerto="zarate" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e1.tIdeal_dias}
+      <SeccionInop puerto="zarate" p={p} set={set} tIdeal_dias={e1.tIdeal_dias}
         climaKey="clima_zarate" umbralLluviaKey="cap_inopLluvia" umbralVientoKey="cap_inopViento"/>
       <SeccionFormulas tipo="carga" e={e1} p={p}
         gruas={p.cap_gruas} grampada={p.cap_grampada} movGrampa={p.cap_movGrampa}
@@ -1012,24 +1022,13 @@ function TabNavegacion({p,set,tnEntregadas}) {
 }
 
 // ─── TAB E3: DESCARGA ──────────────────────────────────────────────────────
-function TabDescarga({p,set,tnEntregadas,mesIdx}) {
-  const mesWorst = mesIdx ?? useMemo(()=>{
-    const e0=calcEtapaRepo(p); const e2=calcEtapa2(p);
-    let worstMes=0, worstInop=0;
-    for(let i=0;i<12;i++){
-      const e1=calcEtapa1(p,i);
-      const cAEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
-      const e3=calcEtapa3({...p,_costoArenaEq:cAEq},i,e1.tnPostCarga);
-      if(e3.pInop>worstInop){worstInop=e3.pInop;worstMes=i;}
-    }
-    return worstMes;
-  },[p]);
+function TabDescarga({p,set,tnEntregadas}) {
 
   const e0=calcEtapaRepo(p);
-  const e1=calcEtapa1(p,mesWorst);
+  const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
   const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
-  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mesWorst,e1.tnPostCarga);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},e1.tnPostCarga);
   const sch=e3.sch;
   const densidad=p.cap_densidadArena||1.45;
 
@@ -1081,14 +1080,14 @@ function TabDescarga({p,set,tnEntregadas,mesIdx}) {
       <div className="kpis">
         <KPI label="Días descarga" value={`${sch.t_total_dias.toFixed(1)}d`}          unit="scheduler puro"   color={C.navy}/>
         <KPI label="Días real"     value={`${e3.tReal_dias.toFixed(1)}d`}              unit="+inop+espera"     color={C.gold}/>
-        <KPI label="Inop. clima"   value={`${(e3.pInop*100).toFixed(1)}%`}            unit={`mes ${MESES[mesWorst]}`} color={C.orange}/>
+        <KPI label="Inop. clima"   value={`${(e3.pInop*100).toFixed(1)}%`}            unit="promedio anual" color={C.orange}/>
         <KPI label="Throughput"    value={`${(sch.tp_fase1||sch.tp_fase2||0).toFixed(0)} Tn/hr`} unit="fase 1" color={C.blue}/>
         <KPI label="Tn entregadas" value={e3.tnEntregadas.toFixed(0)}                  color={C.green}/>
         <KPI label="USD/Tn etapa"  value={`$${tnEntregadas>0?(e3.costoTotal/tnEntregadas).toFixed(1):"—"}`} color={C.gold}/>
       </div>
 
       <div style={{padding:"6px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,fontSize:10,color:"#64748B",marginBottom:8}}>
-        ℹ️ Mes más pesimista: <strong>{MESES[mesWorst]}</strong> ({(e3.pInop*100).toFixed(1)}% inop). Editá umbrales en <strong>Base Clima</strong>.
+        ℹ️ Inoperabilidad promedio anual: {(e3.pInop*100).toFixed(1)}%. Editá umbrales en <strong>Base Clima</strong>.
       </div>
 
       {/* ── ALERTAS ── */}
@@ -1359,7 +1358,7 @@ function TabDescarga({p,set,tnEntregadas,mesIdx}) {
         </div>
       </div>
 
-      <SeccionInop puerto="bb" p={p} set={set} mesIdx={mesWorst} tIdeal_dias={e3.tIdeal_dias}
+      <SeccionInop puerto="bb" p={p} set={set} tIdeal_dias={e3.tIdeal_dias}
         climaKey="clima_bb" umbralLluviaKey="des_inopLluvia" umbralVientoKey="des_inopViento"/>
       <SeccionFormulas tipo="descarga" e={e3} p={p}
         gruas={p.des_gruas} grampada={p.des_grampada} movGrampa={p.des_movGrampa}
@@ -1415,7 +1414,7 @@ function TabMC({p,set,resultado,setResultado}) {
   const [savingMC,setSavingMC]=useState(false);
   const [nomMC,setNomMC]=useState("");
   const [msgMC,setMsgMC]=useState("");
-  const det=calcTotal(p,5);
+  const det=calcTotal(p);
   const res=resultado;
 
   // mc_vars vive en p — editamos a través de set("mc_vars", ...)
@@ -2628,7 +2627,7 @@ function TabEscenarios({p, onLoad}) {
 
 // ─── TAB AGENCIA PUERTO DE CARGA ──────────────────────────────────────────
 function TabAgenciaZarate({p,set}) {
-  const e1=calcEtapa1(p,0);
+  const e1=calcEtapa1(p);
   const tReal=e1.tReal_dias;
   const diasDisp=p.agz_redondearDias?Math.ceil(tReal):tReal;
   const items=p.agz_items||[];
@@ -2760,10 +2759,10 @@ function TabAgenciaZarate({p,set}) {
 // ─── TAB AGENCIA PUERTO DE DESCARGA ───────────────────────────────────────
 function TabAgenciaBB({p,set}) {
   const e0=calcEtapaRepo(p);
-  const e1=calcEtapa1(p,0);
+  const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
   const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
-  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},0,e1.tnPostCarga);
+  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},e1.tnPostCarga);
   const tReal=e3.tReal_dias;
   const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
   const items=p.abb_items||[];
@@ -2987,15 +2986,13 @@ function TabFAQ() {
 
 // ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
 function TabSensibilidades({p}) {
-  const [mes, setMes] = useState(5);
-
   // Base
   const base = (() => {
     const e0 = calcEtapaRepo(p);
-    const e1 = calcEtapa1(p, mes);
+    const e1 = calcEtapa1(p);
     const e2 = calcEtapa2(p);
     const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...p, _costoArenaEq: eq}, mes, e1.tnPostCarga);
+    const e3  = calcEtapa3({...p, _costoArenaEq: eq}, e1.tnPostCarga);
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
     return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
   })();
@@ -3003,10 +3000,10 @@ function TabSensibilidades({p}) {
   function calcConDelta(overrides) {
     const pp = {...p, ...overrides};
     const e0 = calcEtapaRepo(pp);
-    const e1 = calcEtapa1(pp, mes);
+    const e1 = calcEtapa1(pp);
     const e2 = calcEtapa2(pp);
     const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, mes, e1.tnPostCarga);
+    const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, e1.tnPostCarga);
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
     return tot / e3.tnEntregadas;
   }
@@ -3026,11 +3023,11 @@ function TabSensibilidades({p}) {
           nota: "Afecta TC, combustible puerto y agencia Zárate (ítems diarios)",
         },
         {
-          label: `Espera en BB (${MESES[mes]})`,
+          label: "Espera en BB (promedio anual)",
           unidad: "días",
           deltas: [-1, -0.5, +0.5, +1, +2],
-          fn: d => calcConDelta({ des_esperaBBMes: p.des_esperaBBMes.map((v,i) => i===mes ? Math.max(0,v+d) : v) }),
-          base_val: p.des_esperaBBMes[mes],
+          fn: d => calcConDelta({ des_esperaBBMes: p.des_esperaBBMes.map(v => Math.max(0,v+d)) }),
+          base_val: p.des_esperaBBMes.reduce((s,v)=>s+v,0)/p.des_esperaBBMes.length,
           nota: "Afecta TC, combustible puerto y agencia BB (ítems diarios)",
         },
       ],
@@ -3145,10 +3142,6 @@ function TabSensibilidades({p}) {
       <div className="card">
         <div className="ct">📐 Análisis de Sensibilidades — Impacto en USD/Tn</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:4}}>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:4}}>Mes de análisis (esperas y clima)</div>
-            <MesSelector value={mes} onChange={setMes}/>
-          </div>
           <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
             <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Base actual</div>
             <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD/Tn</span></div>
@@ -3266,17 +3259,16 @@ export default function App() {
   const [params,setParams]=useState(DEFAULT_PARAMS);
   const [mcResultado,setMcResultado]=useState(null);
   const set=useCallback((k,v)=>setParams(prev=>({...prev,[k]:v})),[]);
-  const mesWorstGlobal = useMemo(()=>calcMesWorst(params),[params]);
-  const tot=useMemo(()=>calcTotal(params, mesWorstGlobal),[params, mesWorstGlobal]);
+  const tot=useMemo(()=>calcTotal(params),[params]);
 
   const tabMap={
     barco:<TabBarco      p={params} set={set}/>,
     repo: <TabRepo       p={params} set={set}/>,
     az:   <TabAgenciaZarate p={params} set={set}/>,
-    e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas} mesIdx={mesWorstGlobal}/>,
+    e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     e2:   <TabNavegacion p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     abb:  <TabAgenciaBB  p={params} set={set}/>,
-    e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas} mesIdx={mesWorstGlobal}/>,
+    e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     mc:   <TabMC         p={params} set={set} resultado={mcResultado} setResultado={setMcResultado}/>,
     ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas} tot={tot}/>,
     sens: <TabSensibilidades p={params}/>,
@@ -3284,6 +3276,14 @@ export default function App() {
     cb:   <TabCombustible p={params} set={set}/>,
     sc:   <TabEscenarios p={params} onLoad={v=>setParams(v)}/>,
     faq:  <TabFAQ/>,
+  };
+
+  // Orden de secciones para impresión: Evaluación primero, luego el resto
+  const printOrder = ['ev','barco','repo','az','e1','e2','abb','e3','mc','sens'];
+  const printLabels = {
+    ev:'📊 Evaluación',barco:'🚢 Contrato Barco',repo:'🛳️ Viaje a Puerto Carga',
+    az:'⚓ Ag. Puerto Carga',e1:'⚓ Carga',e2:'🧭 Nav. a Puerto Descarga',
+    abb:'⚓ Ag. Puerto Descarga',e3:'📦 Descarga',mc:'🎲 Monte Carlo',sens:'📐 Sensibilidades'
   };
 
   return (
@@ -3308,6 +3308,17 @@ export default function App() {
           ))}
         </div>
         <button className="back" onClick={()=>window.open("https://evaluacion-proyectos.vercel.app","_self")}>← Portal</button>
+        <button className="back" style={{marginLeft:6,background:"#1E3A5F"}} onClick={async()=>{
+          // Corre MC con 10.000 simulaciones y luego imprime
+          const btn = document.getElementById('btn-print');
+          if(btn){ btn.textContent="⏳ Corriendo MC..."; btn.disabled=true; }
+          await new Promise(r=>setTimeout(r,50));
+          const mcRes = runMonteCarlo(params, 10000);
+          setMcResultado(mcRes);
+          await new Promise(r=>setTimeout(r,100));
+          if(btn){ btn.textContent="🖨️ PDF"; btn.disabled=false; }
+          window.print();
+        }} id="btn-print">🖨️ PDF</button>
       </header>
       <nav className="tabs">
         {TABS.map(t=>(
@@ -3316,7 +3327,21 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <div className="page">{tabMap[tab]}</div>
+      <div className="page" style={{display:'contents'}}>
+        {/* Vista normal pantalla */}
+        <div className="screen-only" style={{display:'block'}}>
+          {tabMap[tab]}
+        </div>
+        {/* Vista impresión — todas las secciones en orden */}
+        <div id="print-all" style={{display:'none'}} aria-hidden="true">
+          {printOrder.map((id,idx)=>(
+            <div key={id} className="print-section">
+              <div className="print-title">{printLabels[id]}</div>
+              {tabMap[id]}
+            </div>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
