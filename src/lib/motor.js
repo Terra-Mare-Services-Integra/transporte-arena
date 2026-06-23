@@ -894,54 +894,78 @@ export function calcEtapaVuelta(p) {
 // Costos únicos (1 sola vez): limpiezaBodega + importacionWaiver
 // diasCiclo = E1 + E2 + E3 (días operativos por viaje, sin el posicionamiento inicial)
 export function calcNViajes(p, mesIdx=5) {
-  const base = calcTotal(p, mesIdx);  // viaje 1 completo
-  const diasWaiver   = p.barco_diasWaiver || 30;
+  const base       = calcTotal(p, mesIdx);
+  const diasWaiver = p.barco_diasWaiver || 30;
 
-  // El waiver arranca cuando el barco llega a Zárate a cargar (no incluye E0 repo)
-  // Ciclo viaje 1 dentro del waiver: E1 + E2 + E3
-  const diasCiclo1   = base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias;
+  // Ciclo viaje 1 dentro del waiver: E1.tReal + E2.nav + E3.tReal (sin E0 repo)
+  const diasE1  = base.e1.tReal_dias;
+  const diasE2  = base.e2.diasNav;
+  const diasE3  = base.e3.tReal_dias;
+  const diasCiclo1 = diasE1 + diasE2 + diasE3;
 
-  // Ciclo viaje 2..N: vuelta BB→ZTE + E1 + E2 + E3
-  const eVuelta      = calcEtapaVuelta(p);
-  const diasCiclo2   = eVuelta.diasNav + diasCiclo1;
+  // Vuelta BB→ZTE entre viajes: misma ruta que E2 pero en lastre → mismos días
+  // Costo: combustible lastre (interpolado) + TC por esos días
+  const vlsfo = base.e2.vlsfo;
+  const tc    = base.e2.tc;
+  const combVuelta = (p.nav_tramos || []).reduce((acc, t) => {
+    const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
+    const hs   = dist / t.velocidad;
+    return acc + (hs / 24) * interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
+  }, 0);
+  const costoVuelta   = combVuelta * vlsfo + diasE2 * tc;
+  const diasVuelta    = diasE2;  // misma distancia, misma velocidad, solo consumo lastre
 
-  // Cuántos viajes adicionales caben: diasCiclo1 + viajesExtra * diasCiclo2 ≤ diasWaiver
+  // Ciclo viaje 2+: vuelta + E1 + E2 + E3
+  const diasCiclo2 = diasVuelta + diasCiclo1;
+
+  // Cuántos viajes adicionales caben: diasCiclo1 + viajesExtra × diasCiclo2 ≤ diasWaiver
   const diasRestantes = diasWaiver - diasCiclo1;
   const viajesExtra   = diasRestantes > 0 ? Math.floor(diasRestantes / diasCiclo2) : 0;
   const nViajes       = 1 + viajesExtra;
-
-  // Días totales dentro del waiver (verificación)
   const diasTotalesWaiver = diasCiclo1 + viajesExtra * diasCiclo2;
 
-  if (nViajes <= 1) return { nViajes:1, base, diasCiclo1, diasCiclo2, diasWaiver, diasTotalesWaiver: diasCiclo1, multiTotal:null };
-
-  // Costos del viaje 2..N: E4(vuelta) + E1 + E2 + E3 (sin limpieza ni waiver — ya pagados en viaje 1)
-  const costoArenaEqMulti = base.e3.precioArenaEq;
-  const e1v = base.e1;
-  const e2v = base.e2;
-  const pConEq = {...p, _costoArenaEq: costoArenaEqMulti};
+  // Costos viaje adicional: vuelta + E1 + E2 + E3 (sin limpieza ni waiver)
+  const pConEq = {...p, _costoArenaEq: base.e3.precioArenaEq};
   const e3v    = calcEtapa3(pConEq, mesIdx, base.e1.tnPostCarga);
+  const costoViajeAdicional = costoVuelta + base.e1.costoTotal + base.e2.costoTotal + e3v.costoTotal;
 
-  const costoViajeAdicional = eVuelta.costoTotal + e1v.costoTotal + e2v.costoTotal + e3v.costoTotal;
+  // Construir array de viajes para tabla columnar
+  // Viaje 1: costo completo (incluye E0 + limpiezaBodega + waiver)
+  // Viaje i>1: costoVuelta + E1 + E2 + E3
+  const viajes = [];
+  let diasAcum = 0;
+  let costoAcum = 0;
+  let tnAcum = 0;
+  for (let i = 1; i <= nViajes; i++) {
+    if (i === 1) {
+      diasAcum  = diasCiclo1;
+      costoAcum = base.costoTotal;
+      tnAcum    = base.tnEntregadas;
+    } else {
+      diasAcum  += diasCiclo2;
+      costoAcum += costoViajeAdicional;
+      tnAcum    += base.tnEntregadas;
+    }
+    viajes.push({
+      n: i,
+      diasWaiverAcum: diasAcum,
+      pctWaiver: diasAcum / diasWaiver,
+      costoAcum,
+      tnAcum,
+      usdTn: costoAcum / tnAcum,
+    });
+  }
 
-  // Total sistema N viajes
-  const costoTotalSistema  = base.costoTotal + (viajesExtra * costoViajeAdicional);
-  const tnTotales          = base.tnEntregadas * nViajes;
-  const usdTnSistema       = costoTotalSistema / tnTotales;
-  const diasTotales        = base.diasTotales + viajesExtra * diasCiclo2;
+  const costoTotalSistema = viajes[nViajes-1].costoAcum;
+  const tnTotales         = viajes[nViajes-1].tnAcum;
+  const usdTnSistema      = costoTotalSistema / tnTotales;
+  const diasTotales       = base.diasTotales + viajesExtra * diasCiclo2;
 
   return {
-    nViajes,
-    diasWaiver,
-    diasCiclo1,
-    diasCiclo2,
-    diasTotalesWaiver,
-    base,
-    costoViajeAdicional,
-    costoTotalSistema,
-    tnTotales,
-    usdTnSistema,
-    diasTotales,
+    nViajes, diasWaiver, diasCiclo1, diasCiclo2, diasVuelta,
+    diasTotalesWaiver, diasTotales,
+    base, viajes,
+    costoViajeAdicional, costoTotalSistema, tnTotales, usdTnSistema,
     ahorroPorWaiver:   (p.barco_importacionWaiver||0) * viajesExtra,
     ahorroPorLimpieza: (p.barco_limpiezaBodega||0)    * viajesExtra,
     ahorroTotal:       ((p.barco_importacionWaiver||0) + (p.barco_limpiezaBodega||0)) * viajesExtra,
