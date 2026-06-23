@@ -556,6 +556,8 @@ function TabBarco({p,set}) {
       <div className="g2">
         <div className="card">
           <div className="ct">Parámetros del Contrato <TipoBadge tipo="usuario"/></div>
+          <Campo label="Capacidad del barco" value={p.cap_capacidadBarco} onChange={v=>set("cap_capacidadBarco",v)} tipo="usuario" unit="Tn" min={1000} max={80000} step={1000}
+            nota="Toneladas de arena que carga el barco por escala. Alimenta todas las etapas."/>
           <Campo label="Time Charter" value={p.barco_timeCharter} onChange={v=>set("barco_timeCharter",v)} tipo="usuario" unit="USD/día" min={5000} max={50000} step={500}
             nota="Costo diario del flete del barco. Aplica en todas las etapas."/>
           <Campo label="Tripulación" value={p.barco_tripulacion} onChange={v=>set("barco_tripulacion",v)} tipo="usuario" unit="USD/día" min={0} max={10000} step={100}
@@ -574,7 +576,7 @@ function TabBarco({p,set}) {
         </div>
 
         <div className="card">
-          <div className="ct">Tabla Velocidad / Consumo — Handysize 28.000 Tn
+          <div className="ct">Tabla Velocidad / Consumo — Handysize {p.cap_capacidadBarco.toLocaleString("es-AR")} Tn
             <button onClick={resetTabla} style={{marginLeft:"auto",padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:8,fontWeight:700,cursor:"pointer"}}>Resetear</button>
           </div>
           <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
@@ -908,8 +910,10 @@ function TabCarga({p,set,tnEntregadas}) {
       </div>
       <div className="card">
         <div className="ct">Parámetros Físicos <TipoBadge tipo="usuario"/></div>
+        <div style={{padding:"6px 10px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,fontSize:10,color:"#0369A1",marginBottom:8}}>
+          Capacidad: <strong>{p.cap_capacidadBarco.toLocaleString("es-AR")} Tn</strong> — editable en pestaña <strong>Contrato Barco</strong>
+        </div>
         <div className="g3">
-          <Campo label="Capacidad"     value={p.cap_capacidadBarco}    onChange={v=>set("cap_capacidadBarco",v)}    tipo="usuario" unit="Tn"      min={1000} max={80000} step={1000}/>
           <Campo label="Densidad"      value={p.cap_densidadArena}     onChange={v=>set("cap_densidadArena",v)}     tipo="usuario" unit="T/m³"    min={1}    max={2}     step={0.05}/>
           <Campo label="Grampada"      value={p.cap_grampada}          onChange={v=>set("cap_grampada",v)}          tipo="usuario" unit="m³"      min={5}    max={30}/>
           <Campo label="Grúas"         value={p.cap_gruas}             onChange={v=>set("cap_gruas",v)}             tipo="usuario"               min={1}    max={4}/>
