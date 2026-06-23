@@ -302,7 +302,7 @@ const TTip={contentStyle:{background:"#213363",border:"1px solid #1a3356",color:
 function CostTable({rows,tnEntregadas}) {
   return (
     <table className="cost-table">
-      <thead><tr><th>Concepto</th><th>Ecuación</th><th>USD/Tn</th><th>Total USD</th></tr></thead>
+      <thead><tr><th>Concepto</th><th>Ecuación</th><th style={{textAlign:"right"}}>Total USD</th><th style={{textAlign:"right"}}>USD/Tn</th></tr></thead>
       <tbody>
         {rows.map((r,i)=>{
           const usdTn=tnEntregadas>0?r.total/tnEntregadas:0;
@@ -310,11 +310,11 @@ function CostTable({rows,tnEntregadas}) {
             <tr key={i} className={r.isTotal?"total":""}>
               <td style={{fontWeight:r.isTotal?800:500,color:r.isTotal?C.navy:undefined}}>{r.label}</td>
               <td className="eq">{r.eq}</td>
-              <td className="mono" style={{textAlign:"right",color:C.mid}}>${usdTn.toFixed(1)}</td>
               <td style={{textAlign:"right"}}>
                 <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`}
                   title={r.label} lines={r.hover||[r.eq]} isTotal={r.isTotal}/>
               </td>
+              <td className="mono" style={{textAlign:"right",color:C.mid}}>${usdTn.toFixed(1)}</td>
             </tr>
           );
         })}
@@ -769,6 +769,7 @@ function TabRepo({p,set}) {
                 <th>Tipo</th>
                 <th>Ecuación / Valor</th>
                 <th style={{textAlign:"right"}}>Total USD</th>
+                <th style={{textAlign:"right"}}>USD/Tn</th>
               </tr>
             </thead>
             <tbody>
@@ -786,6 +787,7 @@ function TabRepo({p,set}) {
                   <td style={{textAlign:"right"}}>
                     <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={r.hover}/>
                   </td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${p.cap_capacidadBarco>0?(r.total/p.cap_capacidadBarco).toFixed(2):"—"}</td>
                 </tr>
               ))}
 
@@ -810,6 +812,7 @@ function TabRepo({p,set}) {
                   <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:C.navy}}>
                     ${(p[item.key]||0).toLocaleString("es-AR",{maximumFractionDigits:0})}
                   </td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${p.cap_capacidadBarco>0?((p[item.key]||0)/p.cap_capacidadBarco).toFixed(2):"—"}</td>
                 </tr>
               ))}
 
@@ -844,16 +847,20 @@ function TabRepo({p,set}) {
                   <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:it.activo?C.navy:C.mid}}>
                     {it.activo?`$${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`:"—"}
                   </td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>
+                    {it.activo&&p.cap_capacidadBarco>0?`$${(it.usd/p.cap_capacidadBarco).toFixed(2)}`:"—"}
+                  </td>
                 </tr>
               ))}
 
               {/* Total */}
               <tr className="total">
                 <td colSpan={2} style={{textAlign:"right"}}>TOTAL</td>
-                <td className="eq">Σ reposicionamiento</td>
+                <td className="eq">Σ viaje a puerto de carga</td>
                 <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:13}}>
                   ${e0.costoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}
                 </td>
+                <td className="mono" style={{textAlign:"right",fontWeight:800}}>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}</td>
               </tr>
             </tbody>
           </table>
@@ -1876,8 +1883,8 @@ function TabEvaluacion({p,tnEntregadas}) {
               <tr>
                 <th>Concepto</th>
                 <th>Fórmula</th>
-                <th style={{textAlign:"right"}}>USD/Tn</th>
                 <th style={{textAlign:"right"}}>Total USD</th>
+                <th style={{textAlign:"right"}}>USD/Tn</th>
               </tr>
             </thead>
             <tbody>
@@ -1885,16 +1892,16 @@ function TabEvaluacion({p,tnEntregadas}) {
                 <tr key={i}>
                   <td style={{color:C.mid,fontSize:10}}>{r.label}</td>
                   <td className="eq">{r.eq}</td>
-                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/tot.tnEntregadas).toFixed(1)}</td>
                   <td style={{textAlign:"right"}}>
                     <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/>
                   </td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/tot.tnEntregadas).toFixed(1)}</td>
                 </tr>
               ))}
               <tr className="total">
                 <td colSpan={2} style={{textAlign:"right"}}>SUBTOTAL</td>
-                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tot.tnEntregadas).toFixed(1)}</td>
                 <td className="mono" style={{textAlign:"right",color:etapa.color}}>${etapa.subtotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
+                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tot.tnEntregadas).toFixed(1)}</td>
               </tr>
             </tbody>
           </table>
