@@ -897,27 +897,28 @@ export function calcNViajes(p, mesIdx=5) {
   const base = calcTotal(p, mesIdx);  // viaje 1 completo
   const diasWaiver   = p.barco_diasWaiver || 30;
 
-  // Ciclo operativo: desde que zarpa de Zárate hasta que llega a BB (sin E0 repo)
-  const diasCiclo    = base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias;
-  const diasVuelta   = calcEtapaVuelta(p).diasNav;
-  const diasCiclo2   = diasVuelta + diasCiclo;  // ciclo viaje 2..N (vuelta + carga + nav + descarga)
+  // El waiver arranca cuando el barco llega a Zárate a cargar (no incluye E0 repo)
+  // Ciclo viaje 1 dentro del waiver: E1 + E2 + E3
+  const diasCiclo1   = base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias;
 
-  // Cuántos viajes adicionales (2, 3...) caben dentro del waiver después del viaje 1
-  const diasRestantes = diasWaiver - diasCiclo;
+  // Ciclo viaje 2..N: vuelta BB→ZTE + E1 + E2 + E3
+  const eVuelta      = calcEtapaVuelta(p);
+  const diasCiclo2   = eVuelta.diasNav + diasCiclo1;
+
+  // Cuántos viajes adicionales caben: diasCiclo1 + viajesExtra * diasCiclo2 ≤ diasWaiver
+  const diasRestantes = diasWaiver - diasCiclo1;
   const viajesExtra   = diasRestantes > 0 ? Math.floor(diasRestantes / diasCiclo2) : 0;
   const nViajes       = 1 + viajesExtra;
 
-  if (nViajes <= 1) return { nViajes:1, base, multiTotal:null };
+  // Días totales dentro del waiver (verificación)
+  const diasTotalesWaiver = diasCiclo1 + viajesExtra * diasCiclo2;
 
-  // Costos del viaje 2..N: E4 + E1 + E2 + E3 (sin limpieza ni waiver)
-  const eVuelta  = calcEtapaVuelta(p);
-  const costoArenaEqMulti = base.e3.precioArenaEq; // mismo precio eq para mermas
+  if (nViajes <= 1) return { nViajes:1, base, diasCiclo1, diasCiclo2, diasWaiver, diasTotalesWaiver: diasCiclo1, multiTotal:null };
 
-  // Costo E1 sin limpieza/waiver (ya pagados en viaje 1)
+  // Costos del viaje 2..N: E4(vuelta) + E1 + E2 + E3 (sin limpieza ni waiver — ya pagados en viaje 1)
+  const costoArenaEqMulti = base.e3.precioArenaEq;
   const e1v = base.e1;
   const e2v = base.e2;
-
-  // Costo E3 del viaje adicional — igual que base
   const pConEq = {...p, _costoArenaEq: costoArenaEqMulti};
   const e3v    = calcEtapa3(pConEq, mesIdx, base.e1.tnPostCarga);
 
@@ -927,20 +928,20 @@ export function calcNViajes(p, mesIdx=5) {
   const costoTotalSistema  = base.costoTotal + (viajesExtra * costoViajeAdicional);
   const tnTotales          = base.tnEntregadas * nViajes;
   const usdTnSistema       = costoTotalSistema / tnTotales;
-  const diasTotales        = base.diasTotales + viajesExtra * (eVuelta.diasNav + base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias);
+  const diasTotales        = base.diasTotales + viajesExtra * diasCiclo2;
 
   return {
     nViajes,
     diasWaiver,
-    diasCiclo,
+    diasCiclo1,
     diasCiclo2,
+    diasTotalesWaiver,
     base,
     costoViajeAdicional,
     costoTotalSistema,
     tnTotales,
     usdTnSistema,
     diasTotales,
-    // Ahorros vs N viajes independientes
     ahorroPorWaiver:   (p.barco_importacionWaiver||0) * viajesExtra,
     ahorroPorLimpieza: (p.barco_limpiezaBodega||0)    * viajesExtra,
     ahorroTotal:       ((p.barco_importacionWaiver||0) + (p.barco_limpiezaBodega||0)) * viajesExtra,
