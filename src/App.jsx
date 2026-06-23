@@ -2102,18 +2102,25 @@ function TabEvaluacion({p,tnEntregadas}) {
         return (
           <div className="card" style={{borderTop:`3px solid #0891B2`}}>
             <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — Waiver {p.barco_diasWaiver||30} días</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8,marginBottom:12}}>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Waiver</div>
                 <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{p.barco_diasWaiver||30}d</div>
               </div>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 1</div>
-                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{b.diasTotales.toFixed(1)}d</div>
+                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{mv.diasCiclo1.toFixed(1)}d</div>
+                <div style={{fontSize:8,color:"#64748B"}}>Carga+Nav+Desc</div>
               </div>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 2+</div>
                 <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{mv.diasCiclo2.toFixed(1)}d</div>
+                <div style={{fontSize:8,color:"#64748B"}}>Vuelta+Carga+Nav+Desc</div>
+              </div>
+              <div style={{background:"#F0F9FF",border:`1px solid ${mv.diasTotalesWaiver<=(p.barco_diasWaiver||30)?"#BAE6FD":"#FCA5A5"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Días usados</div>
+                <div style={{fontSize:20,fontWeight:800,color:mv.diasTotalesWaiver<=(p.barco_diasWaiver||30)?"#0369A1":"#DC2626",fontFamily:"DM Mono,monospace"}}>{mv.diasTotalesWaiver.toFixed(1)}d</div>
+                <div style={{fontSize:8,color:"#64748B"}}>de {p.barco_diasWaiver||30}d</div>
               </div>
               <div style={{background: n>1?"#F0FDF4":"#FEF9C3",border:`1px solid ${n>1?"#86EFAC":"#FDE047"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color: n>1?"#166534":"#92400E",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Viajes posibles</div>
@@ -2150,7 +2157,7 @@ function TabEvaluacion({p,tnEntregadas}) {
             )}
             {n === 1 && (
               <div style={{padding:"10px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
-                Con {p.barco_diasWaiver||30} días de waiver y un ciclo de {b.diasTotales.toFixed(1)}d solo entra 1 viaje. Extendé el waiver o reducí el ciclo para aprovechar el segundo viaje.
+                Con {p.barco_diasWaiver||30} días de waiver y un ciclo de {mv.diasCiclo1.toFixed(1)}d (Carga+Nav+Desc) solo entra 1 viaje. Extendé el waiver o reducí el ciclo para aprovechar el segundo viaje.
               </div>
             )}
           </div>
