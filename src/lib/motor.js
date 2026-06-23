@@ -212,6 +212,7 @@ export const DEFAULT_PARAMS = {
   barco_tripulacion:         0,      // USD/día — por ahora 0
   barco_limpiezaBodega:      15000,  // USD por escala
   barco_importacionWaiver:   8000,   // USD por escala
+  barco_diasWaiver:          30,     // días de vigencia del waiver de importación
   barco_miscPorDia:          500,    // USD/día — misceláneos operativos
   barco_tablaVelConsumo:     TABLA_VEL_CONSUMO_DEFAULT,
   barco_consumoPuerto:       4.6,    // T/día en puerto (carga y descarga)
@@ -219,6 +220,12 @@ export const DEFAULT_PARAMS = {
   // VIAJE A PUERTO DE CARGA (reposicionamiento Rio Grande → Zárate)
   repo_tramos:               TRAMOS_REPO_DEFAULT,
   repo_itemsExtra:           [],  // items adicionales editables por el usuario
+
+  // VUELTA EN LASTRE (BB → Zárate, entre viajes consecutivos)
+  vta_tramos: [
+    {id:1, nombre:"Sea White → Punta Indio", tipo:"Costero",  velocidad:12.5, distancia:470, condicion:"Mar abierto — costa bonaerense, lastre"},
+    {id:2, nombre:"Punta Indio → Zárate",    tipo:"Hidrovía", velocidad:10,   distancia:193, condicion:"Estuario + Hidrovía — lastre"},
+  ],
 
   // ETAPA 1 — CARGA
   cap_capacidadBarco:        28000,
@@ -842,7 +849,103 @@ export function calcEtapaRepo(p) {
   };
 }
 // calcEtapa4 mantenida como alias de calcEtapaRepo para compatibilidad con MC
-export function calcEtapa4(p) { return calcEtapaRepo(p); }
+export function calcEtapa4(p) { return calcEtapaVuelta(p); }
+
+// ─── ETAPA VUELTA: BB → ZÁRATE (en lastre, entre viajes consecutivos) ─────
+export function calcEtapaVuelta(p) {
+  const vlsfo    = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
+  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
+  const tc       = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+  const tramos   = p.vta_tramos || DEFAULT_PARAMS.vta_tramos;
+  const nav      = velPromedioPonderada(tramos);
+
+  const combLastreTotal = tramos.reduce((acc, t) => {
+    const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
+    const hs   = dist / t.velocidad;
+    const consumoDia = interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
+    return acc + (hs / 24) * consumoDia;
+  }, 0);
+
+  const combLastre = combLastreTotal * vlsfo;
+  const fleteNav   = nav.diasNav * tc;
+  const costoTotal = combLastre + fleteNav;
+
+  return {
+    ...nav, vlsfo, vlsfoStats, tc,
+    combLastreTotal, combLastre, fleteNav, costoTotal,
+    hoverComb:[
+      `Consumo lastre interpolado por tramo`,
+      `Total: ${combLastreTotal.toFixed(1)}T × $${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+    ],
+    hoverTC:[
+      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d + Misc: $${p.barco_miscPorDia||0}/d = $${tc}/d`,
+      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+    ],
+    hoverTotal:[
+      `Combustible lastre: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+    ],
+  };
+}
+
+// ─── MODELO MULTI-VIAJE (N viajes dentro del waiver) ──────────────────────
+// Viaje 1: E0(repo) + E1 + E2 + E3
+// Viaje 2..N: E4(vuelta BB→ZTE) + E1 + E2 + E3
+// Costos únicos (1 sola vez): limpiezaBodega + importacionWaiver
+// diasCiclo = E1 + E2 + E3 (días operativos por viaje, sin el posicionamiento inicial)
+export function calcNViajes(p, mesIdx=5) {
+  const base = calcTotal(p, mesIdx);  // viaje 1 completo
+  const diasWaiver   = p.barco_diasWaiver || 30;
+
+  // Ciclo operativo: desde que zarpa de Zárate hasta que llega a BB (sin E0 repo)
+  const diasCiclo    = base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias;
+  const diasVuelta   = calcEtapaVuelta(p).diasNav;
+  const diasCiclo2   = diasVuelta + diasCiclo;  // ciclo viaje 2..N (vuelta + carga + nav + descarga)
+
+  // Cuántos viajes adicionales (2, 3...) caben dentro del waiver después del viaje 1
+  const diasRestantes = diasWaiver - diasCiclo;
+  const viajesExtra   = diasRestantes > 0 ? Math.floor(diasRestantes / diasCiclo2) : 0;
+  const nViajes       = 1 + viajesExtra;
+
+  if (nViajes <= 1) return { nViajes:1, base, multiTotal:null };
+
+  // Costos del viaje 2..N: E4 + E1 + E2 + E3 (sin limpieza ni waiver)
+  const eVuelta  = calcEtapaVuelta(p);
+  const costoArenaEqMulti = base.e3.precioArenaEq; // mismo precio eq para mermas
+
+  // Costo E1 sin limpieza/waiver (ya pagados en viaje 1)
+  const e1v = base.e1;
+  const e2v = base.e2;
+
+  // Costo E3 del viaje adicional — igual que base
+  const pConEq = {...p, _costoArenaEq: costoArenaEqMulti};
+  const e3v    = calcEtapa3(pConEq, mesIdx, base.e1.tnPostCarga);
+
+  const costoViajeAdicional = eVuelta.costoTotal + e1v.costoTotal + e2v.costoTotal + e3v.costoTotal;
+
+  // Total sistema N viajes
+  const costoTotalSistema  = base.costoTotal + (viajesExtra * costoViajeAdicional);
+  const tnTotales          = base.tnEntregadas * nViajes;
+  const usdTnSistema       = costoTotalSistema / tnTotales;
+  const diasTotales        = base.diasTotales + viajesExtra * (eVuelta.diasNav + base.e1.tReal_dias + base.e2.diasNav + base.e3.tReal_dias);
+
+  return {
+    nViajes,
+    diasWaiver,
+    diasCiclo,
+    diasCiclo2,
+    base,
+    costoViajeAdicional,
+    costoTotalSistema,
+    tnTotales,
+    usdTnSistema,
+    diasTotales,
+    // Ahorros vs N viajes independientes
+    ahorroPorWaiver:   (p.barco_importacionWaiver||0) * viajesExtra,
+    ahorroPorLimpieza: (p.barco_limpiezaBodega||0)    * viajesExtra,
+    ahorroTotal:       ((p.barco_importacionWaiver||0) + (p.barco_limpiezaBodega||0)) * viajesExtra,
+  };
+}
 
 // ─── TOTAL ─────────────────────────────────────────────────────────────────
 export function calcTotal(p, mesIdx=5) {
