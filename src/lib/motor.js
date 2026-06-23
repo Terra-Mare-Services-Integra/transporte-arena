@@ -818,7 +818,7 @@ export function calcEtapaRepo(p) {
   const limpiezaBodega     = p.barco_limpiezaBodega     || 0;
   const importacionWaiver  = p.barco_importacionWaiver  || 0;
   const extrasTotal        = (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
-  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver + extrasTotal;
+  const costoTotal = combCosto + limpiezaBodega + importacionWaiver + extrasTotal;
 
   return {
     ...nav, vlsfo, vlsfoStats, tc,
@@ -833,8 +833,8 @@ export function calcEtapaRepo(p) {
       `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
-      `Combustible: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Combustible lastre: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `TC (${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}) → incluido en "Barco"`,
       `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`),
@@ -928,7 +928,7 @@ export function runMonteCarlo(p, n=5000) {
       const hs = dist/t.velocidad;
       return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
     },0);
-    const c0 = combRepoT*vlsfo + diasNavR*tc + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
+    const c0 = combRepoT*vlsfo + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
              + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
 
     // E1 — Carga
