@@ -893,58 +893,52 @@ export function calcEtapaVuelta(p) {
 // Viaje 2..N: E4(vuelta BB→ZTE) + E1 + E2 + E3
 // Costos únicos (1 sola vez): limpiezaBodega + importacionWaiver
 // diasCiclo = E1 + E2 + E3 (días operativos por viaje, sin el posicionamiento inicial)
-export function calcNViajes(p, mesIdx=5) {
-  const base       = calcTotal(p, mesIdx);
+export function calcNViajes(p, tot) {
+  // tot = resultado de calcTotal ya calculado — usamos sus días directamente
+  // sin recalcular nada con meses
   const diasWaiver = p.barco_diasWaiver || 30;
 
   // Ciclo viaje 1 dentro del waiver: E1.tReal + E2.nav + E3.tReal (sin E0 repo)
-  const diasE1  = base.e1.tReal_dias;
-  const diasE2  = base.e2.diasNav;
-  const diasE3  = base.e3.tReal_dias;
+  const diasE1  = tot.e1.tReal_dias;
+  const diasE2  = tot.e2.diasNav;
+  const diasE3  = tot.e3.tReal_dias;
   const diasCiclo1 = diasE1 + diasE2 + diasE3;
 
-  // Vuelta BB→ZTE entre viajes: misma ruta que E2 pero en lastre → mismos días
-  // Costo: combustible lastre (interpolado) + TC por esos días
-  const vlsfo = base.e2.vlsfo;
-  const tc    = base.e2.tc;
+  // Vuelta BB→ZTE: misma ruta que E2, en lastre — mismos días, consumo lastre
+  const vlsfo = tot.e2.vlsfo;
+  const tc    = tot.e2.tc;
   const combVuelta = (p.nav_tramos || []).reduce((acc, t) => {
     const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
     const hs   = dist / t.velocidad;
     return acc + (hs / 24) * interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
   }, 0);
-  const costoVuelta   = combVuelta * vlsfo + diasE2 * tc;
-  const diasVuelta    = diasE2;  // misma distancia, misma velocidad, solo consumo lastre
+  const costoVuelta = combVuelta * vlsfo + diasE2 * tc;
+  const diasVuelta  = diasE2;
 
-  // Ciclo viaje 2+: vuelta + E1 + E2 + E3
+  // Ciclo viaje 2+: vuelta + ciclo1
   const diasCiclo2 = diasVuelta + diasCiclo1;
 
-  // Cuántos viajes adicionales caben: diasCiclo1 + viajesExtra × diasCiclo2 ≤ diasWaiver
+  // Cuántos viajes adicionales caben
   const diasRestantes = diasWaiver - diasCiclo1;
   const viajesExtra   = diasRestantes > 0 ? Math.floor(diasRestantes / diasCiclo2) : 0;
   const nViajes       = 1 + viajesExtra;
   const diasTotalesWaiver = diasCiclo1 + viajesExtra * diasCiclo2;
 
-  // Costos viaje adicional: vuelta + E1 + E2 + E3 (sin limpieza ni waiver)
-  const pConEq = {...p, _costoArenaEq: base.e3.precioArenaEq};
-  const e3v    = calcEtapa3(pConEq, mesIdx, base.e1.tnPostCarga);
-  const costoViajeAdicional = costoVuelta + base.e1.costoTotal + base.e2.costoTotal + e3v.costoTotal;
+  // Costo viaje adicional: vuelta + E1 + E2 + E3 (sin limpieza ni waiver)
+  const costoViajeAdicional = costoVuelta + tot.e1.costoTotal + tot.e2.costoTotal + tot.e3.costoTotal;
 
-  // Construir array de viajes para tabla columnar
-  // Viaje 1: costo completo (incluye E0 + limpiezaBodega + waiver)
-  // Viaje i>1: costoVuelta + E1 + E2 + E3
+  // Array de viajes para tabla columnar
   const viajes = [];
-  let diasAcum = 0;
-  let costoAcum = 0;
-  let tnAcum = 0;
+  let diasAcum = 0, costoAcum = 0, tnAcum = 0;
   for (let i = 1; i <= nViajes; i++) {
     if (i === 1) {
       diasAcum  = diasCiclo1;
-      costoAcum = base.costoTotal;
-      tnAcum    = base.tnEntregadas;
+      costoAcum = tot.costoTotal;
+      tnAcum    = tot.tnEntregadas;
     } else {
       diasAcum  += diasCiclo2;
       costoAcum += costoViajeAdicional;
-      tnAcum    += base.tnEntregadas;
+      tnAcum    += tot.tnEntregadas;
     }
     viajes.push({
       n: i,
@@ -959,12 +953,12 @@ export function calcNViajes(p, mesIdx=5) {
   const costoTotalSistema = viajes[nViajes-1].costoAcum;
   const tnTotales         = viajes[nViajes-1].tnAcum;
   const usdTnSistema      = costoTotalSistema / tnTotales;
-  const diasTotales       = base.diasTotales + viajesExtra * diasCiclo2;
+  const diasTotales       = tot.diasTotales + viajesExtra * diasCiclo2;
 
   return {
     nViajes, diasWaiver, diasCiclo1, diasCiclo2, diasVuelta,
     diasTotalesWaiver, diasTotales,
-    base, viajes,
+    viajes,
     costoViajeAdicional, costoTotalSistema, tnTotales, usdTnSistema,
     ahorroPorWaiver:   (p.barco_importacionWaiver||0) * viajesExtra,
     ahorroPorLimpieza: (p.barco_limpiezaBodega||0)    * viajesExtra,
@@ -973,6 +967,20 @@ export function calcNViajes(p, mesIdx=5) {
 }
 
 // ─── TOTAL ─────────────────────────────────────────────────────────────────
+// Mes más pesimista (mayor inoperabilidad en BB — afecta E3)
+export function calcMesWorst(p) {
+  const e0 = calcEtapaRepo(p);
+  const e2 = calcEtapa2(p);
+  let worstMes = 0, worstInop = 0;
+  for (let i = 0; i < 12; i++) {
+    const e1  = calcEtapa1(p, i);
+    const cAEq = e1.tnPostCarga > 0 ? (e0.costoTotal + e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen || 13.5);
+    const e3  = calcEtapa3({...p, _costoArenaEq: cAEq}, i, e1.tnPostCarga);
+    if (e3.pInop > worstInop) { worstInop = e3.pInop; worstMes = i; }
+  }
+  return worstMes;
+}
+
 export function calcTotal(p, mesIdx=5) {
   const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p,mesIdx);
