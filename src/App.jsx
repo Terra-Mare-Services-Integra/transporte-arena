@@ -2088,16 +2088,17 @@ function TabEvaluacion({p,tnEntregadas}) {
         const b  = mv.base;
         const n  = mv.nViajes;
         const fmt = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
-        const fmtTn = v => `$${v.toFixed(1)}`;
-        const delta = (multi, single) => {
-          const d = multi - single;
-          return <span style={{fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:d<0?"#16A34A":"#DC2626"}}>{d<0?"":"+"}{fmtTn(d)}</span>;
+        const fmtUSDTn = v => `$${v.toFixed(1)}`;
+        const delta = (vN, v1, f) => {
+          const d = vN - v1;
+          const str = f(Math.abs(d));
+          return <span style={{fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:d<0?"#16A34A":"#DC2626"}}>{d<0?"-":"+"}{str}</span>;
         };
         const rows = [
-          {l:"USD / Tn",      v1: b.usdTn,          vN: mv.usdTnSistema,      fmt: fmtTn},
-          {l:"Costo total",   v1: b.costoTotal,      vN: mv.costoTotalSistema, fmt: v=>`$${(v/1000).toFixed(0)}k`},
-          {l:"Tn entregadas", v1: b.tnEntregadas,    vN: mv.tnTotales,         fmt: v=>v.toFixed(0)},
-          {l:"Días",          v1: b.diasTotales,     vN: mv.diasTotales,       fmt: v=>`${v.toFixed(1)}d`},
+          {l:"USD / Tn",      v1: b.usdTn,            vN: mv.usdTnSistema,      fmt: fmtUSDTn,                         isGoodWhenNeg: true},
+          {l:"Costo total",   v1: b.costoTotal,        vN: mv.costoTotalSistema, fmt: v=>`$${(v/1000).toFixed(0)}k`,    isGoodWhenNeg: false},
+          {l:"Tn entregadas", v1: b.tnEntregadas,      vN: mv.tnTotales,         fmt: v=>v.toFixed(0),                  isGoodWhenNeg: false},
+          {l:"Días waiver",   v1: mv.diasCiclo1,       vN: mv.diasTotalesWaiver, fmt: v=>`${v.toFixed(1)}d`,            isGoodWhenNeg: false},
         ];
         return (
           <div className="card" style={{borderTop:`3px solid #0891B2`}}>
@@ -2131,7 +2132,7 @@ function TabEvaluacion({p,tnEntregadas}) {
             {n > 1 && (
               <>
                 <div style={{marginBottom:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:"#166534"}}>
-                  <strong>Ahorro por costos compartidos:</strong> Waiver ${fmt(p.barco_importacionWaiver||0)} + Limpieza ${fmt(p.barco_limpiezaBodega||0)} = <strong>${fmt(mv.ahorroTotal)}</strong> en {n} viajes ({fmtTn(mv.ahorroTotal/mv.tnTotales)} USD/Tn)
+                  <strong>Ahorro por costos compartidos:</strong> Waiver {fmt(p.barco_importacionWaiver||0)} + Limpieza {fmt(p.barco_limpiezaBodega||0)} = <strong>{fmt(mv.ahorroTotal)}</strong> en {n} viajes ({fmtUSDTn(mv.ahorroTotal/mv.tnTotales)} USD/Tn)
                 </div>
                 <table className="cost-table">
                   <thead>
@@ -2148,7 +2149,7 @@ function TabEvaluacion({p,tnEntregadas}) {
                         <td style={{color:C.mid,fontSize:10}}>{l}</td>
                         <td className="mono" style={{textAlign:"right"}}>{f(v1)}</td>
                         <td className="mono" style={{textAlign:"right",color:"#0891B2",fontWeight:700}}>{f(vN)}</td>
-                        <td style={{textAlign:"right"}}>{delta(parseFloat(f(vN).replace(/[^0-9.-]/g,"")), parseFloat(f(v1).replace(/[^0-9.-]/g,"")))}</td>
+                        <td style={{textAlign:"right"}}>{delta(vN, v1, f)}</td>
                       </tr>
                     ))}
                   </tbody>
