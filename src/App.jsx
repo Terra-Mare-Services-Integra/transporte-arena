@@ -2087,78 +2087,92 @@ function TabEvaluacion({p,tnEntregadas}) {
         const mv = calcNViajes(p, 5);
         const b  = mv.base;
         const n  = mv.nViajes;
-        const fmt = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
-        const fmtUSDTn = v => `$${v.toFixed(1)}`;
-        const delta = (vN, v1, f) => {
-          const d = vN - v1;
-          const str = f(Math.abs(d));
-          return <span style={{fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:d<0?"#16A34A":"#DC2626"}}>{d<0?"-":"+"}{str}</span>;
-        };
-        const rows = [
-          {l:"USD / Tn",      v1: b.usdTn,            vN: mv.usdTnSistema,      fmt: fmtUSDTn,                         isGoodWhenNeg: true},
-          {l:"Costo total",   v1: b.costoTotal,        vN: mv.costoTotalSistema, fmt: v=>`$${(v/1000).toFixed(0)}k`,    isGoodWhenNeg: false},
-          {l:"Tn entregadas", v1: b.tnEntregadas,      vN: mv.tnTotales,         fmt: v=>v.toFixed(0),                  isGoodWhenNeg: false},
-          {l:"Días waiver",   v1: mv.diasCiclo1,       vN: mv.diasTotalesWaiver, fmt: v=>`${v.toFixed(1)}d`,            isGoodWhenNeg: false},
-        ];
+        const fmt  = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
+        const fmtK = v => `$${(v/1000).toFixed(0)}k`;
+        const diasW = p.barco_diasWaiver || 30;
         return (
           <div className="card" style={{borderTop:`3px solid #0891B2`}}>
-            <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — Waiver {p.barco_diasWaiver||30} días</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — Waiver {diasW} días</div>
+
+            {/* KPIs ciclos */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Waiver</div>
-                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{p.barco_diasWaiver||30}d</div>
+                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{diasW}d</div>
               </div>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 1</div>
                 <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{mv.diasCiclo1.toFixed(1)}d</div>
-                <div style={{fontSize:8,color:"#64748B"}}>Carga+Nav+Desc</div>
+                <div style={{fontSize:8,color:"#64748B"}}>Carga + Nav + Desc</div>
               </div>
               <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
                 <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 2+</div>
                 <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{mv.diasCiclo2.toFixed(1)}d</div>
-                <div style={{fontSize:8,color:"#64748B"}}>Vuelta+Carga+Nav+Desc</div>
+                <div style={{fontSize:8,color:"#64748B"}}>Vuelta({mv.diasVuelta.toFixed(1)}d) + Carga + Nav + Desc</div>
               </div>
-              <div style={{background:"#F0F9FF",border:`1px solid ${mv.diasTotalesWaiver<=(p.barco_diasWaiver||30)?"#BAE6FD":"#FCA5A5"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Días usados</div>
-                <div style={{fontSize:20,fontWeight:800,color:mv.diasTotalesWaiver<=(p.barco_diasWaiver||30)?"#0369A1":"#DC2626",fontFamily:"DM Mono,monospace"}}>{mv.diasTotalesWaiver.toFixed(1)}d</div>
-                <div style={{fontSize:8,color:"#64748B"}}>de {p.barco_diasWaiver||30}d</div>
-              </div>
-              <div style={{background: n>1?"#F0FDF4":"#FEF9C3",border:`1px solid ${n>1?"#86EFAC":"#FDE047"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{fontSize:9,color: n>1?"#166534":"#92400E",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Viajes posibles</div>
-                <div style={{fontSize:28,fontWeight:800,color: n>1?"#16A34A":"#D97706",fontFamily:"DM Mono,monospace"}}>{n}</div>
+              <div style={{background:n>1?"#F0FDF4":"#FEF9C3",border:`1px solid ${n>1?"#86EFAC":"#FDE047"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:n>1?"#166534":"#92400E",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Viajes posibles</div>
+                <div style={{fontSize:28,fontWeight:800,color:n>1?"#16A34A":"#D97706",fontFamily:"DM Mono,monospace"}}>{n}</div>
               </div>
             </div>
 
+            {/* Tabla columnar por viaje */}
             {n > 1 && (
-              <>
-                <div style={{marginBottom:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:"#166534"}}>
-                  <strong>Ahorro por costos compartidos:</strong> Waiver {fmt(p.barco_importacionWaiver||0)} + Limpieza {fmt(p.barco_limpiezaBodega||0)} = <strong>{fmt(mv.ahorroTotal)}</strong> en {n} viajes ({fmtUSDTn(mv.ahorroTotal/mv.tnTotales)} USD/Tn)
-                </div>
-                <table className="cost-table">
-                  <thead>
-                    <tr>
-                      <th>Métrica</th>
-                      <th style={{textAlign:"right"}}>1 Viaje</th>
-                      <th style={{textAlign:"right"}}>{n} Viajes</th>
-                      <th style={{textAlign:"right"}}>Delta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(({l,v1,vN,fmt:f})=>(
-                      <tr key={l}>
-                        <td style={{color:C.mid,fontSize:10}}>{l}</td>
-                        <td className="mono" style={{textAlign:"right"}}>{f(v1)}</td>
-                        <td className="mono" style={{textAlign:"right",color:"#0891B2",fontWeight:700}}>{f(vN)}</td>
-                        <td style={{textAlign:"right"}}>{delta(vN, v1, f)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
+              <div style={{marginBottom:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:"#166534"}}>
+                <strong>Costos compartidos (1 sola vez):</strong> Waiver {fmt(p.barco_importacionWaiver||0)} + Limpieza {fmt(p.barco_limpiezaBodega||0)} = <strong>{fmt(mv.ahorroTotal)}</strong> ahorrado vs {n} viajes independientes
+              </div>
             )}
+
+            <div style={{overflowX:"auto"}}>
+              <table className="cost-table">
+                <thead>
+                  <tr>
+                    <th>Métrica</th>
+                    {mv.viajes.map(v=>(
+                      <th key={v.n} style={{textAlign:"right",color: v.n===n?"#0891B2":undefined}}>
+                        Viaje {v.n}
+                        <div style={{fontSize:8,fontWeight:400,color:"#64748B"}}>{v.diasWaiverAcum.toFixed(1)}d / {diasW}d</div>
+                      </th>
+                    ))}
+                    {n>1 && <th style={{textAlign:"right",color:"#DC2626",fontSize:9}}>Delta V{n} vs V1</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    {l:"USD / Tn",      f: v=>`$${v.usdTn.toFixed(1)}`,           dv: v=>v.usdTn,           dfmt: d=>`$${d.toFixed(1)}`,       isGood: d=>d<0},
+                    {l:"Costo acum.",   f: v=>fmtK(v.costoAcum),                  dv: v=>v.costoAcum/1000,  dfmt: d=>`$${Math.abs(d).toFixed(0)}k`, isGood: ()=>false},
+                    {l:"Tn entregadas", f: v=>v.tnAcum.toFixed(0),                 dv: v=>v.tnAcum,          dfmt: d=>Math.abs(d).toFixed(0),   isGood: ()=>true},
+                    {l:"Días waiver",   f: v=>`${v.diasWaiverAcum.toFixed(1)}d`,   dv: v=>v.diasWaiverAcum,  dfmt: d=>`${Math.abs(d).toFixed(1)}d`, isGood: ()=>false},
+                    {l:"% waiver",      f: v=>`${(v.pctWaiver*100).toFixed(0)}%`,  dv: v=>v.pctWaiver*100,   dfmt: d=>`${Math.abs(d).toFixed(0)}%`, isGood: ()=>false},
+                  ].map(({l,f,dv,dfmt,isGood})=>(
+                    <tr key={l}>
+                      <td style={{color:C.mid,fontSize:10}}>{l}</td>
+                      {mv.viajes.map(v=>{
+                        const isLast = v.n === n;
+                        return (
+                          <td key={v.n} className="mono" style={{textAlign:"right",fontWeight:isLast?700:400,color:isLast?"#0891B2":undefined}}>
+                            {f(v)}
+                          </td>
+                        );
+                      })}
+                      {n>1 && (()=>{
+                        const diff = dv(mv.viajes[n-1]) - dv(mv.viajes[0]);
+                        const good = isGood(diff);
+                        return (
+                          <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:good?"#16A34A":"#DC2626"}}>
+                            {diff>0?"+":"-"}{dfmt(diff)}
+                          </td>
+                        );
+                      })()}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             {n === 1 && (
               <div style={{padding:"10px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
-                Con {p.barco_diasWaiver||30} días de waiver y un ciclo de {mv.diasCiclo1.toFixed(1)}d (Carga+Nav+Desc) solo entra 1 viaje. Extendé el waiver o reducí el ciclo para aprovechar el segundo viaje.
+                Con {diasW}d de waiver y ciclo de {mv.diasCiclo1.toFixed(1)}d entra 1 solo viaje. Para el segundo necesitarías ≥{(mv.diasCiclo1+mv.diasCiclo2).toFixed(1)}d de waiver.
               </div>
             )}
           </div>
