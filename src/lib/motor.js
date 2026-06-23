@@ -955,12 +955,14 @@ export function runMonteCarlo(p, n=5000) {
     const tI3  = tnPC/vH3/p.des_horasDia;
     const tR3  = tI3 + tI3*pB/Math.max(0.01,1-pB) + espBB + espZ;
     const mDTn = tnPC*mD; const tnPD = tnPC-mDTn;
-    const tnAc = tnPD*p.des_pctAcopio; const tnDi = tnPD*(1-p.des_pctAcopio);
+    const schMC = calcScheduler(p, tnPD);
+    const tnDi = Math.min(schMC.Tn_directos, tnPD);
+    const tnAc = tnPD - tnDi;
     const mATn = tnAc*mA; const tnEnt = tnPD-mATn;
     const precEq = tnPC>0 ? (c0+c1)/tnPC : pa;
     const fleteAcopioUSDTn = p.des_costoFleteAcopioUSDTn ?? 37.14;
     const c3 = p.des_opexUSDTn*tnPC + p.des_costoCamionesDirUSDTn*tnDi
-             + p.des_costoAcopioLocalUSDTn*tnAc + fleteAcopioUSDTn*tnAc
+             + schMC.costoCal + fleteAcopioUSDTn*tnAc
              + tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
              + calcAgenciaBB(p,tR3) + mDTn*precEq;
 
@@ -970,7 +972,7 @@ export function runMonteCarlo(p, n=5000) {
     const agZarate   = calcAgenciaZarate(p, tR1);
     const agBB       = calcAgenciaBB(p, tR3);
     const opex       = p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnPC;
-    const camiones   = p.des_costoCamionesDirUSDTn*tnDi + p.des_costoAcopioLocalUSDTn*tnAc + fleteAcopioUSDTn*tnAc;
+    const camiones   = p.des_costoCamionesDirUSDTn*tnDi + schMC.costoCal + fleteAcopioUSDTn*tnAc;
     const arena      = pa*p.cap_capacidadBarco;
     const mermas     = pa*mCTn + mDTn*precEq + mATn*precEq;
     const repo       = c0;
