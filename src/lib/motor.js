@@ -440,7 +440,7 @@ export function checkEspejo(p) {
 export function calcEtapa1(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion;
+  const tc=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
 
   const velIdeal_TnMin=p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa;
   const velIdeal_TnHr =velIdeal_TnMin*60;
@@ -506,7 +506,7 @@ export function calcEtapa1(p) {
 export function calcEtapa2(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion;
+  const tc=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
   const nav=velPromedioPonderada(p.nav_tramos);
 
   // Consumo interpolado por tramo — prioridad: distancia manual (>0) → wpIds Haversine → 0
@@ -734,7 +734,7 @@ function calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva, Tn_por_ciclo
 export function calcEtapa3(p, tnEntrada=null) {
   const vlsfo     = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const vlsfoStats= calcVLSFOStats(p.vlsfo_historico);
-  const tc        = p.barco_timeCharter + p.barco_tripulacion;
+  const tc        = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
   const tn        = tnEntrada ?? (p.cap_capacidadBarco * (1 - p.cap_pctMerma));
 
   const sch = calcScheduler(p, tn);
@@ -774,8 +774,9 @@ export function calcEtapa3(p, tnEntrada=null) {
     ? p._costoArenaEq
     : (p.cap_precioArenaOrigen || 13.5);
   const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq;
+  const costoMermaAcopio   = mermaAcopio_Tn  * precioArenaEq;
   const costoTotal   = costoOpex + costoCamiones + costoAcopio + costoFleteAcopio
-                     + combPuerto + fleteEtapa + agencia + costoMermaDescarga;
+                     + combPuerto + fleteEtapa + agencia + costoMermaDescarga + costoMermaAcopio;
 
   return {
     tnEntrada: tn, velIdeal_TnHr, tIdeal_dias,
@@ -785,7 +786,7 @@ export function calcEtapa3(p, tnEntrada=null) {
     pInop, diasInop, esperaBB, tReal_dias, vlsfo, vlsfoStats, tc,
     mermaDescarga_Tn, tnPostDescarga, tnAcopio, tnDirecto, mermaAcopio_Tn, tnEntregadas,
     costoOpex, costoCamiones, costoAcopio, costoFleteAcopio, combPuerto, fleteEtapa, agencia,
-    precioArenaEq, costoMermaDescarga, costoTotal,
+    precioArenaEq, costoMermaDescarga, costoMermaAcopio, costoTotal,
     sch,  // scheduler completo disponible para la UI
     hoverVel:`Grúa: ${p.des_grampada}m³×${p.cap_densidadArena}T/m³×${p.des_movGrampa}mov/min = ${(p.des_grampada*(p.cap_densidadArena||1.45)*(p.des_movGrampa||0.5)).toFixed(2)}Tn/min`,
     hoverTIdeal:`${tn.toFixed(0)}Tn ÷ ${velIdeal_TnHr.toFixed(0)}Tn/hr ÷ ${p.des_horasDia||14}hr/día = ${tIdeal_dias.toFixed(1)}días`,
@@ -843,7 +844,8 @@ export function calcEtapaRepo(p) {
   const limpiezaBodega     = p.barco_limpiezaBodega     || 0;
   const importacionWaiver  = p.barco_importacionWaiver  || 0;
   const extrasTotal        = (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
-  const costoTotal = combCosto + limpiezaBodega + importacionWaiver + extrasTotal;
+  // F-03: fleteCosto incluido en costoTotal para que grand total cierre correctamente
+  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver + extrasTotal;
 
   return {
     ...nav, vlsfo, vlsfoStats, tc,
@@ -859,7 +861,7 @@ export function calcEtapaRepo(p) {
     ],
     hoverTotal:[
       `Combustible lastre: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC (${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}) → incluido en "Barco"`,
+      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`),
@@ -1077,12 +1079,11 @@ export function runMonteCarlo(p, n=5000) {
     const c0 = combRepoT*vlsfo + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
              + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
 
-    // E1 — Carga
+    // E1 — Carga (F-06: barco zarpa con cap_capacidadBarco, merma es costo adicional)
     const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
     const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
     const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + p.cap_esperaDias;
-    const mCTn = p.cap_capacidadBarco*mC;
-    const tnPC = p.cap_capacidadBarco - mCTn;
+    const mCTn = p.cap_capacidadBarco*mC;  // Tn merma compradas extra en origen
     const c1   = pa*p.cap_capacidadBarco + pa*mCTn + p.cap_opexUSDTn*p.cap_capacidadBarco
                + tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + calcAgenciaZarate(p,tR1);
 
@@ -1096,31 +1097,38 @@ export function runMonteCarlo(p, n=5000) {
     },0);
     const c2 = combNavT*vlsfo + diasNav*tc;
 
-    // E3 — Descarga
-    const vH3  = p.des_gruas*p.des_grampada*p.cap_densidadArena*p.des_movGrampa*60;
-    const tI3  = tnPC/vH3/p.des_horasDia;
+    // E3 — Descarga (usa Scheduler completo — F-02)
+    // F-06: usar cap_capacidadBarco como tnEntrada (igual que determinístico)
+    // la merma de carga afecta el costo pero el barco llega con cap_capacidadBarco
+    const mCTn_gross = p.cap_capacidadBarco * mC;  // Tn merma pagadas en origen
+    const tnABordo   = p.cap_capacidadBarco;         // Tn que llegan al puerto
+    const schMC = calcScheduler(p, tnABordo);
+    const tI3  = isFinite(schMC.t_total_dias) && schMC.t_total_dias < 500
+      ? schMC.t_total_dias
+      : (schMC.t_fase1_hrs / Math.max(1, p.des_horasDia || 14));
     const tR3  = tI3 + tI3*pB/Math.max(0.01,1-pB) + espBB + espZ;
-    const mDTn = tnPC*mD; const tnPD = tnPC-mDTn;
-    const schMC = calcScheduler(p, tnPD);
+    const mDTn = tnABordo*mD; const tnPD = tnABordo-mDTn;
     const tnDi = Math.min(schMC.Tn_directos, tnPD);
     const tnAc = tnPD - tnDi;
     const mATn = tnAc*mA; const tnEnt = tnPD-mATn;
-    const precEq = tnPC>0 ? (c0+c1)/tnPC : pa;
+    // F-05: precEq includes E0+E1+E2 (igual que determinístico)
+    const precEq = tnABordo>0 ? (c0+c1+c2)/tnABordo : pa;
     const fleteAcopioUSDTn = p.des_costoFleteAcopioUSDTn ?? 37.14;
-    const c3 = p.des_opexUSDTn*tnPC + p.des_costoCamionesDirUSDTn*tnDi
+    // F-04: agregar mATn*precEq (merma acopio) a c3
+    const c3 = p.des_opexUSDTn*tnABordo + p.des_costoCamionesDirUSDTn*tnDi
              + schMC.costoCal + fleteAcopioUSDTn*tnAc
              + tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
-             + calcAgenciaBB(p,tR3) + mDTn*precEq;
+             + calcAgenciaBB(p,tR3) + mDTn*precEq + mATn*precEq;
 
     // Desglose de ítems para proforma MC
     const combTotal = combRepoT + (tR1*p.barco_consumoPuerto) + combNavT + (tR3*p.barco_consumoPuerto);
     const barcoTotal = (diasNavR + tR1 + diasNav + tR3) * tc;
     const agZarate   = calcAgenciaZarate(p, tR1);
     const agBB       = calcAgenciaBB(p, tR3);
-    const opex       = p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnPC;
+    const opex       = p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnABordo;
     const camiones   = p.des_costoCamionesDirUSDTn*tnDi + schMC.costoCal + fleteAcopioUSDTn*tnAc;
     const arena      = pa*p.cap_capacidadBarco;
-    const mermas     = pa*mCTn + mDTn*precEq + mATn*precEq;
+    const mermas     = pa*mCTn_gross + mDTn*precEq + mATn*precEq;
     const repo       = c0;
     const total      = c0+c1+c2+c3;
 
