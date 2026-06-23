@@ -9,7 +9,7 @@ import {
   VLSFO_ESCENARIOS, TABLA_VEL_CONSUMO_DEFAULT, TRAMOS_REPO_DEFAULT,
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
-  calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcNViajes,
+  calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcMesWorst, calcNViajes,
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo,
@@ -880,14 +880,10 @@ function TabRepo({p,set}) {
 }
 
 // ─── TAB E1: CARGA ─────────────────────────────────────────────────────────
-function TabCarga({p,set,tnEntregadas}) {
-  // Mes más pesimista del clima de Zárate
-  const mesWorst = useMemo(()=>{
+function TabCarga({p,set,tnEntregadas,mesIdx}) {
+  const mesWorst = mesIdx ?? useMemo(()=>{
     let worst=0, worstInop=0;
-    for(let i=0;i<12;i++){
-      const e=calcEtapa1(p,i);
-      if(e.pInop>worstInop){worstInop=e.pInop;worst=i;}
-    }
+    for(let i=0;i<12;i++){const e=calcEtapa1(p,i);if(e.pInop>worstInop){worstInop=e.pInop;worst=i;}}
     return worst;
   },[p]);
   const e1=calcEtapa1(p,mesWorst);
@@ -1016,8 +1012,8 @@ function TabNavegacion({p,set,tnEntregadas}) {
 }
 
 // ─── TAB E3: DESCARGA ──────────────────────────────────────────────────────
-function TabDescarga({p,set,tnEntregadas}) {
-  const mesWorst = useMemo(()=>{
+function TabDescarga({p,set,tnEntregadas,mesIdx}) {
+  const mesWorst = mesIdx ?? useMemo(()=>{
     const e0=calcEtapaRepo(p); const e2=calcEtapa2(p);
     let worstMes=0, worstInop=0;
     for(let i=0;i<12;i++){
@@ -1757,16 +1753,14 @@ function TabMC({p,set,resultado,setResultado}) {
   );
 }
 // ─── TAB EV: EVALUACIÓN TOTAL ──────────────────────────────────────────────
-function TabEvaluacion({p,tnEntregadas}) {
-  const [mes,setMes]=useState(5);
-  const e1=calcEtapa1(p,mes);
-  const e2=calcEtapa2(p);
+function TabEvaluacion({p,tnEntregadas,tot}) {
   const e0=calcEtapaRepo(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal + e2.costoTotal) / e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
-  const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},mes,e1.tnPostCarga);
-  const tot={
-    costoTotal: e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal,
-    usdTn: (e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal)/e3.tnEntregadas,
+  const e1=tot.e1;
+  const e2=tot.e2;
+  const e3=tot.e3;
+  const totEv={
+    costoTotal: tot.costoTotal,
+    usdTn: tot.usdTn,
     diasTotales: e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias,
     tnEntregadas: e3.tnEntregadas,
   };
@@ -1849,10 +1843,10 @@ function TabEvaluacion({p,tnEntregadas}) {
     <div>
       {/* KPIs globales */}
       <div className="kpis">
-        <KPI label="USD/Tn final"  value={`$${tot.usdTn.toFixed(1)}`}             color={C.gold}/>
-        <KPI label="Tn entregadas" value={tot.tnEntregadas.toFixed(0)}             color={C.green}/>
-        <KPI label="Días totales"  value={`${tot.diasTotales.toFixed(1)}d`}        color={C.navy}/>
-        <KPI label="Costo total"   value={`$${(tot.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
+        <KPI label="USD/Tn final"  value={`$${totEv.usdTn.toFixed(1)}`}             color={C.gold}/>
+        <KPI label="Tn entregadas" value={totEv.tnEntregadas.toFixed(0)}             color={C.green}/>
+        <KPI label="Días totales"  value={`${totEv.diasTotales.toFixed(1)}d`}        color={C.navy}/>
+        <KPI label="Costo total"   value={`$${(totEv.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
         <KPI label="VLSFO"         value={`$${e1.vlsfo}/T`}                        color={C.orange}/>
         <KPI label="TC+Trip."      value={`$${e1.tc.toLocaleString()}/d`}          color={C.mid}/>
       </div>
@@ -1890,13 +1884,13 @@ function TabEvaluacion({p,tnEntregadas}) {
                   <td style={{textAlign:"right"}}>
                     <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`} title={r.label} lines={Array.isArray(r.hover)?r.hover:[r.hover]}/>
                   </td>
-                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/tot.tnEntregadas).toFixed(1)}</td>
+                  <td className="mono" style={{textAlign:"right",color:C.mid,fontSize:10}}>${(r.total/totEv.tnEntregadas).toFixed(1)}</td>
                 </tr>
               ))}
               <tr className="total">
                 <td colSpan={2} style={{textAlign:"right"}}>SUBTOTAL</td>
                 <td className="mono" style={{textAlign:"right",color:etapa.color}}>${etapa.subtotal.toLocaleString("es-AR",{maximumFractionDigits:0})}</td>
-                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/tot.tnEntregadas).toFixed(1)}</td>
+                <td className="mono" style={{textAlign:"right",color:etapa.color}}>${(etapa.subtotal/totEv.tnEntregadas).toFixed(1)}</td>
               </tr>
             </tbody>
           </table>
@@ -1913,13 +1907,13 @@ function TabEvaluacion({p,tnEntregadas}) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
           <div>
             <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,fontWeight:700}}>TOTAL — USD / TN ENTREGADA</div>
-            <div style={{fontSize:32,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D",lineHeight:1,marginTop:4}}>${tot.usdTn.toFixed(1)}</div>
+            <div style={{fontSize:32,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D",lineHeight:1,marginTop:4}}>${totEv.usdTn.toFixed(1)}</div>
           </div>
           <div style={{display:"flex",gap:16}}>
             {[
-              {l:"Días totales",  v:`${tot.diasTotales.toFixed(1)}d`},
-              {l:"Tn entregadas", v:tot.tnEntregadas.toFixed(0)},
-              {l:"Costo total",   v:`$${(tot.costoTotal/1000).toFixed(0)}k`},
+              {l:"Días totales",  v:`${totEv.diasTotales.toFixed(1)}d`},
+              {l:"Tn entregadas", v:totEv.tnEntregadas.toFixed(0)},
+              {l:"Costo total",   v:`$${(totEv.costoTotal/1000).toFixed(0)}k`},
             ].map(({l,v})=>(
               <div key={l} style={{textAlign:"right"}}>
                 <div style={{fontSize:15,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff"}}>{v}</div>
@@ -1932,14 +1926,14 @@ function TabEvaluacion({p,tnEntregadas}) {
         {/* Desglose por etapa */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
           {etapas.map(etapa=>{
-            const pct = tot.costoTotal>0 ? (etapa.subtotal/tot.costoTotal*100) : 0;
+            const pct = totEv.costoTotal>0 ? (etapa.subtotal/totEv.costoTotal*100) : 0;
             return (
               <div key={etapa.id} style={{background:"rgba(255,255,255,.07)",borderRadius:8,padding:"9px 11px",borderTop:`3px solid ${etapa.color}`}}>
                 <div style={{fontSize:8,color:"rgba(255,255,255,.45)",fontWeight:700,textTransform:"uppercase",letterSpacing:.5,marginBottom:5,lineHeight:1.3}}>
                   {etapa.label.split("—")[0].trim()}
                 </div>
                 <div style={{fontSize:16,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#fff",lineHeight:1}}>
-                  ${(etapa.subtotal/tot.tnEntregadas).toFixed(1)}
+                  ${(etapa.subtotal/totEv.tnEntregadas).toFixed(1)}
                 </div>
                 <div style={{fontSize:9,color:"rgba(255,255,255,.4)",marginTop:3,fontFamily:"DM Mono,monospace"}}>
                   USD/Tn
@@ -1961,7 +1955,7 @@ function TabEvaluacion({p,tnEntregadas}) {
       <div className="card">
         <div className="ct">Contribución por Etapa (USD/Tn)</div>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/tot.tnEntregadas).toFixed(1)),color:e.color}))} margin={{top:8,right:8,left:0,bottom:8}}>
+          <BarChart data={etapas.map(e=>({name:e.label.split("—")[1]?.trim()||e.label,val:parseFloat((e.subtotal/totEv.tnEntregadas).toFixed(1)),color:e.color}))} margin={{top:8,right:8,left:0,bottom:8}}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
             <XAxis dataKey="name" tick={{fill:C.mid,fontSize:9}}/>
             <YAxis tick={{fill:C.mid,fontSize:9}}/>
@@ -1981,10 +1975,10 @@ function TabEvaluacion({p,tnEntregadas}) {
         const totalArenaMermas  = costoArena + costoMermaCarga + costoMermaDesc + costoMermaAcopio;
 
         // Costo logístico puro = todo lo demás
-        const totalLogistico = tot.costoTotal - totalArenaMermas;
-        const tn = tot.tnEntregadas || 1;
+        const totalLogistico = totEv.costoTotal - totalArenaMermas;
+        const tn = totEv.tnEntregadas || 1;
 
-        const pctLog  = tot.costoTotal > 0 ? totalLogistico / tot.costoTotal * 100 : 0;
+        const pctLog  = totEv.costoTotal > 0 ? totalLogistico / totEv.costoTotal * 100 : 0;
         const pctArena = 100 - pctLog;
 
         const filas = [
@@ -2084,8 +2078,7 @@ function TabEvaluacion({p,tnEntregadas}) {
 
       {/* ── ANÁLISIS MULTI-VIAJE (waiver compartido) ── */}
       {(() => {
-        const mv = calcNViajes(p, 5);
-        const b  = mv.base;
+        const mv = calcNViajes(p, tot);
         const n  = mv.nViajes;
         const fmt  = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
         const fmtK = v => `$${(v/1000).toFixed(0)}k`;
@@ -3184,18 +3177,19 @@ export default function App() {
   const [params,setParams]=useState(DEFAULT_PARAMS);
   const [mcResultado,setMcResultado]=useState(null);
   const set=useCallback((k,v)=>setParams(prev=>({...prev,[k]:v})),[]);
-  const tot=useMemo(()=>calcTotal(params),[params]);
+  const mesWorstGlobal = useMemo(()=>calcMesWorst(params),[params]);
+  const tot=useMemo(()=>calcTotal(params, mesWorstGlobal),[params, mesWorstGlobal]);
 
   const tabMap={
     barco:<TabBarco      p={params} set={set}/>,
     repo: <TabRepo       p={params} set={set}/>,
     az:   <TabAgenciaZarate p={params} set={set}/>,
-    e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
+    e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas} mesIdx={mesWorstGlobal}/>,
     e2:   <TabNavegacion p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     abb:  <TabAgenciaBB  p={params} set={set}/>,
-    e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
+    e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas} mesIdx={mesWorstGlobal}/>,
     mc:   <TabMC         p={params} set={set} resultado={mcResultado} setResultado={setMcResultado}/>,
-    ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas}/>,
+    ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas} tot={tot}/>,
     sens: <TabSensibilidades p={params}/>,
     cl:   <TabClima      p={params} set={set}/>,
     cb:   <TabCombustible p={params} set={set}/>,
