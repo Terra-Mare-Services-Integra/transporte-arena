@@ -956,7 +956,7 @@ export function calcNViajes(p, tot) {
   const diasTotales       = tot.diasTotales + viajesExtra * diasCiclo2;
 
   return {
-    nViajes, diasWaiver, diasCiclo1, diasCiclo2, diasVuelta,
+    nViajes, diasWaiver, diasCiclo1, diasCiclo2, diasVuelta, costoVuelta,
     diasTotalesWaiver, diasTotales,
     viajes,
     costoViajeAdicional, costoTotalSistema, tnTotales, usdTnSistema,
