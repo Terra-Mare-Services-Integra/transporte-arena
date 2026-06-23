@@ -1773,10 +1773,10 @@ function TabEvaluacion({p,tnEntregadas}) {
       ],
       rows:[
         {label:"Combustible lastre",   eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,   total:e0.combCosto,         hover:e0.hoverComb},
-        {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,     total:e0.fleteCosto,        hover:e0.hoverTC},
         {label:"Limpieza bodega",      eq:"por escala",                                  total:e0.limpiezaBodega,    hover:[e0.hoverTotal[2]]},
         {label:"Importación/Waiver",   eq:"por escala",                                  total:e0.importacionWaiver, hover:[e0.hoverTotal[3]]},
       ],
+      nota:`TC (${e0.diasNav.toFixed(1)}d × $${e0.tc}/d = $${e0.fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}) incluido en total "Barco"`,
       subtotal:e0.costoTotal, dias:e0.diasNav,
     },
     {
@@ -1895,6 +1895,11 @@ function TabEvaluacion({p,tnEntregadas}) {
               </tr>
             </tbody>
           </table>
+          {etapa.nota && (
+            <div style={{marginTop:6,padding:"5px 10px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:6,fontSize:10,color:"#166534"}}>
+              ℹ️ {etapa.nota}
+            </div>
+          )}
         </div>
       ))}
 
