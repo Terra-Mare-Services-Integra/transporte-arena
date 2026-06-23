@@ -1061,15 +1061,16 @@ function TabDescarga({p,set,tnEntregadas}) {
   },[p, e1.tnPostCarga, sensFilas, sensCols]);
 
   const costoRows=[
-    {label:"Opex descarga",           eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                        total:e3.costoOpex},
-    {label:"Directos → Neuquén",      eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,                         total:e3.costoCamiones},
-    {label:"Calesitas (transp. local)",eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn`,               total:sch.costoTranspUSDTn*sch.Tn_calesitas},
-    {label:"Alquiler predio (acopio)", eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                                    total:sch.costoAlqTotal},
-    {label:"Acopio → Neuquén",         eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                      total:e3.costoFleteAcopio},
-    {label:"Combustible puerto",       eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                                      total:e3.combPuerto,        hover:e3.hoverComb},
-    {label:"Time Charter+Trip.",       eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                                   total:e3.fleteEtapa,        hover:e3.hoverTC},
-    {label:"Merma descarga",           eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                                total:e3.costoMermaDescarga},
-    {label:"Merma acopio",             eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                                  total:e3.mermaAcopio_Tn*e3.precioArenaEq},
+    {label:"Opex descarga",            eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                   total:e3.costoOpex},
+    {label:"Directos → Neuquén",       eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,                   total:e3.costoCamiones},
+    {label:"Calesitas (transp. local)", eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn`,         total:sch.costoTranspUSDTn*sch.Tn_calesitas},
+    {label:"Alquiler predio (acopio)",  eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                              total:sch.costoAlqTotal},
+    {label:"Acopio → Neuquén",          eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                total:e3.costoFleteAcopio},
+    {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                               total:e3.combPuerto, hover:e3.hoverComb},
+    {label:"Time Charter+Trip.",        eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                            total:e3.fleteEtapa, hover:e3.hoverTC},
+    {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                   total:e3.agencia},
+    {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                         total:e3.costoMermaDescarga},
+    {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                           total:e3.costoMermaAcopio},
   ];
   const costoTotalTabla = costoRows.reduce((s,r)=>s+(r.total||0),0);
   costoRows.push({label:"TOTAL ETAPA 3", eq:"Σ costos descarga", total:costoTotalTabla, hover:e3.hoverTotal, isTotal:true});
@@ -1777,11 +1778,11 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         {l:"Import./Waiver",  v:`$${(p.barco_importacionWaiver||0).toLocaleString()}`},
       ],
       rows:[
-        {label:"Combustible lastre",   eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,   total:e0.combCosto,         hover:e0.hoverComb},
-        {label:"Limpieza bodega",      eq:"por escala",                                  total:e0.limpiezaBodega,    hover:[e0.hoverTotal[2]]},
-        {label:"Importación/Waiver",   eq:"por escala",                                  total:e0.importacionWaiver, hover:[e0.hoverTotal[3]]},
+        {label:"Combustible lastre",    eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,   total:e0.combCosto,         hover:e0.hoverComb},
+        {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,      total:e0.fleteCosto,        hover:e0.hoverTC},
+        {label:"Limpieza bodega",       eq:"por escala",                                  total:e0.limpiezaBodega,    hover:[e0.hoverTotal[2]]},
+        {label:"Importación/Waiver",    eq:"por escala",                                  total:e0.importacionWaiver, hover:[e0.hoverTotal[3]]},
       ],
-      nota:`TC (${e0.diasNav.toFixed(1)}d × $${e0.tc}/d = $${e0.fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}) incluido en total "Barco"`,
       subtotal:e0.costoTotal, dias:e0.diasNav,
     },
     {
@@ -1828,15 +1829,16 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         {l:"Precio eq. arena", v:`$${e3.precioArenaEq.toFixed(2)}/Tn`},
       ],
       rows:[
-        {label:"Opex descarga",          eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                       total:e3.costoOpex},
-        {label:"Camiones directos",      eq:`${e3.sch?.nDir||0} cam → ${e3.tnDirecto.toFixed(0)}Tn`,                                                     total:e3.costoCamiones},
-        {label:"Calesitas (transp. local)",eq:`${e3.sch?.nCal||0} cam → ${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(e3.sch?.costoTranspUSDTn||0).toFixed(2)}/Tn`, total:(e3.sch?.costoTranspUSDTn||0)*(e3.sch?.Tn_calesitas||0)},
-        {label:"Alquiler predio (acopio)",eq:`${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(p.des_alquilerPredioUSDTn||0).toFixed(2)}/Tn`,              total:(e3.sch?.costoAlqTotal||0)},
-        {label:"Flete acopio → Neuquén", eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                      total:e3.costoFleteAcopio},
-        {label:"Combustible puerto",     eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                                     total:e3.combPuerto,   hover:e3.hoverComb},
-        {label:"Time Charter+Trip.",     eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                                  total:e3.fleteEtapa,   hover:e3.hoverTC},
-        {label:"Agencia BB",             eq:"desde ítems Ag. BB",                                                                                         total:e3.agencia},
-        {label:"Merma descarga",         eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,                               total:e3.costoMermaDescarga},
+        {label:"Opex descarga",            eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                     total:e3.costoOpex},
+        {label:"Camiones directos",        eq:`${e3.sch?.nDir||0} cam → ${e3.tnDirecto.toFixed(0)}Tn`,                                                   total:e3.costoCamiones},
+        {label:"Calesitas (transp. local)", eq:`${e3.sch?.nCal||0} cam → ${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(e3.sch?.costoTranspUSDTn||0).toFixed(2)}/Tn`, total:(e3.sch?.costoTranspUSDTn||0)*(e3.sch?.Tn_calesitas||0)},
+        {label:"Alquiler predio (acopio)",  eq:`${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(p.des_alquilerPredioUSDTn||0).toFixed(2)}/Tn`,            total:(e3.sch?.costoAlqTotal||0)},
+        {label:"Flete acopio → Neuquén",    eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                    total:e3.costoFleteAcopio},
+        {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                                   total:e3.combPuerto,   hover:e3.hoverComb},
+        {label:"Time Charter+Trip.",        eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                                total:e3.fleteEtapa,   hover:e3.hoverTC},
+        {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                       total:e3.agencia},
+        {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,                             total:e3.costoMermaDescarga},
+        {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,                               total:e3.costoMermaAcopio||e3.mermaAcopio_Tn*e3.precioArenaEq},
       ],
       get subtotal() { return this.rows.reduce((s,r)=>s+(r.total||0),0); },
       dias:e3.tReal_dias,
@@ -1974,7 +1976,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         const costoArena   = e1.costoArena   || 0;
         const costoMermaCarga   = e1.costoMerma    || 0;
         const costoMermaDesc    = e3.costoMermaDescarga || 0;
-        const costoMermaAcopio  = (e3.mermaAcopio_Tn||0) * (e3.precioArenaEq||0);
+        const costoMermaAcopio  = e3.costoMermaAcopio || (e3.mermaAcopio_Tn||0) * (e3.precioArenaEq||0);
         const totalArenaMermas  = costoArena + costoMermaCarga + costoMermaDesc + costoMermaAcopio;
 
         // Costo logístico puro = todo lo demás
@@ -1991,13 +1993,13 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
           {l:"Merma de acopio",              v:costoMermaAcopio,    c:"#D97706"},
         ];
         const filasLog = [
-          {l:"Barco (TC + tripulación)",     v:e0.fleteCosto + e1.fleteEtapa + e2.fleteNav + e3.fleteEtapa, c:C.navy},
-          {l:"Combustible (todas etapas)",   v:e0.combCosto + e1.combPuerto + e2.combNav + e3.combPuerto,   c:C.orange},
-          {l:"Agencia Zárate",               v:e1.agencia || 0,     c:C.blue},
-          {l:"Agencia BB",                   v:e3.agencia || 0,     c:C.blue},
-          {l:"Opex carga + descarga",        v:(e1.costoOpex||0) + (e3.costoOpex||0), c:C.mid},
-          {l:"Camiones + Acopio",            v:(e3.costoCamiones||0) + (e3.costoAcopio||0) + (e3.costoFleteAcopio||0), c:"#166534"},
-          {l:"Repo. (limpieza, waiver, etc.)",v:e0.combCosto + e0.fleteCosto + (e0.limpiezaBodega||0) + (e0.importacionWaiver||0) - e0.combCosto - e0.fleteCosto + e0.limpiezaBodega + e0.importacionWaiver, c:C.mid},
+          {l:"Barco (TC+Trip+Misc, todas etapas)", v:e0.fleteCosto + e1.fleteEtapa + e2.fleteNav + e3.fleteEtapa, c:C.navy},
+          {l:"Combustible (todas etapas)",          v:e0.combCosto + e1.combPuerto + e2.combNav + e3.combPuerto,   c:C.orange},
+          {l:"Agencia Zárate",                      v:e1.agencia || 0,     c:C.blue},
+          {l:"Agencia BB",                          v:e3.agencia || 0,     c:C.blue},
+          {l:"Opex carga + descarga",               v:(e1.costoOpex||0) + (e3.costoOpex||0), c:C.mid},
+          {l:"Camiones + Acopio",                   v:(e3.costoCamiones||0) + (e3.costoAcopio||0) + (e3.costoFleteAcopio||0), c:"#166534"},
+          {l:"Repo. (comb + limpieza + waiver)",    v:e0.combCosto + (e0.limpiezaBodega||0) + (e0.importacionWaiver||0), c:C.mid},
         ];
         // Simplify: just show logístico total vs arena total
         return (
