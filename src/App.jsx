@@ -210,7 +210,7 @@ button{font-family:'Montserrat',sans-serif;cursor:pointer}
   body{background:#fff!important}
   .hdr,.tabs,#btn-print,.back,.run,.warn-note,.espejo-ok,.espejo-warn{display:none!important}
   .screen-only{display:none!important}
-  #print-all{display:block!important}
+  #print-all{position:static!important;left:auto!important;width:auto!important;z-index:auto!important;pointer-events:auto!important}
   .print-section{page-break-before:always;padding:8px 0}
   .print-section:first-child{page-break-before:avoid}
   .print-title{font-size:13px;font-weight:800;color:#213363;border-bottom:2px solid #213363;padding-bottom:4px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
@@ -779,7 +779,7 @@ function TabRepo({p,set}) {
       <div className="card">
         <div className="ct">Costos Viaje a Puerto de Carga</div>
         <div style={{overflowX:"auto"}}>
-          <table className="cost-table" style={{tableLayout:"fixed",width:"100%"}}>
+          <table className="cost-table" style={{width:"100%",minWidth:800}}>
             <thead>
               <tr>
                 <th>Concepto</th>
@@ -2662,17 +2662,17 @@ function TabAgenciaZarate({p,set}) {
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
-          <table className="cost-table" style={{tableLayout:"fixed",width:"100%"}}>
+          <table className="cost-table" style={{width:"100%",minWidth:800}}>
             <thead>
               <tr>
-                <th style={{width:28}}>✓</th>
+                <th style={{width:30}}>✓</th>
                 <th style={{minWidth:160}}>Concepto</th>
-                <th style={{width:110}}>Categoría</th>
-                <th style={{width:80}}>Tipo</th>
-                <th style={{textAlign:"right",width:100}}>USD unitario</th>
-                <th style={{textAlign:"right",width:100}}>Total USD</th>
-                <th style={{textAlign:"right",width:80}}>USD/Tn</th>
-                <th style={{minWidth:100}}>Nota</th>
+                <th style={{minWidth:100}}>Categoría</th>
+                <th style={{width:90}}>Tipo</th>
+                <th style={{textAlign:"right",minWidth:110}}>USD unitario</th>
+                <th style={{textAlign:"right",minWidth:110}}>Total USD</th>
+                <th style={{textAlign:"right",width:75}}>USD/Tn</th>
+                <th style={{minWidth:130}}>Nota</th>
               </tr>
             </thead>
             <tbody>
@@ -2686,12 +2686,12 @@ function TabAgenciaZarate({p,set}) {
                     </td>
                     <td>
                       <input value={it.label} onChange={e=>updItem(it.id,"label",e.target.value)}
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:160}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:170}}/>
                     </td>
                     <td>
                       <input value={it.categoria||""} onChange={e=>updItem(it.id,"categoria",e.target.value)}
                         placeholder="ej: Pilotaje"
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:10,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:80}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:10,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:95}}/>
                     </td>
                     <td style={{textAlign:"center"}}>
                       <select value={it.tipo} onChange={e=>updItem(it.id,"tipo",e.target.value)}
@@ -2797,17 +2797,17 @@ function TabAgenciaBB({p,set}) {
           </label>
         </div>
         <div style={{overflowX:"auto"}}>
-          <table className="cost-table" style={{tableLayout:"fixed",width:"100%"}}>
+          <table className="cost-table" style={{width:"100%",minWidth:800}}>
             <thead>
               <tr>
-                <th style={{width:28}}>✓</th>
+                <th style={{width:30}}>✓</th>
                 <th style={{minWidth:160}}>Concepto</th>
-                <th style={{width:110}}>Categoría</th>
-                <th style={{width:80}}>Tipo</th>
-                <th style={{textAlign:"right",width:100}}>USD unitario</th>
-                <th style={{textAlign:"right",width:100}}>Total USD</th>
-                <th style={{textAlign:"right",width:80}}>USD/Tn</th>
-                <th style={{minWidth:100}}>Nota</th>
+                <th style={{minWidth:100}}>Categoría</th>
+                <th style={{width:90}}>Tipo</th>
+                <th style={{textAlign:"right",minWidth:110}}>USD unitario</th>
+                <th style={{textAlign:"right",minWidth:110}}>Total USD</th>
+                <th style={{textAlign:"right",width:75}}>USD/Tn</th>
+                <th style={{minWidth:130}}>Nota</th>
               </tr>
             </thead>
             <tbody>
@@ -2821,12 +2821,12 @@ function TabAgenciaBB({p,set}) {
                     </td>
                     <td>
                       <input value={it.label} onChange={e=>updItem(it.id,"label",e.target.value)}
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:160}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:11,fontFamily:"Montserrat,sans-serif",color:C.navy,minWidth:170}}/>
                     </td>
                     <td>
                       <input value={it.categoria||""} onChange={e=>updItem(it.id,"categoria",e.target.value)}
                         placeholder="ej: Pilotaje"
-                        style={{background:"transparent",border:"none",width:"100%",fontSize:10,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:80}}/>
+                        style={{background:"transparent",border:"none",width:"100%",fontSize:10,fontFamily:"Montserrat,sans-serif",color:C.mid,minWidth:95}}/>
                     </td>
                     <td style={{textAlign:"center"}}>
                       <select value={it.tipo} onChange={e=>updItem(it.id,"tipo",e.target.value)}
@@ -3313,13 +3313,13 @@ export default function App() {
         </div>
         <button className="back" onClick={()=>window.open("https://evaluacion-proyectos.vercel.app","_self")}>← Portal</button>
         <button className="back" style={{marginLeft:6,background:"#1E3A5F"}} onClick={async()=>{
-          // Corre MC con 10.000 simulaciones y luego imprime
           const btn = document.getElementById('btn-print');
           if(btn){ btn.textContent="⏳ Corriendo MC..."; btn.disabled=true; }
           await new Promise(r=>setTimeout(r,50));
           const mcRes = runMonteCarlo(params, 10000);
           setMcResultado(mcRes);
-          await new Promise(r=>setTimeout(r,100));
+          // Esperar 2 ciclos de render para que React actualice el DOM
+          await new Promise(r=>setTimeout(r,300));
           if(btn){ btn.textContent="🖨️ PDF"; btn.disabled=false; }
           window.print();
         }} id="btn-print">🖨️ PDF</button>
@@ -3337,7 +3337,7 @@ export default function App() {
           {tabMap[tab]}
         </div>
         {/* Vista impresión — todas las secciones en orden */}
-        <div id="print-all" style={{display:'none'}} aria-hidden="true">
+        <div id="print-all" style={{position:'fixed',left:'-9999px',top:0,width:'210mm',pointerEvents:'none',zIndex:-1}}>
           {printOrder.map((id,idx)=>(
             <div key={id} className="print-section">
               <div className="print-title">{printLabels[id]}</div>
