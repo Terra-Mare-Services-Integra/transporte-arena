@@ -9,7 +9,7 @@ import {
   VLSFO_ESCENARIOS, TABLA_VEL_CONSUMO_DEFAULT, TRAMOS_REPO_DEFAULT,
   WAYPOINTS_RUTA, calcDistanciaTramo, haversine,
   calcVLSFOStats, getPrecioVLSFO, interpolarConsumo,
-  calcEtapaRepo, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal,
+  calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcNViajes,
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo,
@@ -569,7 +569,9 @@ function TabBarco({p,set}) {
           <Campo label="Limpieza de bodega" value={p.barco_limpiezaBodega||0} onChange={v=>set("barco_limpiezaBodega",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
             nota="Costo por escala para limpiar bodega antes de cargar arena. Se carga en el viaje de reposicionamiento."/>
           <Campo label="Importación / Waiver" value={p.barco_importacionWaiver||0} onChange={v=>set("barco_importacionWaiver",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
-            nota="Gastos de importación temporal del barco y/o waiver regulatorio. Se carga en el viaje de reposicionamiento."/>
+            nota="Gastos de importación temporal del barco y/o waiver regulatorio."/>
+          <Campo label="Días de vigencia waiver" value={p.barco_diasWaiver||30} onChange={v=>set("barco_diasWaiver",Math.max(1,Math.round(v)))} tipo="usuario" unit="días" min={1} max={180} step={1}
+            nota="Período cubierto por el waiver. Determina cuántos viajes consecutivos pueden compartir el costo de importación y limpieza."/>
           <div style={{marginTop:10,padding:"8px 12px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,fontSize:10,color:"#0369A1"}}>
             <strong>Costo diario total</strong> (TC + Misc = ${costoTotalDia.toLocaleString()}/día) aplica a todos los días del viaje — reposicionamiento, cargando, navegando y descargando.
           </div>
@@ -2076,6 +2078,81 @@ function TabEvaluacion({p,tnEntregadas}) {
                 </table>
               </div>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* ── ANÁLISIS MULTI-VIAJE (waiver compartido) ── */}
+      {(() => {
+        const mv = calcNViajes(p, 5);
+        const b  = mv.base;
+        const n  = mv.nViajes;
+        const fmt = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
+        const fmtTn = v => `$${v.toFixed(1)}`;
+        const delta = (multi, single) => {
+          const d = multi - single;
+          return <span style={{fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:d<0?"#16A34A":"#DC2626"}}>{d<0?"":"+"}{fmtTn(d)}</span>;
+        };
+        const rows = [
+          {l:"USD / Tn",      v1: b.usdTn,          vN: mv.usdTnSistema,      fmt: fmtTn},
+          {l:"Costo total",   v1: b.costoTotal,      vN: mv.costoTotalSistema, fmt: v=>`$${(v/1000).toFixed(0)}k`},
+          {l:"Tn entregadas", v1: b.tnEntregadas,    vN: mv.tnTotales,         fmt: v=>v.toFixed(0)},
+          {l:"Días",          v1: b.diasTotales,     vN: mv.diasTotales,       fmt: v=>`${v.toFixed(1)}d`},
+        ];
+        return (
+          <div className="card" style={{borderTop:`3px solid #0891B2`}}>
+            <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — Waiver {p.barco_diasWaiver||30} días</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:12}}>
+              <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Waiver</div>
+                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{p.barco_diasWaiver||30}d</div>
+              </div>
+              <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 1</div>
+                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{b.diasTotales.toFixed(1)}d</div>
+              </div>
+              <div style={{background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#0369A1",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Ciclo viaje 2+</div>
+                <div style={{fontSize:20,fontWeight:800,color:"#0369A1",fontFamily:"DM Mono,monospace"}}>{mv.diasCiclo2.toFixed(1)}d</div>
+              </div>
+              <div style={{background: n>1?"#F0FDF4":"#FEF9C3",border:`1px solid ${n>1?"#86EFAC":"#FDE047"}`,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                <div style={{fontSize:9,color: n>1?"#166534":"#92400E",fontWeight:700,textTransform:"uppercase",letterSpacing:.5}}>Viajes posibles</div>
+                <div style={{fontSize:28,fontWeight:800,color: n>1?"#16A34A":"#D97706",fontFamily:"DM Mono,monospace"}}>{n}</div>
+              </div>
+            </div>
+
+            {n > 1 && (
+              <>
+                <div style={{marginBottom:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:"#166534"}}>
+                  <strong>Ahorro por costos compartidos:</strong> Waiver ${fmt(p.barco_importacionWaiver||0)} + Limpieza ${fmt(p.barco_limpiezaBodega||0)} = <strong>${fmt(mv.ahorroTotal)}</strong> en {n} viajes ({fmtTn(mv.ahorroTotal/mv.tnTotales)} USD/Tn)
+                </div>
+                <table className="cost-table">
+                  <thead>
+                    <tr>
+                      <th>Métrica</th>
+                      <th style={{textAlign:"right"}}>1 Viaje</th>
+                      <th style={{textAlign:"right"}}>{n} Viajes</th>
+                      <th style={{textAlign:"right"}}>Delta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(({l,v1,vN,fmt:f})=>(
+                      <tr key={l}>
+                        <td style={{color:C.mid,fontSize:10}}>{l}</td>
+                        <td className="mono" style={{textAlign:"right"}}>{f(v1)}</td>
+                        <td className="mono" style={{textAlign:"right",color:"#0891B2",fontWeight:700}}>{f(vN)}</td>
+                        <td style={{textAlign:"right"}}>{delta(parseFloat(f(vN).replace(/[^0-9.-]/g,"")), parseFloat(f(v1).replace(/[^0-9.-]/g,"")))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+            {n === 1 && (
+              <div style={{padding:"10px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
+                Con {p.barco_diasWaiver||30} días de waiver y un ciclo de {b.diasTotales.toFixed(1)}d solo entra 1 viaje. Extendé el waiver o reducí el ciclo para aprovechar el segundo viaje.
+              </div>
+            )}
           </div>
         );
       })()}
