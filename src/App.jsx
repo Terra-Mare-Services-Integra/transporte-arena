@@ -3491,6 +3491,9 @@ export default function App() {
     abb:'⚓ Ag. Puerto Descarga',e3:'📦 Descarga',mc:'🎲 Monte Carlo',sens:'📐 Sensibilidades'
   };
 
+  // printReady: true solo durante el proceso de impresión
+  const [printReady, setPrintReady] = useState(false);
+
   return (
     <>
       <style>{CSS}</style>
@@ -3519,10 +3522,14 @@ export default function App() {
           await new Promise(r=>setTimeout(r,50));
           const mcRes = runMonteCarlo(params, 10000);
           setMcResultado(mcRes);
-          // Esperar 2 ciclos de render para que React actualice el DOM
-          await new Promise(r=>setTimeout(r,300));
+          // Activar render del print-all con params actuales
+          setPrintReady(true);
+          // Esperar 2 ciclos de render para que React pinte todo con valores correctos
+          await new Promise(r=>setTimeout(r,400));
           if(btn){ btn.textContent="🖨️ PDF"; btn.disabled=false; }
           window.print();
+          // Desactivar después de imprimir para no mantener el DOM innecesariamente
+          setTimeout(()=>setPrintReady(false), 1000);
         }} id="btn-print">🖨️ PDF</button>
       </header>
       <nav className="tabs">
@@ -3537,15 +3544,17 @@ export default function App() {
         <div className="screen-only" style={{display:'block'}}>
           {tabMap[tab]}
         </div>
-        {/* Vista impresión — todas las secciones en orden */}
-        <div id="print-all" style={{position:'fixed',left:'-9999px',top:0,width:'186mm',pointerEvents:'none',zIndex:-1,background:'#fff'}}>
-          {printOrder.map((id,idx)=>(
-            <div key={id} className="print-section">
-              <div className="print-title">{printLabels[id]}</div>
-              {tabMap[id]}
-            </div>
-          ))}
-        </div>
+        {/* Vista impresión — se renderiza solo al momento de imprimir, con params actuales */}
+        {printReady && (
+          <div id="print-all" style={{position:'fixed',left:'-9999px',top:0,width:'186mm',pointerEvents:'none',zIndex:-1,background:'#fff'}}>
+            {printOrder.map((id,idx)=>(
+              <div key={id} className="print-section">
+                <div className="print-title">{printLabels[id]}</div>
+                {tabMap[id]}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
