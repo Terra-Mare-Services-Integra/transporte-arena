@@ -3191,16 +3191,173 @@ function TabFAQ() {
 
 // ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
 function TabSensibilidades({p}) {
-  // Base
-  const base = (() => {
+  // ─── BASE CALC ─────────────────────────────────────────────────────────
+  const base = useMemo(() => {
     const e0 = calcEtapaRepo(p);
     const e1 = calcEtapa1(p);
     const e2 = calcEtapa2(p);
     const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...p, _costoArenaEq: eq}, e1.tnPostCarga);
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
-    return { usdTn: tot / e3.tnEntregadas, tnEnt: e3.tnEntregadas };
-  })();
+
+    const tn  = e3.tnEntregadas;
+    const tc  = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+
+    // Días totales por etapa
+    const diasE0 = e0.diasNav || 0;
+    const diasE1 = e1.tReal_dias || 0;
+    const diasE2 = e2.diasNav || 0;
+    const diasE3 = e3.tReal_dias || 0;
+    const diasTot = diasE0 + diasE1 + diasE2 + diasE3;
+
+    // ── Categorías de costo ──────────────────────────────────────────────
+    const tcTotal       = tc * diasTot;
+    const combTotal     = (e0.combCosto||0) + (e1.combPuerto||0) + (e2.combNav||0) + (e3.combPuerto||0);
+    const agZarate      = e1.agencia || 0;
+    const agBB          = e3.agencia || 0;
+    const camionesDirect= e3.costoCamiones || 0;
+    const camionesAcopio= (e3.costoAcopio||0) + (e3.costoFleteAcopio||0);
+    const opex          = (e1.costoOpex||0) + (e3.costoOpex||0);
+    const arena         = (e1.costoArena||0) + (e1.costoMerma||0) + (e3.costoMermaDescarga||0) + (e3.costoMermaAcopio||0);
+    const repo          = (e0.limpiezaBodega||0) + (e0.importacionWaiver||0);
+    const otros         = tot - tcTotal - combTotal - agZarate - agBB - camionesDirect - camionesAcopio - opex - arena - repo;
+
+    const cats = [
+      { label:"Time Charter",        usd: tcTotal,        icon:"🚢" },
+      { label:"Combustible",         usd: combTotal,      icon:"⛽" },
+      { label:"Arena + Mermas",      usd: arena,          icon:"⛏️" },
+      { label:"Camiones (directos)", usd: camionesDirect, icon:"🚛" },
+      { label:"Camiones (acopio)",   usd: camionesAcopio, icon:"🔄" },
+      { label:"Agencia Zárate",      usd: agZarate,       icon:"🏭" },
+      { label:"Agencia BB",          usd: agBB,           icon:"⚓" },
+      { label:"OPEX",                usd: opex,           icon:"🔧" },
+      { label:"Repo + Waiver",       usd: repo,           icon:"📋" },
+      { label:"Otros",               usd: Math.max(0,otros), icon:"➕" },
+    ].filter(c => c.usd > 0).sort((a,b) => b.usd - a.usd);
+
+    return { usdTn: tot / tn, tnEnt: tn, tot, cats };
+  }, [p]);
+
+  // ─── GOAL SEEK STATE ──────────────────────────────────────────────────
+  const GS_VARS = [
+    { id:"barco_timeCharter",       label:"Time Charter",         unit:"USD/día", icon:"🚢" },
+    { id:"nav_vlsfoManual",         label:"Precio VLSFO",         unit:"USD/T",   icon:"⛽" },
+    { id:"des_costoCamionesDirUSDTn",label:"Camiones directos",   unit:"USD/Tn",  icon:"🚛" },
+    { id:"des_costoFleteAcopioUSDTn",label:"Flete acopio Neuquén",unit:"USD/Tn",  icon:"🔄" },
+    { id:"cap_agenciaZarate",       label:"Agencia Zárate",       unit:"USD",     icon:"🏭" },
+    { id:"des_agenciaBB",           label:"Agencia BB",           unit:"USD",     icon:"⚓" },
+    { id:"cap_opexUSDTn",           label:"OPEX carga",           unit:"USD/Tn",  icon:"🔧" },
+    { id:"des_opexUSDTn",           label:"OPEX descarga",        unit:"USD/Tn",  icon:"🔧" },
+  ];
+
+  const [gsTarget, setGsTarget]   = useState(() => Math.round(base.usdTn * 0.9));
+  const [gsVars, setGsVars]       = useState(() =>
+    GS_VARS.reduce((acc,v) => ({ ...acc, [v.id]: { activa: false, peso: 100/GS_VARS.length, tope: 10 } }), {})
+  );
+
+  // Normaliza pesos para que sumen 100 entre activas
+  function setPesoNorm(id, nuevoPeso) {
+    const activas = GS_VARS.filter(v => gsVars[v.id].activa);
+    if (activas.length <= 1) return;
+    const resto = activas.filter(v => v.id !== id);
+    const diff  = nuevoPeso - gsVars[id].peso;
+    const totalResto = resto.reduce((s,v) => s + gsVars[v.id].peso, 0);
+    if (totalResto <= 0) return;
+    setGsVars(prev => {
+      const next = { ...prev };
+      next[id] = { ...next[id], peso: nuevoPeso };
+      resto.forEach(v => {
+        const propResto = prev[v.id].peso / totalResto;
+        next[v.id] = { ...next[v.id], peso: Math.max(0, prev[v.id].peso - diff * propResto) };
+      });
+      // Renormalizar a 100 exacto
+      const activasIds = activas.map(v => v.id);
+      const total = activasIds.reduce((s,vid) => s + next[vid].peso, 0);
+      if (total > 0) activasIds.forEach(vid => { next[vid] = { ...next[vid], peso: next[vid].peso / total * 100 }; });
+      return next;
+    });
+  }
+
+  function toggleVar(id) {
+    setGsVars(prev => {
+      const wasActiva = prev[id].activa;
+      const next = { ...prev, [id]: { ...prev[id], activa: !wasActiva } };
+      // Renormalizar pesos entre activas
+      const activas = GS_VARS.filter(v => next[v.id].activa);
+      if (activas.length > 0) {
+        const pesoIgual = 100 / activas.length;
+        activas.forEach(v => { next[v.id] = { ...next[v.id], peso: pesoIgual }; });
+      }
+      return next;
+    });
+  }
+
+  // ─── SOLVER GOAL SEEK ─────────────────────────────────────────────────
+  const gsResult = useMemo(() => {
+    const activasVars = GS_VARS.filter(v => gsVars[v.id].activa);
+    if (activasVars.length === 0) return null;
+
+    const totalPeso = activasVars.reduce((s,v) => s + gsVars[v.id].peso, 0);
+
+    function calcConDescuento(pctGlobal) {
+      const overrides = {};
+      activasVars.forEach(v => {
+        const pesoNorm = gsVars[v.id].peso / totalPeso;
+        const tope     = gsVars[v.id].tope / 100;
+        const pct      = Math.min(pesoNorm * pctGlobal, tope);
+        // VLSFO: si está en modo manual lo tocamos directo; si no, forzamos manual
+        if (v.id === "nav_vlsfoManual") {
+          overrides["nav_escenarioVLSFO"] = "manual";
+          overrides["nav_vlsfoManual"]    = p[v.id] * (1 - pct);
+        } else {
+          overrides[v.id] = p[v.id] * (1 - pct);
+        }
+      });
+      const pp = { ...p, ...overrides };
+      const e0b = calcEtapaRepo(pp);
+      const e1b = calcEtapa1(pp);
+      const e2b = calcEtapa2(pp);
+      const eqb = e1b.tnPostCarga > 0 ? (e0b.costoTotal+e1b.costoTotal+e2b.costoTotal)/e1b.tnPostCarga : pp.cap_precioArenaOrigen;
+      const e3b = calcEtapa3({...pp, _costoArenaEq: eqb}, e1b.tnPostCarga);
+      const totb = e0b.costoTotal+e1b.costoTotal+e2b.costoTotal+e3b.costoTotal;
+      return totb / e3b.tnEntregadas;
+    }
+
+    // Buscar el pctGlobal máximo aplicable (donde alguna variable topa)
+    const maxPctGlobal = Math.max(...activasVars.map(v => {
+      const pesoNorm = gsVars[v.id].peso / totalPeso;
+      return pesoNorm > 0 ? (gsVars[v.id].tope / 100) / pesoNorm : 0;
+    }));
+
+    const usdTnConMax = calcConDescuento(maxPctGlobal);
+    const alcanzable  = usdTnConMax <= gsTarget;
+
+    // Búsqueda binaria del pct necesario
+    let lo = 0, hi = maxPctGlobal, pctSol = maxPctGlobal;
+    if (alcanzable) {
+      for (let i = 0; i < 50; i++) {
+        const mid = (lo + hi) / 2;
+        if (calcConDescuento(mid) > gsTarget) lo = mid; else hi = mid;
+      }
+      pctSol = (lo + hi) / 2;
+    }
+
+    // Calcular descuento individual de cada variable
+    const detalle = activasVars.map(v => {
+      const pesoNorm = gsVars[v.id].peso / totalPeso;
+      const pct      = alcanzable
+        ? Math.min(pesoNorm * pctSol, gsVars[v.id].tope / 100)
+        : Math.min(pesoNorm * maxPctGlobal, gsVars[v.id].tope / 100);
+      const valBase  = p[v.id];
+      const valNuevo = valBase * (1 - pct);
+      const topado   = !alcanzable && pct >= gsVars[v.id].tope / 100 - 0.0001;
+      return { ...v, pct: pct * 100, valBase, valNuevo, topado };
+    });
+
+    return { alcanzable, usdTnConMax, pctSol: pctSol * 100, detalle };
+  }, [p, gsTarget, gsVars]);
+
+  const activasCount = GS_VARS.filter(v => gsVars[v.id].activa).length;
 
   function calcConDelta(overrides) {
     const pp = {...p, ...overrides};
@@ -3342,8 +3499,227 @@ function TabSensibilidades({p}) {
     return { color, text: `${sign}${d.toFixed(2)}`, abs: `$${v.toFixed(1)}` };
   };
 
+  const fmtUSD = n => n.toLocaleString("es-AR", {maximumFractionDigits:0});
+  const maxCatUSD = base.cats[0]?.usd || 1;
+
   return (
     <div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          BLOQUE 1: PIVOT DE COSTOS
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="ct">🧮 Pivot de Costos — Desglose USD/Tn</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Costo total</div>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD/Tn</span></div>
+          </div>
+          <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total viaje</div>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${fmtUSD(base.tot)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD</span></div>
+          </div>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead>
+              <tr style={{background:"#EEF2F7"}}>
+                <th style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>Categoría</th>
+                <th style={{padding:"6px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>USD total</th>
+                <th style={{padding:"6px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>USD/Tn</th>
+                <th style={{padding:"6px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>% del total</th>
+                <th style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5,minWidth:120}}>Peso relativo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {base.cats.map((cat, i) => {
+                const pct = cat.usd / base.tot * 100;
+                const usdTnCat = cat.usd / base.tnEnt;
+                const barW = cat.usd / maxCatUSD * 100;
+                return (
+                  <tr key={cat.label} style={{background: i%2===0 ? "#fff" : "#F9FAFB", borderBottom:"1px solid #EEF2F7"}}>
+                    <td style={{padding:"7px 10px",fontWeight:600,color:C.navy,fontSize:11}}>{cat.icon} {cat.label}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:C.navy,fontSize:11}}>${fmtUSD(cat.usd)}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:C.gold,fontSize:12}}>${usdTnCat.toFixed(2)}</td>
+                    <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:600,color:C.mid,fontSize:11}}>{pct.toFixed(1)}%</td>
+                    <td style={{padding:"7px 10px"}}>
+                      <div style={{background:"#EEF2F7",borderRadius:3,height:10,overflow:"hidden"}}>
+                        <div style={{width:`${barW}%`,height:"100%",background:C.gold,borderRadius:3}}/>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{background:C.navy,borderTop:`2px solid ${C.gold}`}}>
+                <td style={{padding:"8px 10px",fontWeight:800,color:"#FCD34D",fontSize:12}}>TOTAL</td>
+                <td style={{padding:"8px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:12}}>${fmtUSD(base.tot)}</td>
+                <td style={{padding:"8px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:14}}>${base.usdTn.toFixed(2)}</td>
+                <td style={{padding:"8px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:12}}>100%</td>
+                <td/>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          BLOQUE 2: GOAL SEEK INVERSO
+      ══════════════════════════════════════════════════════════════════ */}
+      <div className="card">
+        <div className="ct">🎯 Goal Seek — ¿Qué hay que negociar para llegar al target?</div>
+        <div className="warn-note">Seleccioná las variables que podés negociar, asigná intensidad (pesos suman 100%) y definí el tope máximo de descuento por variable.</div>
+
+        <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+          <div style={{background:C.navy,borderRadius:8,padding:"10px 18px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700,marginBottom:4}}>Costo base actual</div>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)}<span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}> USD/Tn</span></div>
+          </div>
+          <div style={{fontSize:22,color:C.mid,fontWeight:300}}>→</div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>Target USD/Tn</label>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input
+                type="number"
+                value={gsTarget}
+                onChange={e => setGsTarget(Number(e.target.value))}
+                style={{width:90,padding:"6px 10px",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:16,
+                  border:`2px solid ${C.gold}`,borderRadius:6,color:C.navy,textAlign:"right"}}
+              />
+              <span style={{fontSize:11,color:C.mid}}>USD/Tn</span>
+            </div>
+            <div style={{fontSize:9,color:C.mid}}>
+              Reducción requerida: <span style={{fontWeight:700,color: gsTarget < base.usdTn ? C.green : C.red}}>
+                {((base.usdTn - gsTarget) / base.usdTn * 100).toFixed(1)}%
+              </span> ({(base.usdTn - gsTarget).toFixed(1)} USD/Tn)
+            </div>
+          </div>
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.navy,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>Variables negociables</div>
+          <div style={{display:"grid",gap:8}}>
+            {GS_VARS.map(v => {
+              const cfg = gsVars[v.id];
+              const isOn = cfg.activa;
+              return (
+                <div key={v.id} style={{
+                  border:`1.5px solid ${isOn ? C.gold : "#E5E7EB"}`,
+                  borderRadius:8,padding:"10px 12px",
+                  background: isOn ? "#FFFBEB" : "#F9FAFB",
+                  transition:"all .2s"
+                }}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom: isOn ? 10 : 0}}>
+                    <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",flex:1}}>
+                      <input type="checkbox" checked={isOn} onChange={() => toggleVar(v.id)}
+                        style={{width:16,height:16,accentColor:C.gold,cursor:"pointer"}}/>
+                      <span style={{fontSize:12,fontWeight:700,color: isOn ? C.navy : C.mid}}>
+                        {v.icon} {v.label}
+                      </span>
+                      <span style={{fontSize:10,color:C.mid,fontFamily:"DM Mono,monospace"}}>
+                        ({v.unit} — base: {p[v.id]?.toLocaleString("es-AR",{maximumFractionDigits:1})})
+                      </span>
+                    </label>
+                  </div>
+                  {isOn && (
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                      <div>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>Intensidad de negociación</span>
+                          <span style={{fontSize:11,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.gold}}>{cfg.peso.toFixed(1)}%</span>
+                        </div>
+                        <input type="range" min={1} max={99} step={0.5}
+                          value={cfg.peso}
+                          onChange={e => setPesoNorm(v.id, Number(e.target.value))}
+                          disabled={activasCount <= 1}
+                          style={{width:"100%",accentColor:C.gold}}/>
+                        <div style={{fontSize:8,color:C.mid,marginTop:2}}>Proporción del descuento que absorbe esta variable</div>
+                      </div>
+                      <div>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase",letterSpacing:.5}}>Tope máximo</span>
+                          <span style={{fontSize:11,fontWeight:800,fontFamily:"DM Mono,monospace",color:C.red}}>{cfg.tope}%</span>
+                        </div>
+                        <input type="range" min={1} max={40} step={1}
+                          value={cfg.tope}
+                          onChange={e => setGsVars(prev => ({...prev, [v.id]: {...prev[v.id], tope: Number(e.target.value)}}))}
+                          style={{width:"100%",accentColor:C.red}}/>
+                        <div style={{fontSize:8,color:C.mid,marginTop:2}}>Máximo % de baja factible para esta variable</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {gsResult && (
+          <div style={{
+            border:`2px solid ${gsResult.alcanzable ? C.green : C.red}`,
+            borderRadius:10,padding:16,marginTop:8,
+            background: gsResult.alcanzable ? "#F0FDF4" : "#FFF1F2"
+          }}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <span style={{fontSize:24}}>{gsResult.alcanzable ? "✅" : "❌"}</span>
+              <div>
+                <div style={{fontSize:14,fontWeight:800,color: gsResult.alcanzable ? "#16A34A" : "#DC2626"}}>
+                  {gsResult.alcanzable
+                    ? `Target alcanzable — descuento ponderado necesario: ${gsResult.pctSol.toFixed(1)}%`
+                    : `Target NO alcanzable con los topes configurados`}
+                </div>
+                <div style={{fontSize:11,color:C.mid,marginTop:2}}>
+                  {gsResult.alcanzable
+                    ? `Con los descuentos de abajo llegarías a $${gsTarget.toFixed(1)} USD/Tn`
+                    : `Con el máximo posible llegarías a $${gsResult.usdTnConMax.toFixed(1)} USD/Tn — te faltan $${(gsResult.usdTnConMax - gsTarget).toFixed(1)} USD/Tn`}
+                </div>
+              </div>
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead>
+                <tr style={{background:"rgba(0,0,0,.05)"}}>
+                  <th style={{padding:"5px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase"}}>Variable</th>
+                  <th style={{padding:"5px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase"}}>Valor base</th>
+                  <th style={{padding:"5px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase"}}>% de baja</th>
+                  <th style={{padding:"5px 10px",textAlign:"right",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase"}}>Valor objetivo</th>
+                  <th style={{padding:"5px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:C.mid,textTransform:"uppercase"}}>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gsResult.detalle.map((d,i) => (
+                  <tr key={d.id} style={{background: i%2===0?"#fff":"rgba(0,0,0,.03)",borderBottom:"1px solid rgba(0,0,0,.06)"}}>
+                    <td style={{padding:"6px 10px",fontWeight:700,color:C.navy}}>{d.icon} {d.label}</td>
+                    <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.mid}}>
+                      {d.valBase.toLocaleString("es-AR",{maximumFractionDigits:1})}
+                    </td>
+                    <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,
+                      color: d.topado ? C.red : "#16A34A",fontSize:13}}>
+                      −{d.pct.toFixed(1)}%
+                    </td>
+                    <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:C.navy}}>
+                      {d.valNuevo.toLocaleString("es-AR",{maximumFractionDigits:1})}
+                    </td>
+                    <td style={{padding:"6px 10px",fontSize:10}}>
+                      {d.topado
+                        ? <span style={{color:C.red,fontWeight:700}}>⚠️ Tope alcanzado</span>
+                        : <span style={{color:"#16A34A",fontWeight:600}}>✓ Dentro de rango</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activasCount === 0 && (
+          <div className="warn-note" style={{textAlign:"center",fontSize:12,color:C.mid,padding:20}}>
+            👆 Seleccioná al menos una variable para correr el Goal Seek
+          </div>
+        )}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          BLOQUE 3: SENSIBILIDADES ORIGINALES
+      ══════════════════════════════════════════════════════════════════ */}
       <div className="card">
         <div className="ct">📐 Análisis de Sensibilidades — Impacto en USD/Tn</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:4}}>
