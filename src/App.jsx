@@ -898,13 +898,15 @@ function TabRepo({p,set}) {
 function TabCarga({p,set,tnEntregadas}) {
   const e1=calcEtapa1(p);
 
+  const costoTotalTabla1 = e1.costoArena + e1.costoMerma + e1.costoOpex + e1.combPuerto + e1.fleteEtapa + e1.agencia;
   const costRows=[
     {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]]},
     {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]]},
     {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb},
     {label:"Time Charter+Trip.",eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
-    {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:e1.costoTotal,  hover:e1.hoverTotal, isTotal:true},
+    {label:"Agencia Zárate",    eq:"desde ítems Ag. Zárate",                                        total:e1.agencia},
+    {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:costoTotalTabla1, hover:e1.hoverTotal, isTotal:true},
   ];
 
   return (
