@@ -206,19 +206,216 @@ button{font-family:'Montserrat',sans-serif;cursor:pointer}
   .eval-table th:nth-child(3),.eval-table td:nth-child(3){display:none}
 }
 @media print{
-  @page{margin:15mm 12mm;size:A4}
-  body{background:#fff!important}
-  .hdr,.tabs,#btn-print,.back,.run,.warn-note,.espejo-ok,.espejo-warn{display:none!important}
+  /* ── PÁGINA ── */
+  @page{margin:14mm 12mm;size:A4 portrait}
+  @page:first{margin-top:10mm}
+
+  /* ── RESET PANTALLA ── */
+  body{background:#fff!important;font-size:9pt!important}
+  .hdr,.tabs,#btn-print,.back,.run,.warn-note,.espejo-ok,.espejo-warn,
+  .hvt,.hv .hvt,.tipo-badge,.tbtn,.trow,.espejo-warn,
+  button,input[type=range]{display:none!important}
   .screen-only{display:none!important}
-  #print-all{position:static!important;left:auto!important;width:auto!important;z-index:auto!important;pointer-events:auto!important}
-  .print-section{page-break-before:always;padding:8px 0}
-  .print-section:first-child{page-break-before:avoid}
-  .print-title{font-size:13px;font-weight:800;color:#213363;border-bottom:2px solid #213363;padding-bottom:4px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
-  .card{box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid}
-  .kpis{break-inside:avoid}
-  button{display:none!important}
-  input,select{border:none!important;background:transparent!important;padding:0!important}
-  .tipo-badge{display:none!important}
+  input,select,textarea{border:none!important;background:transparent!important;
+    padding:0!important;font-size:inherit!important;font-weight:inherit!important}
+
+  /* ── CONTENEDOR PRINT ── */
+  #print-all{
+    position:static!important;left:auto!important;top:auto!important;
+    width:100%!important;max-width:100%!important;
+    z-index:auto!important;pointer-events:auto!important;
+    display:block!important
+  }
+
+  /* ── SECCIONES — cada tab en su propia página ── */
+  .print-section{
+    page-break-before:always;
+    break-before:page;
+    padding:6px 0 12px;
+    width:100%;
+  }
+  .print-section:first-child{page-break-before:avoid;break-before:avoid}
+  .print-title{
+    font-size:11pt;font-weight:800;color:#213363;
+    border-bottom:2px solid #213363;
+    padding-bottom:4px;margin-bottom:10px;
+    text-transform:uppercase;letter-spacing:.5px;
+    page-break-after:avoid;break-after:avoid;
+  }
+
+  /* ── CARDS ── */
+  .card{
+    box-shadow:none!important;
+    border:1px solid #ccc!important;
+    border-radius:6px!important;
+    padding:8px 10px!important;
+    margin-bottom:8px!important;
+    break-inside:avoid;
+    page-break-inside:avoid;
+    width:100%;
+    overflow:visible!important;
+  }
+  .ct{
+    font-size:7pt!important;letter-spacing:1px;
+    margin-bottom:6px!important;padding-bottom:4px!important;
+    page-break-after:avoid;break-after:avoid;
+    flex-wrap:wrap!important;
+  }
+
+  /* ── GRIDS → columna única en print para evitar encimado ── */
+  .g2,.g3,.g4{
+    display:block!important;
+  }
+  .g2>*,.g3>*,.g4>*{
+    display:block!important;
+    width:100%!important;
+    margin-bottom:4px!important;
+  }
+
+  /* ── KPIs — flex que wrapea correctamente ── */
+  .kpis{
+    display:flex!important;
+    flex-wrap:wrap!important;
+    gap:4px!important;
+    margin-bottom:8px!important;
+    break-inside:avoid;
+    page-break-inside:avoid;
+  }
+  .kpi{
+    flex:0 0 auto!important;
+    min-width:70px!important;
+    max-width:130px!important;
+    padding:5px 7px!important;
+    background:#f4f6f9!important;
+    border:1px solid #ccc!important;
+    border-radius:5px!important;
+    break-inside:avoid;
+  }
+  .kpi-v{font-size:11pt!important;line-height:1.2!important}
+  .kpi-l{font-size:6pt!important;margin-top:2px!important}
+  .kpi-u{font-size:7pt!important}
+
+  /* ── TABLAS DE COSTOS ── */
+  .cost-table{
+    width:100%!important;
+    border-collapse:collapse!important;
+    font-size:8pt!important;
+    table-layout:auto!important;
+    break-inside:auto;
+    page-break-inside:auto;
+  }
+  .cost-table thead{
+    display:table-header-group; /* repite header en cada página */
+  }
+  .cost-table th{
+    padding:4px 6px!important;
+    font-size:7pt!important;
+    background:#213363!important;
+    color:#fff!important;
+    white-space:nowrap;
+  }
+  .cost-table td{
+    padding:3px 6px!important;
+    font-size:8pt!important;
+    word-break:break-word!important;
+    overflow-wrap:break-word!important;
+    vertical-align:top!important;
+    height:auto!important;
+    min-height:0!important;
+    white-space:normal!important;
+  }
+  .cost-table .eq{
+    font-size:7pt!important;
+    word-break:break-all!important;
+    overflow-wrap:anywhere!important;
+    white-space:normal!important;
+    max-width:180px;
+  }
+  .cost-table .mono{
+    font-size:8pt!important;
+    white-space:nowrap!important;
+  }
+  .cost-table tr{break-inside:avoid;page-break-inside:avoid}
+  .cost-table tr.total td{
+    font-size:9pt!important;
+    font-weight:800!important;
+    background:#e8ecf3!important;
+  }
+
+  /* ── CAMPOS / INPUTS EN TABLAS DE AGENCIA ── */
+  .campo{margin-bottom:4px!important}
+  .campo-label{font-size:6pt!important;min-height:0!important}
+  .campo-input,.campo-formula{
+    font-size:8pt!important;
+    padding:2px 4px!important;
+    height:auto!important;
+    min-height:0!important;
+    white-space:normal!important;
+  }
+
+  /* ── TABLAS DE AGENCIA (estructura más compleja) ── */
+  table{width:100%!important;table-layout:auto!important}
+  table th,table td{
+    font-size:7.5pt!important;
+    padding:3px 5px!important;
+    word-break:break-word!important;
+    overflow-wrap:break-word!important;
+    white-space:normal!important;
+    height:auto!important;
+  }
+
+  /* ── PBADGE (percentiles MC) ── */
+  .pbadge{
+    break-inside:avoid;
+    padding:6px 8px!important;
+    min-width:60px!important;
+  }
+  .pbadge-v{font-size:12pt!important;line-height:1.2!important}
+  .pbadge-l{font-size:6pt!important}
+  .pbadge-d{font-size:7pt!important;line-height:1.3!important;white-space:normal!important}
+
+  /* ── MC VARIABLE ROWS ── */
+  .mc-var-row{
+    display:grid!important;
+    grid-template-columns:140px 100px 1fr 60px!important;
+    gap:4px!important;
+    font-size:7.5pt!important;
+    break-inside:avoid;
+  }
+
+  /* ── TRAMO INPUTS ── */
+  .tramo-input{
+    font-size:8pt!important;
+    padding:2px!important;
+    width:auto!important;
+    border:none!important;
+  }
+
+  /* ── TEXTO GENERAL ── */
+  p,div,span,td,th,li{
+    orphans:2;widows:2;
+  }
+  h1,h2,h3,h4,h5,h6,.ct,.print-title{
+    page-break-after:avoid;break-after:avoid;
+  }
+
+  /* ── RECHARTS (gráficos MC) ── */
+  .recharts-wrapper,.recharts-surface{
+    overflow:visible!important;
+  }
+
+  /* ── OVERFLOW DE CONTENEDORES ── */
+  div[style*="overflowX"]{overflow:visible!important}
+  div[style*="overflow-x"]{overflow:visible!important}
+
+  /* ── POSICIÓN FIJA / STICKY → RESET ── */
+  [style*="position:fixed"],[style*="position: fixed"],
+  [style*="position:sticky"],[style*="position: sticky"]{
+    position:static!important;
+  }
+
+  /* ── COLORES PARA IMPRESIÓN ── */
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
 }
 `;
 
@@ -3341,7 +3538,7 @@ export default function App() {
           {tabMap[tab]}
         </div>
         {/* Vista impresión — todas las secciones en orden */}
-        <div id="print-all" style={{position:'fixed',left:'-9999px',top:0,width:'210mm',pointerEvents:'none',zIndex:-1}}>
+        <div id="print-all" style={{position:'fixed',left:'-9999px',top:0,width:'186mm',pointerEvents:'none',zIndex:-1,background:'#fff'}}>
           {printOrder.map((id,idx)=>(
             <div key={id} className="print-section">
               <div className="print-title">{printLabels[id]}</div>
