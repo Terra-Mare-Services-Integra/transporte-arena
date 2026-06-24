@@ -1076,7 +1076,7 @@ export function runMonteCarlo(p, n=5000) {
       const hs = dist/t.velocidad;
       return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
     },0);
-    const c0 = combRepoT*vlsfo + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
+    const c0 = combRepoT*vlsfo + diasNavR*tc + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
              + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
 
     // E1 — Carga (F-06: barco zarpa con cap_capacidadBarco, merma es costo adicional)
