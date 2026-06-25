@@ -2516,32 +2516,100 @@ function TabClima({p,set}) {
 // ─── TAB CB: BASE COMBUSTIBLE ──────────────────────────────────────────────
 function TabCombustible({p,set}) {
   const stats=calcVLSFOStats(p.vlsfo_historico);
-  const upd=(idx,val)=>{const arr=[...p.vlsfo_historico];arr[idx]={...arr[idx],precio:parseFloat(val)||0};set("vlsfo_historico",arr);};
+
+  // Años presentes en el histórico
+  const años=[...new Set(p.vlsfo_historico.map(h=>h.año))].sort((a,b)=>a-b);
+  const maxAño=años[años.length-1]??2025;
+
+  // Aseguramos que 2025 y 2026 siempre existan como columnas (con precio null si no hay dato)
+  const añosConDefault = useMemo(()=>{
+    const base = [...años];
+    if (!base.includes(2025)) base.push(2025);
+    if (!base.includes(2026)) base.push(2026);
+    return base.sort((a,b)=>a-b);
+  },[años]);
+
+  // Actualizar precio de una celda existente
+  const upd=(año,mes,val)=>{
+    const arr=[...p.vlsfo_historico];
+    const idx=arr.findIndex(h=>h.año===año&&h.mes===mes);
+    const v=parseFloat(val)||0;
+    if(idx>=0){arr[idx]={...arr[idx],precio:v};}
+    else{arr.push({año,mes,precio:v});}
+    set("vlsfo_historico",arr.sort((a,b)=>a.año!==b.año?a.año-b.año:a.mes-b.mes));
+  };
+
+  // Obtener precio de una celda (null si no existe)
+  const getVal=(año,mes)=>{
+    const h=p.vlsfo_historico.find(h=>h.año===año&&h.mes===mes);
+    return h?h.precio:null;
+  };
+
+  // Añadir un año nuevo al final
+  const addAño=()=>{
+    const nuevoAño=añosConDefault[añosConDefault.length-1]+1;
+    // Solo agregar la columna — las celdas se crean al editar
+    // Para que aparezca en la tabla basta con que exista al menos un registro
+    // Creamos los 12 meses en 0 para que la columna sea visible y editable
+    const nuevos=Array.from({length:12},(_,i)=>({año:nuevoAño,mes:i,precio:0}));
+    const arr=[...p.vlsfo_historico,...nuevos].sort((a,b)=>a.año!==b.año?a.año-b.año:a.mes-b.mes);
+    set("vlsfo_historico",arr);
+  };
+
+  // Eliminar el último año (solo si todos sus valores son 0)
+  const removeAño=()=>{
+    const último=añosConDefault[añosConDefault.length-1];
+    if(último<=2020) return; // no borrar datos históricos mínimos
+    const vals=p.vlsfo_historico.filter(h=>h.año===último);
+    const todosCero=vals.every(h=>h.precio===0);
+    if(!todosCero){
+      if(!window.confirm(`¿Eliminar el año ${último}? Tiene datos cargados.`)) return;
+    }
+    set("vlsfo_historico",p.vlsfo_historico.filter(h=>h.año!==último));
+  };
+
   const reset=()=>set("vlsfo_historico",VLSFO_HISTORICO_DEFAULT);
-  const años=[...new Set(p.vlsfo_historico.map(h=>h.año))];
-  const chartData=p.vlsfo_historico.map(h=>({name:`${MESES[h.mes]}'${String(h.año).slice(2)}`,precio:h.precio}));
+
+  // Chart data — solo puntos con precio > 0
+  const chartData=p.vlsfo_historico
+    .filter(h=>h.precio>0)
+    .map(h=>({name:`${MESES[h.mes]}'${String(h.año).slice(2)}`,precio:h.precio}));
+
+  // Color de celda: input con dato vs vacía
+  const cellStyle=(val)=>({
+    background: val!=null && val>0 ? T.usuario.bg : "#F8FAFC",
+    border: `1px solid ${val!=null && val>0 ? T.usuario.border : C.border}`,
+    color: val!=null && val>0 ? T.usuario.text : C.mid,
+    borderRadius:4, width:"100%", padding:"3px 5px",
+    fontSize:11, fontFamily:"DM Mono,monospace", textAlign:"right",
+    minWidth:60,
+  });
+
   return (
     <div>
+      {/* ── STATS PANEL ── */}
       <div className="card" style={{background:"#1E293B",borderColor:"#334155"}}>
         <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>VLSFO 0.5%S Rotterdam</div>
         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-          {[{l:"Hoy",v:`$${stats.actual}/T`,c:"#fff",sub:"⚠️ Pico histórico"},
+          {[{l:"Hoy",v:`$${stats.actual}/T`,c:"#fff"},
             {l:"Prom 12M",v:`$${stats.prom12m.toFixed(0)}/T`,c:"#93C5FD"},
             {l:"Prom 5 años",v:`$${stats.prom5a.toFixed(0)}/T`,c:"#93C5FD"},
             {l:"Mín 5a",v:`$${stats.min5a}/T`,c:"#86EFAC"},
             {l:"Máx 5a",v:`$${stats.max5a}/T`,c:"#FCA5A5"},
             {l:"vs Prom 12M",v:`${stats.pctVsPromedio12m>0?"+":""}${stats.pctVsPromedio12m.toFixed(1)}%`,c:stats.pctVsPromedio12m>10?"#FCA5A5":"#86EFAC"},
             {l:"σ 12M (MC)",v:`$${stats.sigma12m.toFixed(0)}/T`,c:"#FCD34D"},
-          ].map(({l,v,c,sub})=>(
+          ].map(({l,v,c})=>(
             <div key={l}>
               <div style={{fontSize:7,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>{l}</div>
               <div style={{fontSize:16,fontWeight:800,color:c,fontFamily:"DM Mono,monospace"}}>{v}</div>
-              {sub&&<div style={{fontSize:8,color:"rgba(255,255,255,.4)",marginTop:1}}>{sub}</div>}
             </div>
           ))}
         </div>
       </div>
+
       <div className="warn-note">⚠️ ESTIMADOS. Reemplazar con datos reales de <a href="https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Rotterdam ↗</a></div>
+
+      {/* ── GRÁFICO ── */}
       <div className="card">
         <div className="ct">Histórico VLSFO</div>
         <ResponsiveContainer width="100%" height={200}>
@@ -2557,22 +2625,113 @@ function TabCombustible({p,set}) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
+
+      {/* ── TABLA EDITABLE ── */}
       <div className="card">
-        <div className="ct">Tabla Histórica — Editable <TipoBadge tipo="usuario"/>
-          <button onClick={reset} style={{marginLeft:"auto",padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:8,fontWeight:700,cursor:"pointer"}}>Resetear</button>
+        <div className="ct" style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span>Tabla Histórica — Editable <TipoBadge tipo="usuario"/></span>
+          <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            {/* Indicador de completitud del último año */}
+            {(()=>{
+              const último=añosConDefault[añosConDefault.length-1];
+              const cargados=p.vlsfo_historico.filter(h=>h.año===último&&h.precio>0).length;
+              return cargados<12?(
+                <span style={{fontSize:9,color:C.gold,fontWeight:600,background:"#FEF3C7",border:"1px solid #D4B84A",borderRadius:3,padding:"2px 6px"}}>
+                  {último}: {cargados}/12 meses ✏️
+                </span>
+              ):null;
+            })()}
+            <button
+              onClick={removeAño}
+              title="Eliminar último año"
+              style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:10,fontWeight:700,cursor:"pointer"}}
+            >− Año</button>
+            <button
+              onClick={addAño}
+              title={`Agregar año ${añosConDefault[añosConDefault.length-1]+1}`}
+              style={{padding:"3px 8px",borderRadius:4,border:`1px solid #235C96`,background:"#235C96",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}
+            >+ Año {añosConDefault[añosConDefault.length-1]+1}</button>
+            <button
+              onClick={reset}
+              style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontSize:9,fontWeight:700,cursor:"pointer"}}
+            >Resetear</button>
+          </div>
         </div>
+
+        {/* Leyenda */}
+        <div style={{display:"flex",gap:12,marginBottom:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:9,color:C.mid,display:"flex",alignItems:"center",gap:4}}>
+            <span style={{display:"inline-block",width:10,height:10,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,borderRadius:2}}/>
+            Con dato
+          </span>
+          <span style={{fontSize:9,color:C.mid,display:"flex",alignItems:"center",gap:4}}>
+            <span style={{display:"inline-block",width:10,height:10,background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:2}}/>
+            Sin dato — completar
+          </span>
+          <span style={{fontSize:9,color:C.mid}}>USD/T · Fuente: <a href="https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship &amp; Bunker Rotterdam</a></span>
+        </div>
+
         <div style={{overflowX:"auto"}}>
-          <table className="clima-table">
-            <thead><tr><th>Mes</th>{años.map(a=><th key={a}>{a}</th>)}</tr></thead>
-            <tbody>{MESES.map((m,mi)=>(
-              <tr key={m}>
-                <td style={{fontWeight:700,color:C.navy}}>{m}</td>
-                {años.map(a=>{const idx=p.vlsfo_historico.findIndex(h=>h.año===a&&h.mes===mi);return(
-                  <td key={a}>{idx>=0?(<input type="number" value={p.vlsfo_historico[idx].precio} step={5} min={100} max={2000} onChange={e=>upd(idx,e.target.value)}/>):<span style={{color:C.muted,fontSize:9}}>—</span>}</td>
-                );})}
+          <table className="clima-table" style={{minWidth: añosConDefault.length*80+80}}>
+            <thead>
+              <tr>
+                <th style={{minWidth:50}}>Mes</th>
+                {añosConDefault.map(a=>{
+                  const cargados=p.vlsfo_historico.filter(h=>h.año===a&&h.precio>0).length;
+                  const esNuevo=!años.includes(a);
+                  return(
+                    <th key={a} style={{minWidth:80,textAlign:"center"}}>
+                      <div>{a}</div>
+                      <div style={{fontSize:8,fontWeight:400,color:esNuevo?"#92400E":cargados===12?"#166534":C.muted}}>
+                        {esNuevo?"nuevo":cargados===12?"✓ completo":`${cargados}/12`}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
-            ))}</tbody>
+            </thead>
+            <tbody>
+              {MESES.map((m,mi)=>(
+                <tr key={m}>
+                  <td style={{fontWeight:700,color:C.navy}}>{m}</td>
+                  {añosConDefault.map(a=>{
+                    const val=getVal(a,mi);
+                    return(
+                      <td key={a} style={{padding:"2px 3px"}}>
+                        <input
+                          type="number"
+                          value={val!=null&&val>0?val:""}
+                          placeholder="—"
+                          step={5} min={0} max={3000}
+                          onChange={e=>upd(a,mi,e.target.value)}
+                          style={cellStyle(val)}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
           </table>
+        </div>
+
+        {/* Resumen por año */}
+        <div style={{marginTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
+          {añosConDefault.map(a=>{
+            const datos=p.vlsfo_historico.filter(h=>h.año===a&&h.precio>0);
+            if(datos.length===0) return null;
+            const avg=datos.reduce((s,h)=>s+h.precio,0)/datos.length;
+            const min=Math.min(...datos.map(h=>h.precio));
+            const max=Math.max(...datos.map(h=>h.precio));
+            return(
+              <div key={a} style={{background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:6,padding:"6px 10px",minWidth:110}}>
+                <div style={{fontSize:9,fontWeight:700,color:C.navy,marginBottom:4}}>{a}</div>
+                <div style={{fontSize:8,color:C.mid}}>Prom: <strong style={{color:C.navy,fontFamily:"DM Mono,monospace"}}>${avg.toFixed(0)}</strong></div>
+                <div style={{fontSize:8,color:C.mid}}>Rango: <strong style={{color:"#166534",fontFamily:"DM Mono,monospace"}}>${min}</strong> – <strong style={{color:"#991B1B",fontFamily:"DM Mono,monospace"}}>${max}</strong></div>
+                <div style={{fontSize:8,color:C.mid}}>Meses: {datos.length}/12</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
