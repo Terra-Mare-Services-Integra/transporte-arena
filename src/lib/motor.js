@@ -62,18 +62,31 @@ export const VLSFO_HISTORICO_DEFAULT = [
 ];
 
 export function calcVLSFOStats(historico) {
-  const precios = historico.map(h=>h.precio);
+  // Solo entradas con precio real (> 0) — evita contaminar promedios con celdas vacías
+  const histValido = historico.filter(h => h.precio > 0);
+  const precios    = histValido.map(h => h.precio);
+  if (precios.length === 0) {
+    return { actual:0, prom12m:0, prom5a:0, min5a:0, max5a:0, sigma12m:0,
+      pctVsPromedio12m:0, pctVsPromedio5a:0 };
+  }
+  const avg = arr => arr.length > 0 ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+
+  // "Últimos N meses con dato" — los precios más recientes del histórico válido
   const ultimos12 = precios.slice(-12);
-  const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
-  const prom12m = avg(ultimos12);
-  const prom5a  = avg(precios.slice(-60));
-  const actual  = precios[precios.length-1];
-  const min5a   = Math.min(...precios.slice(-60));
-  const max5a   = Math.max(...precios.slice(-60));
-  const sigma12m = Math.sqrt(ultimos12.reduce((a,b)=>a+(b-prom12m)**2,0)/ultimos12.length);
+  const ultimos60 = precios.slice(-60);
+
+  const prom12m  = avg(ultimos12);
+  const prom5a   = avg(ultimos60);
+  const actual   = precios[precios.length-1];
+  const min5a    = Math.min(...ultimos60);
+  const max5a    = Math.max(...ultimos60);
+  const sigma12m = ultimos12.length > 1
+    ? Math.sqrt(ultimos12.reduce((a,b)=>a+(b-prom12m)**2,0)/ultimos12.length)
+    : 0;
+
   return { actual, prom12m, prom5a, min5a, max5a, sigma12m,
-    pctVsPromedio12m: ((actual-prom12m)/prom12m*100),
-    pctVsPromedio5a:  ((actual-prom5a)/prom5a*100),
+    pctVsPromedio12m: prom12m > 0 ? ((actual-prom12m)/prom12m*100) : 0,
+    pctVsPromedio5a:  prom5a  > 0 ? ((actual-prom5a) /prom5a *100) : 0,
   };
 }
 
@@ -277,7 +290,7 @@ export const DEFAULT_PARAMS = {
 
   // ETAPA 2 — NAVEGACIÓN IDA
   nav_tramos:                TRAMOS_DEFAULT,
-  nav_escenarioVLSFO:        "hoy",
+  nav_escenarioVLSFO:        "prom12",
   nav_vlsfoManual:           990,
 
   // ETAPA 3 — DESCARGA
