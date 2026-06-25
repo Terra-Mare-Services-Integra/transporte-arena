@@ -2589,15 +2589,15 @@ function TabCombustible({p,set}) {
     <div>
       {/* ── STATS PANEL ── */}
       <div className="card" style={{background:"#1E293B",borderColor:"#334155"}}>
-        <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>VLSFO 0.5%S Rotterdam</div>
+        <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>VLSFO 0.5%S Santos (Brasil)</div>
         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-          {[{l:"Hoy",v:`$${stats.actual}/T`,c:"#fff"},
+          {[{l:"Actual",v:`$${stats.actual}/T`,c:"#fff"},
             {l:"Prom 12M",v:`$${stats.prom12m.toFixed(0)}/T`,c:"#93C5FD"},
+            {l:"Prom 24M (MC base)",v:`$${stats.prom24m.toFixed(0)}/T`,c:"#FCD34D"},
             {l:"Prom 5 años",v:`$${stats.prom5a.toFixed(0)}/T`,c:"#93C5FD"},
-            {l:"Mín 5a",v:`$${stats.min5a}/T`,c:"#86EFAC"},
-            {l:"Máx 5a",v:`$${stats.max5a}/T`,c:"#FCA5A5"},
+            {l:"Rango 24M (MC)",v:`$${stats.min24m}–$${stats.max24m}`,c:"#86EFAC"},
+            {l:"σ 24M",v:`$${stats.sigma24m.toFixed(0)}/T`,c:"#FCD34D"},
             {l:"vs Prom 12M",v:`${stats.pctVsPromedio12m>0?"+":""}${stats.pctVsPromedio12m.toFixed(1)}%`,c:stats.pctVsPromedio12m>10?"#FCA5A5":"#86EFAC"},
-            {l:"σ 12M (MC)",v:`$${stats.sigma12m.toFixed(0)}/T`,c:"#FCD34D"},
           ].map(({l,v,c})=>(
             <div key={l}>
               <div style={{fontSize:7,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,marginBottom:2}}>{l}</div>
@@ -2607,7 +2607,7 @@ function TabCombustible({p,set}) {
         </div>
       </div>
 
-      <div className="warn-note">⚠️ ESTIMADOS. Reemplazar con datos reales de <a href="https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Rotterdam ↗</a></div>
+      <div className="warn-note">Fuente: <a href="https://shipandbunker.com/prices/am/samatl/br-ssz-santos" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Santos ↗</a> — actualizar mensualmente con el máximo del mes.</div>
 
       {/* ── GRÁFICO ── */}
       <div className="card">
@@ -2668,7 +2668,7 @@ function TabCombustible({p,set}) {
             <span style={{display:"inline-block",width:10,height:10,background:"#F8FAFC",border:`1px solid ${C.border}`,borderRadius:2}}/>
             Sin dato — completar
           </span>
-          <span style={{fontSize:9,color:C.mid}}>USD/T · Fuente: <a href="https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship &amp; Bunker Rotterdam</a></span>
+          <span style={{fontSize:9,color:C.mid}}>USD/T · Fuente: <a href="https://shipandbunker.com/prices/am/samatl/br-ssz-santos" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship &amp; Bunker Santos</a> · 2020–May23 estimado Rotterdam+$40</span>
         </div>
 
         <div style={{overflowX:"auto"}}>
