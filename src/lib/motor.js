@@ -36,29 +36,42 @@ export function interpolarConsumo(tablaVelConsumo, velocidad, tipo="cargado") {
 }
 
 // ─── HISTÓRICO VLSFO ───────────────────────────────────────────────────────
+// Fuente: Rotterdam (VLSFO) + spread +$40/MT para 2020–May2023 (estimado, fuente: Ship&Bunker histórico)
+// Fuente: Santos VLSFO real (Ship&Bunker via Claude addon) para Jun2023–Jun2026
+// Nota: valores son el MÁXIMO del mes, no promedio — conservador para modelado de costos
 export const VLSFO_HISTORICO_DEFAULT = [
-  {año:2020,mes:0,precio:370},{año:2020,mes:1,precio:360},{año:2020,mes:2,precio:290},
-  {año:2020,mes:3,precio:220},{año:2020,mes:4,precio:200},{año:2020,mes:5,precio:230},
-  {año:2020,mes:6,precio:280},{año:2020,mes:7,precio:310},{año:2020,mes:8,precio:330},
-  {año:2020,mes:9,precio:360},{año:2020,mes:10,precio:380},{año:2020,mes:11,precio:410},
-  {año:2021,mes:0,precio:430},{año:2021,mes:1,precio:450},{año:2021,mes:2,precio:470},
-  {año:2021,mes:3,precio:500},{año:2021,mes:4,precio:520},{año:2021,mes:5,precio:540},
-  {año:2021,mes:6,precio:560},{año:2021,mes:7,precio:580},{año:2021,mes:8,precio:600},
-  {año:2021,mes:9,precio:620},{año:2021,mes:10,precio:650},{año:2021,mes:11,precio:680},
-  {año:2022,mes:0,precio:720},{año:2022,mes:1,precio:780},{año:2022,mes:2,precio:900},
-  {año:2022,mes:3,precio:950},{año:2022,mes:4,precio:980},{año:2022,mes:5,precio:1020},
-  {año:2022,mes:6,precio:960},{año:2022,mes:7,precio:900},{año:2022,mes:8,precio:870},
-  {año:2022,mes:9,precio:840},{año:2022,mes:10,precio:810},{año:2022,mes:11,precio:790},
-  {año:2023,mes:0,precio:760},{año:2023,mes:1,precio:740},{año:2023,mes:2,precio:720},
-  {año:2023,mes:3,precio:700},{año:2023,mes:4,precio:680},{año:2023,mes:5,precio:660},
-  {año:2023,mes:6,precio:640},{año:2023,mes:7,precio:650},{año:2023,mes:8,precio:670},
-  {año:2023,mes:9,precio:690},{año:2023,mes:10,precio:710},{año:2023,mes:11,precio:730},
-  {año:2024,mes:0,precio:750},{año:2024,mes:1,precio:770},{año:2024,mes:2,precio:790},
-  {año:2024,mes:3,precio:810},{año:2024,mes:4,precio:830},{año:2024,mes:5,precio:850},
-  {año:2024,mes:6,precio:870},{año:2024,mes:7,precio:890},{año:2024,mes:8,precio:910},
-  {año:2024,mes:9,precio:930},{año:2024,mes:10,precio:950},{año:2024,mes:11,precio:970},
-  {año:2025,mes:0,precio:980},{año:2025,mes:1,precio:985},{año:2025,mes:2,precio:988},
-  {año:2025,mes:3,precio:990},{año:2025,mes:4,precio:992},{año:2025,mes:5,precio:990},
+  // 2020 — Rotterdam + $40 (COVID crash y recuperación)
+  {año:2020,mes:0,precio:689},{año:2020,mes:1,precio:590},{año:2020,mes:2,precio:430},
+  {año:2020,mes:3,precio:291},{año:2020,mes:4,precio:270},{año:2020,mes:5,precio:310},
+  {año:2020,mes:6,precio:360},{año:2020,mes:7,precio:390},{año:2020,mes:8,precio:400},
+  {año:2020,mes:9,precio:415},{año:2020,mes:10,precio:430},{año:2020,mes:11,precio:460},
+  // 2021 — Rotterdam + $40 (recuperación gradual)
+  {año:2021,mes:0,precio:480},{año:2021,mes:1,precio:510},{año:2021,mes:2,precio:530},
+  {año:2021,mes:3,precio:560},{año:2021,mes:4,precio:580},{año:2021,mes:5,precio:600},
+  {año:2021,mes:6,precio:620},{año:2021,mes:7,precio:640},{año:2021,mes:8,precio:660},
+  {año:2021,mes:9,precio:680},{año:2021,mes:10,precio:710},{año:2021,mes:11,precio:740},
+  // 2022 — Rotterdam + $40 (guerra Ucrania — pico Jun)
+  {año:2022,mes:0,precio:780},{año:2022,mes:1,precio:840},{año:2022,mes:2,precio:960},
+  {año:2022,mes:3,precio:1010},{año:2022,mes:4,precio:1040},{año:2022,mes:5,precio:1080},
+  {año:2022,mes:6,precio:1020},{año:2022,mes:7,precio:960},{año:2022,mes:8,precio:930},
+  {año:2022,mes:9,precio:900},{año:2022,mes:10,precio:870},{año:2022,mes:11,precio:840},
+  // 2023 Ene–May — Rotterdam + $40 (normalización post-Ucrania)
+  {año:2023,mes:0,precio:810},{año:2023,mes:1,precio:790},{año:2023,mes:2,precio:770},
+  {año:2023,mes:3,precio:750},{año:2023,mes:4,precio:730},
+  // 2023 Jun en adelante — Santos VLSFO REAL (Ship&Bunker, máximo del mes)
+  {año:2023,mes:5,precio:604.5},
+  {año:2023,mes:6,precio:627},{año:2023,mes:7,precio:669.5},{año:2023,mes:8,precio:706},
+  {año:2023,mes:9,precio:710.5},{año:2023,mes:10,precio:706.5},{año:2023,mes:11,precio:638},
+  {año:2024,mes:0,precio:649},{año:2024,mes:1,precio:659.5},{año:2024,mes:2,precio:664.5},
+  {año:2024,mes:3,precio:675},{año:2024,mes:4,precio:658.5},{año:2024,mes:5,precio:667},
+  {año:2024,mes:6,precio:671},{año:2024,mes:7,precio:643.5},{año:2024,mes:8,precio:635.5},
+  {año:2024,mes:9,precio:626.5},{año:2024,mes:10,precio:559.5},{año:2024,mes:11,precio:526},
+  {año:2025,mes:0,precio:594.5},{año:2025,mes:1,precio:570},{año:2025,mes:2,precio:563},
+  {año:2025,mes:3,precio:545},{año:2025,mes:4,precio:512},{año:2025,mes:5,precio:580},
+  {año:2025,mes:6,precio:556.5},{año:2025,mes:7,precio:558.5},{año:2025,mes:8,precio:523.5},
+  {año:2025,mes:9,precio:487.5},{año:2025,mes:10,precio:505},{año:2025,mes:11,precio:486},
+  {año:2026,mes:0,precio:483},{año:2026,mes:1,precio:515},{año:2026,mes:2,precio:1193},
+  {año:2026,mes:3,precio:868},{año:2026,mes:4,precio:880.5},{año:2026,mes:5,precio:808.5},
 ];
 
 export function calcVLSFOStats(historico) {
