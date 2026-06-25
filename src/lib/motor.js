@@ -5,7 +5,7 @@ export const FUENTES = {
   climaZarate: { label:"SMN — Estación San Fernando", url:"https://www.smn.gob.ar/descarga-de-datos" },
   climaBB:     { label:"SMN — Estación Bahía Blanca",  url:"https://www.smn.gob.ar/descarga-de-datos" },
   esperaBB:    { label:"CGPBB — Estadísticas portuarias", url:"https://puertobahiablanca.com" },
-  vlsfo:       { label:"Ship & Bunker — Rotterdam VLSFO", url:"https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam" },
+  vlsfo:       { label:"Ship & Bunker — Santos VLSFO", url:"https://shipandbunker.com/prices/am/samatl/br-ssz-santos" },
 };
 
 // ─── TABLA VELOCIDAD/CONSUMO HANDYSIZE 28.000 Tn ──────────────────────────
@@ -86,6 +86,7 @@ export function calcVLSFOStats(historico) {
 
   // "Últimos N meses con dato" — los precios más recientes del histórico válido
   const ultimos12 = precios.slice(-12);
+  const ultimos24 = precios.slice(-24);
   const ultimos60 = precios.slice(-60);
 
   const prom12m  = avg(ultimos12);
@@ -96,8 +97,14 @@ export function calcVLSFOStats(historico) {
   const sigma12m = ultimos12.length > 1
     ? Math.sqrt(ultimos12.reduce((a,b)=>a+(b-prom12m)**2,0)/ultimos12.length)
     : 0;
+  const prom24m  = avg(ultimos24);
+  const sigma24m = ultimos24.length > 1
+    ? Math.sqrt(ultimos24.reduce((a,b)=>a+(b-prom24m)**2,0)/ultimos24.length)
+    : 0;
+  const min24m   = Math.min(...ultimos24);
+  const max24m   = Math.max(...ultimos24);
 
-  return { actual, prom12m, prom5a, min5a, max5a, sigma12m,
+  return { actual, prom12m, prom24m, prom5a, min5a, max5a, sigma12m, sigma24m, min24m, max24m,
     pctVsPromedio12m: prom12m > 0 ? ((actual-prom12m)/prom12m*100) : 0,
     pctVsPromedio5a:  prom5a  > 0 ? ((actual-prom5a) /prom5a *100) : 0,
   };
@@ -370,7 +377,7 @@ export const DEFAULT_PARAMS = {
 
   // MONTE CARLO — control de variables estocásticas
   mc_vars: [
-    { id:"vlsfo",   label:"Precio VLSFO",     activa:true,  sigma:null,  unit:"USD/T",  nota:"σ calculado del historico de 12M — se actualiza automaticamente" },
+    { id:"vlsfo",   label:"Precio VLSFO",     activa:true,  sigma:null,  unit:"USD/T",  nota:"Bootstrap histórico — sorteo directo de los últimos 24 meses reales (Ship&Bunker Santos)" },
     { id:"tc",      label:"Time Charter",      activa:true,  sigma:1500,  unit:"USD/d",  nota:"Volatilidad del mercado spot de fletamento" },
     { id:"velFact", label:"Factor velocidad",  activa:true,  sigma:0.08,  unit:"factor", nota:"Relativo sobre velocidad de todos los tramos (corrientes, estado del casco)" },
     { id:"espBB",   label:"Espera en BB",      activa:true,  sigma:0.6,   unit:"dias",   nota:"Variabilidad alrededor de la espera media mensual configurada" },
@@ -1055,6 +1062,16 @@ export function runMonteCarlo(p, n=5000) {
   const basePrecio = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const sigmaVLSFO = sigma('vlsfo') !== null ? sigma('vlsfo') : vlsfoStats.sigma12m;
 
+  // Bootstrap histórico VLSFO — últimos 24 meses con precio real (> 0)
+  // En lugar de asumir distribución Normal, sorteamos directamente del histórico real.
+  // Esto captura la asimetría real del mercado (spikes, colas largas al alza).
+  const vlsfoPool = p.vlsfo_historico
+    .filter(h => h.precio > 0)
+    .slice(-24)
+    .map(h => h.precio);
+  // Si no hay suficientes datos, caemos en distribución Normal (fallback)
+  const usarBootstrap = vlsfoPool.length >= 6;
+
   // Promedio anual de esperaBB
   const esperaBBBase = Array.isArray(p.des_esperaBBMes)
     ? p.des_esperaBBMes.reduce((s,v)=>s+v,0) / p.des_esperaBBMes.length
@@ -1073,7 +1090,11 @@ export function runMonteCarlo(p, n=5000) {
   const results = [];
 
   for (let i = 0; i < n; i++) {
-    const vlsfo  = S('vlsfo')   ? Math.max(300, basePrecio + randn()*sigmaVLSFO)                      : basePrecio;
+    const vlsfo  = S('vlsfo')
+      ? (usarBootstrap
+          ? vlsfoPool[Math.floor(Math.random() * vlsfoPool.length)]  // bootstrap: sorteo directo del histórico 24M
+          : Math.max(300, basePrecio + randn()*sigmaVLSFO))           // fallback: Normal si hay pocos datos
+      : basePrecio;
     const tc     = S('tc')      ? Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'))
                                     + p.barco_tripulacion + (p.barco_miscPorDia||0)
                                 : p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
