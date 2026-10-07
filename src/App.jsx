@@ -4066,6 +4066,7 @@ export default function App() {
           // Desactivar después de imprimir para no mantener el DOM innecesariamente
           setTimeout(()=>setPrintReady(false), 1000);
         }} id="btn-print">🖨️ PDF</button>
+        <button className="back" style={{marginLeft:6}} onClick={()=>supabase.auth.signOut()}>Salir</button>
       </header>
       <nav className="tabs">
         {TABS.map(t=>(
