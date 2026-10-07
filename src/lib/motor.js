@@ -382,6 +382,7 @@ export const DEFAULT_PARAMS = {
     { id:"velFact", label:"Factor velocidad",  activa:true,  sigma:0.08,  unit:"factor", nota:"Relativo sobre velocidad de todos los tramos (corrientes, estado del casco)" },
     { id:"espBB",   label:"Espera en BB",      activa:true,  sigma:0.6,   unit:"dias",   nota:"Variabilidad alrededor de la espera media mensual configurada" },
     { id:"espZ",    label:"Espera en Zarate",  activa:true,  sigma:0.2,   unit:"dias",   nota:"Variabilidad de la espera configurada en Etapa Carga" },
+    { id:"espCarga",label:"Espera en carga",   activa:false, sigma:0.2,   unit:"dias",   nota:"Espera en el puerto de carga (Etapa Carga). Arranca fija para no cambiar corridas viejas" },
     { id:"mCarga",  label:"Merma carga",       activa:true,  sigma:0.005, unit:"frac.",  nota:"Equivale a variabilidad alrededor del % configurado" },
     { id:"mDesc",   label:"Merma descarga",    activa:true,  sigma:0.004, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
     { id:"mAcopio", label:"Merma acopio",      activa:true,  sigma:0.003, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
@@ -1042,6 +1043,25 @@ function randn(){
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
 }
 
+// Triangular: mínimo, más probable, máximo. Acepta los tres en cualquier orden.
+export function sampleTriangular(a, c, b) {
+  const [min, max] = a <= b ? [a, b] : [b, a];
+  if (max === min) return min;
+  const moda = Math.min(max, Math.max(min, c ?? (min + max) / 2));
+  const u = Math.random();
+  const F = (moda - min) / (max - min);
+  return u < F
+    ? min + Math.sqrt(u * (max - min) * (moda - min))
+    : max - Math.sqrt((1 - u) * (max - min) * (max - moda));
+}
+
+// Variables del Monte Carlo de un escenario. Los escenarios guardados antes de que
+// existiera una variable no la traen: se completa con la de DEFAULT_PARAMS.
+export function mcVarsDe(p) {
+  const guardadas = p.mc_vars || [];
+  return DEFAULT_PARAMS.mc_vars.map(d => ({ ...d, ...(guardadas.find(v => v.id === d.id) || {}) }));
+}
+
 // sampleInop usa promedio anual — sin selección de mes
 function sampleInop(climaDB, umbralL, umbralV, sigmaFactor=0.20){
   const d = getClimaAnual(climaDB);
@@ -1052,11 +1072,14 @@ function sampleInop(climaDB, umbralL, umbralV, sigmaFactor=0.20){
 }
 
 export function runMonteCarlo(p, n=5000) {
-  const mcVars = p.mc_vars || DEFAULT_PARAMS.mc_vars;
+  const mcVars = mcVarsDe(p);
   const cfg = {};
   mcVars.forEach(v => { cfg[v.id] = v; });
   const S = id => cfg[id]?.activa !== false;
   const sigma = id => cfg[id]?.sigma ?? DEFAULT_PARAMS.mc_vars.find(v=>v.id===id)?.sigma ?? 0;
+  // Rango: la variable se sortea con una triangular (mín, más probable, máx) en vez de la Normal
+  const R = id => cfg[id]?.dist === "rango";
+  const tri = id => sampleTriangular(cfg[id].min, cfg[id].moda, cfg[id].max);
 
   const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
   const basePrecio = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
@@ -1090,24 +1113,33 @@ export function runMonteCarlo(p, n=5000) {
   const results = [];
 
   for (let i = 0; i < n; i++) {
-    const vlsfo  = S('vlsfo')
-      ? (usarBootstrap
+    const vlsfo  = !S('vlsfo') ? basePrecio
+      : R('vlsfo') ? tri('vlsfo')
+      : usarBootstrap
           ? vlsfoPool[Math.floor(Math.random() * vlsfoPool.length)]  // bootstrap: sorteo directo del histórico 24M
-          : Math.max(300, basePrecio + randn()*sigmaVLSFO))           // fallback: Normal si hay pocos datos
-      : basePrecio;
-    const tc     = S('tc')      ? Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'))
-                                    + p.barco_tripulacion + (p.barco_miscPorDia||0)
-                                : p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
-    const espBB  = S('espBB')   ? Math.max(0, esperaBBBase + randn()*sigma('espBB'))                  : esperaBBBase;
-    const espZ   = S('espZ')    ? Math.max(0, p.des_esperaZarateDias + randn()*sigma('espZ'))         : p.des_esperaZarateDias;
-    const mC     = S('mCarga')  ? Math.max(0, p.cap_pctMerma + randn()*sigma('mCarga'))               : p.cap_pctMerma;
-    const mD     = S('mDesc')   ? Math.max(0, p.des_pctMermaDescarga + randn()*sigma('mDesc'))        : p.des_pctMermaDescarga;
-    const mA     = S('mAcopio') ? Math.max(0, p.des_pctMermaAcopio + randn()*sigma('mAcopio'))        : p.des_pctMermaAcopio;
-    const vF     = S('velFact') ? Math.max(0.5, 1 + randn()*sigma('velFact'))                         : 1;
+          : Math.max(300, basePrecio + randn()*sigmaVLSFO);           // fallback: Normal si hay pocos datos
+    const tcBase = !S('tc') ? p.barco_timeCharter
+      : R('tc') ? tri('tc')
+      : Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'));
+    const tc     = tcBase + p.barco_tripulacion + (p.barco_miscPorDia||0);
+    // Cada variable: fija → valor base; rango → triangular; si no → Normal alrededor del base
+    const sortear = (id, base, piso) => !S(id) ? base : R(id) ? tri(id) : Math.max(piso, base + randn()*sigma(id));
+    const espBB  = sortear('espBB',    esperaBBBase,              0);
+    const espZ   = sortear('espZ',     p.des_esperaZarateDias,    0);
+    const espC   = sortear('espCarga', p.cap_esperaDias,          0);
+    const mC     = sortear('mCarga',   p.cap_pctMerma,            0);
+    const mD     = sortear('mDesc',    p.des_pctMermaDescarga,    0);
+    const mA     = sortear('mAcopio',  p.des_pctMermaAcopio,      0);
+    const vF     = sortear('velFact',  1,                         0.5);
     const pa     = p.cap_precioArenaOrigen;
 
     let pZ, pB;
-    if (S('inop')) {
+    if (S('inop') && R('inop')) {
+      // Rango de inop: factor sobre la probabilidad base del clima (1 = 100%)
+      const f = tri('inop');
+      pZ = Math.max(0, Math.min(0.50, pZbase*f));
+      pB = Math.max(0, Math.min(0.50, pBbase*f));
+    } else if (S('inop')) {
       pZ = sampleInop(p.clima_zarate, p.cap_inopLluvia, p.cap_inopViento, sigma('inop'));
       pB = sampleInop(p.clima_bb,     p.des_inopLluvia, p.des_inopViento, sigma('inop'));
     } else {
@@ -1129,7 +1161,7 @@ export function runMonteCarlo(p, n=5000) {
     // E1 — Carga (F-06: barco zarpa con cap_capacidadBarco, merma es costo adicional)
     const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
     const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
-    const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + p.cap_esperaDias;
+    const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + espC;
     const mCTn = p.cap_capacidadBarco*mC;  // Tn merma compradas extra en origen
     const c1   = pa*p.cap_capacidadBarco + pa*mCTn + p.cap_opexUSDTn*p.cap_capacidadBarco
                + tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + calcAgenciaZarate(p,tR1);
@@ -1202,7 +1234,8 @@ export function runMonteCarlo(p, n=5000) {
   const std  = Math.sqrt(totals.reduce((a,b)=>a+(b-mean)**2,0)/n);
   const mn=totals[0], mx=totals[n-1], bins=40, bs=(mx-mn)/bins;
   const hist = Array.from({length:bins},(_,i)=>({x:parseFloat((mn+i*bs+bs/2).toFixed(1)),count:0,pct:0}));
-  totals.forEach(v=>{const bi=Math.min(Math.floor((v-mn)/bs),bins-1);hist[bi].count++;});
+  // Con todas las variables fijas los totales son iguales y bs=0: van todos a la primera barra
+  totals.forEach(v=>{const bi=bs>0?Math.min(Math.floor((v-mn)/bs),bins-1):0;hist[bi].count++;});
   hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(1)));
 
   // Percentiles por ítem — tomados en los índices P10/P50/P90 del total ordenado
@@ -1226,6 +1259,7 @@ export function runMonteCarlo(p, n=5000) {
       case "velFact": base = "100% (neutro)"; break;
       case "espBB":   base = `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom. anual`; break;
       case "espZ":    base = `${p.des_esperaZarateDias}d`; break;
+      case "espCarga":base = `${p.cap_esperaDias}d`; break;
       case "mCarga":  base = `${(p.cap_pctMerma*100).toFixed(1)}%`; break;
       case "mDesc":   base = `${(p.des_pctMermaDescarga*100).toFixed(1)}%`; break;
       case "mAcopio": base = `${(p.des_pctMermaAcopio*100).toFixed(1)}%`; break;

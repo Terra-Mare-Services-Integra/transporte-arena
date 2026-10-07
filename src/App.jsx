@@ -12,7 +12,7 @@ import {
   calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcNViajes, getClimaAnual,
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
-  runMonteCarlo,
+  runMonteCarlo, mcVarsDe,
 } from "./lib/motor";
 import { supabase } from "./lib/supabase";
 
@@ -1620,13 +1620,48 @@ function TabMC({p,set,resultado,setResultado}) {
   const res=resultado;
 
   // mc_vars vive en p — editamos a través de set("mc_vars", ...)
-  const mcVars = p.mc_vars || DEFAULT_PARAMS.mc_vars;
+  const mcVars = mcVarsDe(p);
   const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
 
   const updateVar=(id,field,val)=>{
     const arr=mcVars.map(v=>v.id===id?{...v,[field]:val}:v);
     set("mc_vars",arr);
   };
+
+  // Valor base de cada variable, en las unidades en que se guarda (frac., factor, días, USD)
+  const baseDe=(v)=>{
+    switch(v.id){
+      case "vlsfo":    return getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
+      case "tc":       return p.barco_timeCharter;
+      case "espBB":    return p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;
+      case "espZ":     return p.des_esperaZarateDias;
+      case "espCarga": return p.cap_esperaDias;
+      case "mCarga":   return p.cap_pctMerma;
+      case "mDesc":    return p.des_pctMermaDescarga;
+      case "mAcopio":  return p.des_pctMermaAcopio;
+      default:         return 1; // velFact e inop: factor neutro
+    }
+  };
+  // Las variables en fracción o factor se muestran y se cargan en %
+  const enPct=(v)=>v.id==="velFact"||v.id==="inop"||v.unit==="frac.";
+  const fmtVal=(v,x)=>{
+    if(v.id==="vlsfo"||v.id==="tc") return `$${Math.round(x).toLocaleString()}`;
+    if(enPct(v)) return `${(x*100).toFixed(v.unit==="frac."?1:0)}%`;
+    return `${x.toFixed(1)} d`;
+  };
+
+  // Al pasar a rango se arranca de base ±2σ, con el base como más probable
+  const cambiarDist=(v,dist)=>{
+    const extra={dist};
+    if(dist==="rango"&&v.min==null){
+      const b=baseDe(v);
+      const s=v.id==="vlsfo"?(v.sigma??vlsfoStats.sigma12m):(v.sigma??0);
+      const r=x=>parseFloat(x.toFixed(4));
+      Object.assign(extra,{min:r(Math.max(0,b-2*s)),moda:r(b),max:r(b+2*s)});
+    }
+    set("mc_vars",mcVars.map(x=>x.id===v.id?{...x,...extra}:x));
+  };
+  const rangoInvalido=(v)=>v.dist==="rango"&&!(v.min<=v.moda&&v.moda<=v.max);
 
   const run=useCallback(()=>{
     setR(true);
@@ -1661,6 +1696,7 @@ function TabMC({p,set,resultado,setResultado}) {
 
   // Rango ±2σ para mostrar en la tabla
   const rango=(v)=>{
+    if(v.dist==="rango") return `${fmtVal(v,v.min)} – ${fmtVal(v,v.max)} (más prob. ${fmtVal(v,v.moda)})`;
     const s = v.id==="vlsfo"
       ? (v.sigma!==null&&v.sigma!==undefined ? v.sigma : vlsfoStats.sigma12m)
       : (v.sigma??0);
@@ -1681,6 +1717,7 @@ function TabMC({p,set,resultado,setResultado}) {
   };
 
   const sigmaLabel=(v)=>{
+    if(v.dist==="rango") return `△ ${fmtVal(v,v.min)} / ${fmtVal(v,v.moda)} / ${fmtVal(v,v.max)}`;
     if(v.id==="vlsfo") return v.sigma!==null&&v.sigma!==undefined ? `$${v.sigma}` : `$${vlsfoStats.sigma12m.toFixed(0)} (auto)`;
     if(!v.sigma&&v.sigma!==0) return "—";
     switch(v.id){
@@ -1696,7 +1733,8 @@ function TabMC({p,set,resultado,setResultado}) {
       <div className="card" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
         <div className="ct" style={{color:"#0369A1"}}>¿Qué es el Monte Carlo?</div>
         <p style={{fontSize:11,color:"#0369A1",lineHeight:1.7}}>
-          Corre el modelo <strong>N veces</strong> sorteando valores aleatorios para cada variable activa según distribuciones Normal centradas en el valor base.
+          Corre el modelo <strong>N veces</strong> sorteando valores aleatorios para cada variable activa: con una Normal centrada en el valor base,
+          o con un <strong>rango</strong> (mínimo, más probable, máximo) que se sortea con una distribución triangular.
           El mes se sortea al azar en cada iteración — el resultado representa el <strong>costo anualizado esperado</strong>, ponderando todos los meses según su clima y estacionalidad.
           Las variables marcadas <strong>Fija</strong> se toman sin ruido.
         </p>
@@ -1709,7 +1747,7 @@ function TabMC({p,set,resultado,setResultado}) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:C.navy}}>
-                {["Variable","Valor base","σ (editable)","Rango ~95% (±2σ)","Activa","Nota"].map(h=>(
+                {["Variable","Valor base","Distribución (editable)","Rango de sorteo","Activa","Nota"].map(h=>(
                   <th key={h} style={{padding:"6px 9px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,
                     textTransform:"uppercase",letterSpacing:.5,textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
@@ -1730,14 +1768,43 @@ function TabMC({p,set,resultado,setResultado}) {
                       {v.id==="velFact" && "100%"}
                       {v.id==="espBB"   && `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom.`}
                       {v.id==="espZ"    && `${p.des_esperaZarateDias}d`}
+                      {v.id==="espCarga"&& `${p.cap_esperaDias}d`}
                       {v.id==="mCarga"  && `${(p.cap_pctMerma*100).toFixed(1)}%`}
                       {v.id==="mDesc"   && `${(p.des_pctMermaDescarga*100).toFixed(1)}%`}
                       {v.id==="mAcopio" && `${(p.des_pctMermaAcopio*100).toFixed(1)}%`}
                       {v.id==="inop"    && "pBase clima"}
                     </td>
-                    {/* Sigma editable */}
+                    {/* Distribución: Normal (σ) o Rango (mín / más probable / máx) */}
                     <td style={{padding:"5px 9px"}}>
-                      {sigmaAuto ? (
+                      <select value={v.dist==="rango"?"rango":"normal"} disabled={esFija}
+                        onChange={e=>cambiarDist(v,e.target.value)}
+                        style={{fontSize:9,marginBottom:4,padding:"2px 4px",borderRadius:4,
+                          border:`1px solid ${C.border}`,background:"#fff",color:C.navy,fontWeight:700}}>
+                        <option value="normal">Normal (σ)</option>
+                        <option value="rango">Rango (mín–máx)</option>
+                      </select>
+                      {v.dist==="rango" ? (
+                        <div style={{display:"flex",alignItems:"flex-end",gap:4}}>
+                          {[["min","mín"],["moda","más prob."],["max","máx"]].map(([campo,lbl])=>(
+                            <label key={campo} style={{display:"flex",flexDirection:"column",fontSize:8,color:C.mid}}>
+                              {lbl}
+                              <input type="number" disabled={esFija}
+                                value={parseFloat(((v[campo]??0)*(enPct(v)?100:1)).toFixed(4))}
+                                step={v.id==="vlsfo"?5:v.id==="tc"?50:enPct(v)?(v.unit==="frac."?0.1:1):0.25}
+                                onChange={e=>{
+                                  const val=parseFloat(e.target.value);
+                                  if(isNaN(val))return;
+                                  updateVar(v.id,campo,enPct(v)?val/100:val);
+                                }}
+                                style={{width:58,background:esFija?"#F3F4F6":T.usuario.bg,
+                                  border:`1px solid ${rangoInvalido(v)?C.red:(esFija?C.border:T.usuario.border)}`,
+                                  borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
+                                  color:esFija?C.mid:T.usuario.text,fontWeight:700,textAlign:"center"}}/>
+                            </label>
+                          ))}
+                          <span style={{fontSize:9,color:C.mid,paddingBottom:5}}>{enPct(v)?"%":v.unit}</span>
+                        </div>
+                      ) : sigmaAuto ? (
                         <div style={{display:"flex",alignItems:"center",gap:5}}>
                           <span style={{fontSize:10,fontFamily:"DM Mono,monospace",color:T.stat.text,
                             background:T.stat.bg,border:`1px solid ${T.stat.border}`,borderRadius:4,padding:"2px 7px"}}>
@@ -1773,6 +1840,11 @@ function TabMC({p,set,resultado,setResultado}) {
                     <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,
                       color:esFija?C.mid:C.gold,fontWeight:esFija?400:700}}>
                       {esFija?"—":rango(v)}
+                      {!esFija&&rangoInvalido(v)&&(
+                        <div style={{color:C.red,fontSize:9,fontFamily:"Montserrat,sans-serif",marginTop:2}}>
+                          Tiene que ser mín ≤ más prob. ≤ máx
+                        </div>
+                      )}
                     </td>
                     {/* Toggle activa/fija */}
                     <td style={{padding:"7px 9px",textAlign:"center"}}>
@@ -1793,7 +1865,8 @@ function TabMC({p,set,resultado,setResultado}) {
           </table>
         </div>
         <div style={{marginTop:8,fontSize:9,color:C.mid,fontStyle:"italic"}}>
-          σ = desviación estándar de la distribución Normal. ~95% de los sorteos caen dentro de ±2σ del valor base.
+          Normal: σ = desviación estándar; ~95% de los sorteos caen dentro de ±2σ del valor base.
+          Rango: triangular entre mín y máx, con más sorteos cerca del valor más probable. En Inop. climática el rango es un factor sobre la probabilidad base del clima (100% = sin cambio).
           El mes se sortea al azar en cada iteración (análisis anual ponderado).
         </div>
       </div>
@@ -1809,7 +1882,10 @@ function TabMC({p,set,resultado,setResultado}) {
               {[1000,3000,5000,10000].map(v=><option key={v} value={v}>{v.toLocaleString()}</option>)}
             </select>
           </div>
-          <button className="run" onClick={run} disabled={running}>{running?"Calculando...":"▶ Correr"}</button>
+          <button className="run" onClick={run} disabled={running||mcVars.some(v=>v.activa&&rangoInvalido(v))}
+            title={mcVars.some(v=>v.activa&&rangoInvalido(v))?"Revisá los rangos marcados en rojo":undefined}>
+            {running?"Calculando...":"▶ Correr"}
+          </button>
           <span style={{fontSize:10,color:C.muted}}>Base det. (Jun): <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
         </div>
       </div>
