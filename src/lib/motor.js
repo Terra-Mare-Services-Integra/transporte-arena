@@ -373,10 +373,10 @@ export const DEFAULT_PARAMS = {
   bbc_pctImprevistos:        0.10,   // sobre el subtotal diario
   bbc_pctImpVentas:          0.025,  // sobre subtotal + imprevistos
   bbc_pctImpTransf:          0.008,  // sobre subtotal + imprevistos
-  bbc_diasPeriodo:           30,     // duración del contrato: define los viajes del análisis multi-viaje
-  bbc_movilizacion:          0,      // USD, al inicio del contrato
-  bbc_adecuacion:            0,      // USD, al inicio del contrato
-  bbc_desmovilizacion:       0,      // USD, al final del contrato
+  bbc_diasPeriodo:           1095,   // duración del contrato (3 años): define los viajes del análisis multi-viaje
+  bbc_movilizacion:          300000, // USD, al inicio del contrato
+  bbc_adecuacion:            500000, // USD, al inicio del contrato
+  bbc_desmovilizacion:       200000, // USD, al final del contrato
 
   // TRIPULACIÓN PROPIA — liquidación tipo EVENTUALES, contrato a tercero
   crew_fx:                   1550,   // ARS/USD
