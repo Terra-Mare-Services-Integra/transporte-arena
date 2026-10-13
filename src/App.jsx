@@ -13,6 +13,8 @@ import {
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
   runMonteCarlo, mcVarsDe,
+  costoDiarioBarco, calcTripulacion, basicoCargo, esBBC, hireKey, hireLabel,
+  diasPeriodoMultiViaje, CONVENIOS, ALCANCE_BLOQUES, ALCANCE_COMPLETO, ALCANCE_SOLO_BARCO, TABS_POR_BLOQUE, inc, ESCALA_SUELDOS_DEFAULT, DOTACION_DEFAULT, BBC_ITEMS_DEFAULT,
 } from "./lib/motor";
 import { supabase } from "./lib/supabase";
 
@@ -32,8 +34,14 @@ const C = {
   p10:"#166534",p50:"#B07D0A",p90:"#991B1B",
 };
 
+// Pestaña visible según modalidad y alcance del proyecto
+const tabVisible = (t, p) => (!t.soloBBC || esBBC(p))
+  && !Object.entries(TABS_POR_BLOQUE).some(([bloque, tabs]) => tabs.includes(t.id) && !inc(p, bloque));
+
 const TABS = [
+  {id:"alc",   label:"Alcance",                icon:"✅"},
   {id:"barco", label:"Contrato Barco",         icon:"🚢"},
+  {id:"crew",  label:"Tripulación",            icon:"👷", soloBBC:true},
   {id:"repo",  label:"Viaje a Puerto Carga",   icon:"🛳️"},
   {id:"az",    label:"Ag. Puerto de Carga",    icon:"⚓"},
   {id:"e1",    label:"Carga",                  icon:"⚓"},
@@ -131,6 +139,7 @@ button{font-family:'Montserrat',sans-serif;cursor:pointer}
 @media(max-width:600px){
   .cost-table th:nth-child(2),.cost-table td:nth-child(2){display:none}
   .cost-table th:nth-child(3),.cost-table td:nth-child(3){display:none}
+  .cost-table.keep th:nth-child(n),.cost-table.keep td:nth-child(n){display:table-cell}
 }
 
 /* HOVER */
@@ -739,16 +748,20 @@ function TabBarco({p,set}) {
   };
   const resetTabla=()=>set("barco_tablaVelConsumo",TABLA_VEL_CONSUMO_DEFAULT);
 
-  // Costo diario total incluyendo misc
-  const costoTotalDia=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
+  // Costo diario total según modalidad (TC: hire + trip + misc | BBC: hire + tripulación propia + fijos + recargos)
+  const cd=costoDiarioBarco(p);
+  const bbc=esBBC(p);
+  const costoTotalDia=cd.total;
+  const usd=v=>`$${Math.round(v).toLocaleString("es-AR")}`;
+  const MODALIDADES=[{id:"tc",label:"Time Charter + waiver"},{id:"bbc",label:"Bare Boat Charter"}];
 
   return (
     <div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
         {[
-          {l:"Time Charter",     v:`$${p.barco_timeCharter.toLocaleString()}`,                              u:"USD/día"},
-          {l:"Tripulación",      v:`$${p.barco_tripulacion.toLocaleString()}`,                               u:"USD/día"},
-          {l:"Total diario",     v:`$${costoTotalDia.toLocaleString()}`,                                     u:"USD/día"},
+          {l:hireLabel(p),       v:usd(cd.hire),                                                             u:"USD/día"},
+          {l:"Tripulación",      v:usd(cd.tripulacion),                                                      u:bbc?`USD/día · ${cd.crew.personas} personas`:"USD/día"},
+          {l:"Total diario",     v:usd(costoTotalDia),                                                       u:"USD/día"},
           {l:"Por viaje (est.)", v:`$${(costoTotalDia*calcTotal(p).diasTotales/1000).toFixed(0)}k`,          u:"USD total"},
         ].map(({l,v,u})=>(
           <div key={l} style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,padding:"12px 14px"}}>
@@ -765,27 +778,71 @@ function TabBarco({p,set}) {
           nota="Aparece en el encabezado principal de la aplicación"/>
       </div>
 
+      <div className="card">
+        <div className="ct">Modalidad del barco <TipoBadge tipo="usuario"/></div>
+        <div className="trow">
+          {MODALIDADES.map(m=>(
+            <button key={m.id} className={`tbtn ${(p.barco_modalidad||"tc")===m.id?"on":""}`} onClick={()=>set("barco_modalidad",m.id)}>{m.label}</button>
+          ))}
+        </div>
+        <p style={{fontSize:10,color:C.mid,marginTop:8,lineHeight:1.5}}>
+          {bbc
+            ? <>Alquilamos el barco a casco desnudo y lo administramos nosotros: tripulación propia (pestaña <strong>Tripulación</strong>), mantenimiento, seguro y administración. Sin importación temporal ni waiver.</>
+            : <>El armador entrega el barco tripulado y cobra un daily hire. Opera bajo waiver de importación temporal, que limita los días de cabotaje.</>}
+        </p>
+      </div>
+
       <div className="g2">
         <div className="card">
           <div className="ct">Parámetros del Contrato <TipoBadge tipo="usuario"/></div>
           <Campo label="Capacidad del barco" value={p.cap_capacidadBarco} onChange={v=>set("cap_capacidadBarco",v)} tipo="usuario" unit="Tn" min={1000} max={80000} step={1000}
             nota="Toneladas de arena que carga el barco por escala. Alimenta todas las etapas."/>
-          <Campo label="Time Charter" value={p.barco_timeCharter} onChange={v=>set("barco_timeCharter",v)} tipo="usuario" unit="USD/día" min={5000} max={50000} step={500}
-            nota="Costo diario del flete del barco. Aplica en todas las etapas."/>
-          <Campo label="Tripulación" value={p.barco_tripulacion} onChange={v=>set("barco_tripulacion",v)} tipo="usuario" unit="USD/día" min={0} max={10000} step={100}
-            nota="Costo diario de tripulación. En 0 si está incluido en el TC."/>
+          {bbc ? (
+            <>
+              <Campo label="Bare Boat hire" value={p.bbc_hire} onChange={v=>set("bbc_hire",v)} tipo="usuario" unit="USD/día" min={0} max={50000} step={500}
+                nota="Alquiler diario del barco a casco desnudo, sin tripulación ni operación."/>
+              <Campo label="Tripulación propia" value={usd(cd.tripulacion)} tipo="formula" unit="USD/día"
+                nota={`${cd.crew.personas} personas + management fee. Se calcula en la pestaña Tripulación.`}/>
+            </>
+          ) : (
+            <>
+              <Campo label="Time Charter" value={p.barco_timeCharter} onChange={v=>set("barco_timeCharter",v)} tipo="usuario" unit="USD/día" min={5000} max={50000} step={500}
+                nota="Costo diario del flete del barco. Aplica en todas las etapas."/>
+              <Campo label="Tripulación" value={p.barco_tripulacion} onChange={v=>set("barco_tripulacion",v)} tipo="usuario" unit="USD/día" min={0} max={10000} step={100}
+                nota="Costo diario de tripulación. En 0 si está incluido en el TC."/>
+              <Campo label="Misceláneos / día" value={p.barco_miscPorDia||0} onChange={v=>set("barco_miscPorDia",v)} tipo="usuario" unit="USD/día" min={0} max={5000} step={50}
+                nota="Gastos operativos diarios varios (comunicaciones, agua, provisiones, etc.)"/>
+            </>
+          )}
           <Campo label="Consumo en puerto" value={p.barco_consumoPuerto} onChange={v=>set("barco_consumoPuerto",v)} tipo="usuario" unit="T/día" min={1} max={20} step={0.5}
             nota="Consumo VLSFO mientras el barco está en puerto (carga y descarga). Típico Handysize: 3–6 T/día."/>
-          <Campo label="Misceláneos / día" value={p.barco_miscPorDia||0} onChange={v=>set("barco_miscPorDia",v)} tipo="usuario" unit="USD/día" min={0} max={5000} step={50}
-            nota="Gastos operativos diarios varios (comunicaciones, agua, provisiones, etc.)"/>
           <Campo label="Limpieza de bodega" value={p.barco_limpiezaBodega||0} onChange={v=>set("barco_limpiezaBodega",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
             nota="Costo por escala para limpiar bodega antes de cargar arena. Se carga en el viaje de reposicionamiento."/>
-          <Campo label="Importación / Waiver" value={p.barco_importacionWaiver||0} onChange={v=>set("barco_importacionWaiver",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
-            nota="Gastos de importación temporal del barco y/o waiver regulatorio."/>
-          <Campo label="Días de vigencia waiver" value={p.barco_diasWaiver||30} onChange={v=>set("barco_diasWaiver",Math.max(1,Math.round(v)))} tipo="usuario" unit="días" min={1} max={180} step={1}
-            nota="Período cubierto por el waiver. Determina cuántos viajes consecutivos pueden compartir el costo de importación y limpieza."/>
+          {bbc ? (
+            <>
+              <Campo label="Duración del contrato" value={p.bbc_diasPeriodo||30} onChange={v=>set("bbc_diasPeriodo",Math.max(1,Math.round(v)))} tipo="usuario" unit="días" min={1} max={3650} step={1}
+                nota="Sin waiver no hay tope de días: la duración define cuántos viajes entran en el análisis multi-viaje de Evaluación."/>
+              {inc(p,"movilizacion") ? (
+                <>
+                  <Campo label="Movilización" value={p.bbc_movilizacion||0} onChange={v=>set("bbc_movilizacion",v)} tipo="usuario" unit="USD" min={0} step={5000}
+                    nota="Al inicio del contrato: traer el barco a operar."/>
+                  <Campo label="Adecuación del barco" value={p.bbc_adecuacion||0} onChange={v=>set("bbc_adecuacion",v)} tipo="usuario" unit="USD" min={0} step={5000}
+                    nota="Al inicio del contrato: adaptación del barco para la operación y la bandera."/>
+                  <Campo label="Desmovilización" value={p.bbc_desmovilizacion||0} onChange={v=>set("bbc_desmovilizacion",v)} tipo="usuario" unit="USD" min={0} step={5000}
+                    nota="Al final del contrato: devolución del barco."/>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Campo label="Importación / Waiver" value={p.barco_importacionWaiver||0} onChange={v=>set("barco_importacionWaiver",v)} tipo="usuario" unit="USD" min={0} max={100000} step={500}
+                nota="Gastos de importación temporal del barco y/o waiver regulatorio."/>
+              <Campo label="Días de vigencia waiver" value={p.barco_diasWaiver||30} onChange={v=>set("barco_diasWaiver",Math.max(1,Math.round(v)))} tipo="usuario" unit="días" min={1} max={180} step={1}
+                nota="Período cubierto por el waiver. Determina cuántos viajes consecutivos pueden compartir el costo de importación y limpieza."/>
+            </>
+          )}
           <div style={{marginTop:10,padding:"8px 12px",background:"#F0F9FF",border:"1px solid #BAE6FD",borderRadius:8,fontSize:10,color:"#0369A1"}}>
-            <strong>Costo diario total</strong> (TC + Misc = ${costoTotalDia.toLocaleString()}/día) aplica a todos los días del viaje — reposicionamiento, cargando, navegando y descargando.
+            <strong>Costo diario total</strong> ({usd(costoTotalDia)}/día) aplica a todos los días del viaje — reposicionamiento, cargando, navegando y descargando.
           </div>
         </div>
 
@@ -812,6 +869,392 @@ function TabBarco({p,set}) {
             })}</tbody>
           </table>
           <div className="src-note">Fuente: valores típicos de mercado para Handysize bulk carrier. Validar con broker o consumo real del barco.</div>
+        </div>
+      </div>
+
+      {bbc && <CostoDiarioBBC p={p} set={set} cd={cd}/>}
+    </div>
+  );
+}
+
+// ─── COSTO DIARIO BBC (pestaña "Proyecto" del cotizador) ───────────────────
+function CostoDiarioBBC({p,set,cd}) {
+  const items=p.bbc_items||BBC_ITEMS_DEFAULT;
+  const usd=v=>`$${Math.round(v).toLocaleString("es-AR")}`;
+  const upd=(idx,field,val)=>{const arr=[...items];arr[idx]={...arr[idx],[field]:val};set("bbc_items",arr);};
+  const agregar=()=>set("bbc_items",[...items,{id:`bbc_${Date.now()}`,label:"Nuevo ítem",valor:0,unidad:"dia",activo:true}]);
+  const quitar=idx=>set("bbc_items",items.filter((_,i)=>i!==idx));
+  const pct=(k)=>(
+    <input type="number" value={+((p[k]||0)*100).toFixed(2)} step={0.1} min={0}
+      onChange={e=>set(k,(parseFloat(e.target.value)||0)/100)} style={{width:64,textAlign:"right"}}/>
+  );
+  const filaTot=(label,v,strong)=>(
+    <tr style={strong?{background:"#F0F9FF"}:undefined}>
+      <td colSpan={4} style={{fontWeight:strong?800:600}}>{label}</td>
+      <td className="mono" style={{textAlign:"right",fontWeight:strong?800:600}}>{usd(v)}</td>
+      <td/>
+    </tr>
+  );
+
+  return (
+    <div className="card" style={{borderTop:"3px solid #0F766E"}}>
+      <div className="ct">Costo diario del barco en Bare Boat Charter <TipoBadge tipo="usuario"/>
+        <button onClick={()=>set("bbc_items",BBC_ITEMS_DEFAULT)} style={{marginLeft:"auto",padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontSize:8,fontWeight:700,cursor:"pointer"}}>Resetear</button>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table className="cost-table keep">
+          <thead><tr>
+            <th style={{width:28}}></th><th>Concepto</th><th style={{textAlign:"right"}}>Valor (USD)</th><th>Unidad</th>
+            <th style={{textAlign:"right"}}>USD/día</th><th style={{width:28}}></th>
+          </tr></thead>
+          <tbody>
+            <tr><td/><td style={{fontWeight:600}}>Bare Boat hire</td><td className="mono" style={{textAlign:"right"}}>{usd(p.bbc_hire)}</td><td>por día</td>
+              <td className="mono" style={{textAlign:"right"}}>{usd(p.bbc_hire)}</td><td/></tr>
+            <tr><td/><td style={{fontWeight:600}}>Tripulación propia + management fee</td><td className="mono" style={{textAlign:"right"}}>—</td><td>pestaña Tripulación</td>
+              <td className="mono" style={{textAlign:"right"}}>{usd(cd.tripulacion)}</td><td/></tr>
+            {items.map((it,i)=>{
+              const usdDia=it.unidad==="anio"?it.valor/(p.bbc_diasAnio||365):it.valor;
+              return (
+                <tr key={it.id} style={{opacity:it.activo===false?0.45:1}}>
+                  <td><input type="checkbox" checked={it.activo!==false} onChange={e=>upd(i,"activo",e.target.checked)}/></td>
+                  <td><input type="text" value={it.label} onChange={e=>upd(i,"label",e.target.value)} style={{width:"100%"}}/></td>
+                  <td style={{textAlign:"right"}}><input type="number" value={it.valor} step={100} min={0} onChange={e=>upd(i,"valor",parseFloat(e.target.value)||0)} style={{width:96,textAlign:"right"}}/></td>
+                  <td>
+                    <select value={it.unidad} onChange={e=>upd(i,"unidad",e.target.value)}>
+                      <option value="dia">por día</option><option value="anio">por año</option>
+                    </select>
+                  </td>
+                  <td className="mono" style={{textAlign:"right"}}>{usd(usdDia)}</td>
+                  <td><button onClick={()=>quitar(i)} title="Quitar" style={{border:"none",background:"none",color:C.mid,cursor:"pointer"}}>✕</button></td>
+                </tr>
+              );
+            })}
+            <tr><td/><td colSpan={5}><button onClick={agregar} style={{padding:"2px 8px",borderRadius:4,border:`1px dashed ${C.border}`,background:"#fff",color:C.mid,fontSize:9,cursor:"pointer"}}>+ Agregar ítem</button></td></tr>
+            {filaTot("Subtotal",cd.subtotal)}
+            <tr><td/><td>Imprevistos — {pct("bbc_pctImprevistos")} % sobre el subtotal</td><td colSpan={2}/>
+              <td className="mono" style={{textAlign:"right"}}>{usd(cd.imprevistos)}</td><td/></tr>
+            <tr><td/><td>Impuesto a las ventas {pct("bbc_pctImpVentas")} % + transferencias bancarias {pct("bbc_pctImpTransf")} % sobre subtotal + imprevistos</td><td colSpan={2}/>
+              <td className="mono" style={{textAlign:"right"}}>{usd(cd.impuestos)}</td><td/></tr>
+            {filaTot("Costo diario total",cd.total,true)}
+          </tbody>
+        </table>
+      </div>
+      <div className="src-note">
+        Fuente: Cotizador V22 (13-07-2026), pestaña Proyecto. Los costos anuales se prorratean en
+        <input type="number" value={p.bbc_diasAnio||365} min={1} step={1} onChange={e=>set("bbc_diasAnio",Math.max(1,parseInt(e.target.value)||365))} style={{width:52,margin:"0 4px"}}/>
+        días.
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB ALCANCE ───────────────────────────────────────────────────────────
+// Checklist inicial: modalidad del barco y bloques de costo a nuestro cargo
+function TabAlcance({p,set}) {
+  const alc={...ALCANCE_COMPLETO,...(p.alcance||{})};
+  const bbc=esBBC(p);
+  const tot=calcTotal(p);
+  // Costo de cada bloque como si estuviera en alcance, para decidir con números
+  const full=calcTotal({...p,alcance:ALCANCE_COMPLETO});
+  const {e0,e1,e2,e3}=full;
+  // En BBC se muestra el contrato completo, igual que en el encabezado
+  const ctr=calcNViajes(p,tot);
+  const ctrFull=calcNViajes({...p,alcance:ALCANCE_COMPLETO},full);
+  const cd=costoDiarioBarco(p);
+  const costoBloque={
+    barco:       e0.fleteCosto+e1.fleteEtapa+e2.fleteNav+e3.fleteEtapa,
+    tripulacion: bbc?cd.tripulacion*full.diasTotales:0,
+    combustible: e0.combCosto+e1.combPuerto+e2.combNav+e3.combPuerto,
+    repo:        e0.costoTotal,
+    agenciaCarga:e1.agencia,
+    agenciaDescarga:e3.agencia,
+    arena:       e1.costoArena+e1.costoMerma+e3.costoMermaDescarga+e3.costoMermaAcopio,
+    operacion:   e1.costoOpex+e3.costoOpex,
+    logistica:   e3.costoCamiones+e3.costoAcopio+e3.costoFleteAcopio,
+    movilizacion:(p.bbc_movilizacion||0)+(p.bbc_adecuacion||0)+(p.bbc_desmovilizacion||0),
+  };
+  const usd=v=>`$${Math.round(v).toLocaleString("es-AR")}`;
+  const toggle=id=>set("alcance",{...alc,[id]:!alc[id]});
+  const MODALIDADES=[{id:"tc",label:"Time Charter + waiver",desc:"El armador entrega el barco tripulado por un daily hire. Opera bajo waiver."},
+                     {id:"bbc",label:"Bare Boat Charter",desc:"Alquilamos el casco y administramos barco y tripulación. Sin waiver."}];
+  const atajo=(label,valor)=>{
+    const activo=ALCANCE_BLOQUES.every(b=>b.fijo||!!alc[b.id]===!!valor[b.id]);
+    return <button className={`tbtn ${activo?"on":""}`} onClick={()=>set("alcance",valor)}>{label}</button>;
+  };
+
+  return (
+    <div>
+      {bbc ? (
+        <div className="kpis">
+          <KPI label="USD/Tn contrato en alcance" value={`$${ctr.usdTnSistema.toFixed(2)}`} unit={`${ctr.nViajes} ${ctr.nViajes===1?"viaje":"viajes"}`} color={C.gold}/>
+          <KPI label="Costo contrato"    value={`$${(ctr.costoTotalSistema/1000).toFixed(0)}k`} color={C.navy}/>
+          <KPI label="Días contrato"     value={`${ctr.diasTotales.toFixed(1)}d`} color={C.blue}/>
+          <KPI label="Proyecto completo" value={`$${ctrFull.usdTnSistema.toFixed(2)}`} unit="USD/Tn contrato de referencia" color={C.mid}/>
+        </div>
+      ) : (
+        <div className="kpis">
+          <KPI label="USD/Tn en alcance" value={`$${tot.usdTn.toFixed(2)}`} color={C.gold}/>
+          <KPI label="Costo en alcance"  value={`$${(tot.costoTotal/1000).toFixed(0)}k`} unit="por viaje" color={C.navy}/>
+          <KPI label="Días del viaje"    value={`${tot.diasTotales.toFixed(1)}d`} color={C.blue}/>
+          <KPI label="Proyecto completo" value={`$${full.usdTn.toFixed(2)}`} unit="USD/Tn de referencia" color={C.mid}/>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="ct">1 · Modalidad del barco <TipoBadge tipo="usuario"/></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:10}}>
+          {MODALIDADES.map(m=>{
+            const on=(p.barco_modalidad||"tc")===m.id;
+            return (
+              <button key={m.id} onClick={()=>set("barco_modalidad",m.id)}
+                style={{textAlign:"left",padding:"10px 12px",borderRadius:8,cursor:"pointer",
+                  border:`2px solid ${on?C.gold:C.border}`,background:on?"#FFFBEB":"#fff"}}>
+                <div style={{fontWeight:800,color:C.navy,fontSize:12}}>{on?"● ":"○ "}{m.label}</div>
+                <div style={{fontSize:10,color:C.mid,marginTop:3}}>{m.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="ct">2 · ¿De qué somos responsables? <TipoBadge tipo="usuario"/></div>
+        <div className="trow" style={{marginBottom:10}}>
+          {atajo("Solo barco",ALCANCE_SOLO_BARCO)}
+          {atajo("Proyecto completo",ALCANCE_COMPLETO)}
+        </div>
+        <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
+          Lo que destildes deja de sumar al costo y se ocultan sus pestañas. Los días de carga, navegación y descarga
+          se siguen calculando porque el barco los paga igual. Los montos son por viaje, con el bloque incluido.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:8}}>
+          {ALCANCE_BLOQUES.filter(b=>!b.soloBBC||bbc).map(b=>{
+            const fijo=b.fijo;
+            const on=fijo||!!alc[b.id];
+            return (
+              <label key={b.id} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"9px 11px",borderRadius:8,
+                cursor:fijo?"default":"pointer",border:`1px solid ${on?"#86EFAC":C.border}`,background:on?"#F0FDF4":"#F9FAFB",opacity:on?1:0.7}}>
+                <input type="checkbox" checked={on} disabled={fijo} onChange={()=>toggle(b.id)} style={{marginTop:2}}/>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
+                    <span style={{fontWeight:700,color:C.navy,fontSize:11}}>{b.label}</span>
+                    <span style={{fontSize:10,color:on?C.green:C.mid,fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>
+                      {usd(costoBloque[b.id]||0)}
+                    </span>
+                  </div>
+                  <div style={{fontSize:9,color:C.mid,marginTop:2,lineHeight:1.4}}>
+                    {b.desc}{fijo?" Siempre incluido.":""}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {!alc.repo && (
+          <div className="src-note">Sin viaje a puerto de carga: el barco se recibe en Zárate y el reposicionamiento no suma días ni costo.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB TRIPULACIÓN (BBC) ─────────────────────────────────────────────────
+// Calculadora Crewing + EVENTUALES + Posición por día + Sueldos Básicos del cotizador
+function TabTripulacion({p,set}) {
+  const [detalle,setDetalle]=useState(null);
+  const crew=calcTripulacion(p);
+  const dot=p.crew_dotacion||DOTACION_DEFAULT;
+  const escala=p.crew_escala||ESCALA_SUELDOS_DEFAULT;
+  const ars=v=>`$${Math.round(v).toLocaleString("es-AR")}`;
+  const usd=v=>`$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
+  const pctTxt=v=>`${+(v*100).toFixed(2)}%`;
+
+  const updPos=(idx,field,val)=>{const arr=[...dot];arr[idx]={...arr[idx],[field]:val};set("crew_dotacion",arr);};
+  const agregar=()=>set("crew_dotacion",[...dot,{id:`pos_${Date.now()}`,cargo:"MARINERO",cantidad:1,rj:0.84,supply:0,locacion:0.15,acta:0.425,regFranco:0.8,precioFranco:0.95,lavanderia:false}]);
+  const quitar=idx=>{set("crew_dotacion",dot.filter((_,i)=>i!==idx));setDetalle(null);};
+  const updEsc=(idx,field,val)=>{const arr=[...escala];arr[idx]={...arr[idx],[field]:val};set("crew_escala",arr);};
+
+  // Funciones (no componentes) para no remontar los inputs en cada tecla
+  const campoPct=(k,label,step=0.1)=>(
+    <Campo label={label} value={+((p[k]||0)*100).toFixed(4)} onChange={v=>set(k,v/100)} tipo="usuario" unit="%" step={step} min={0}/>
+  );
+  const siNo=(k,label)=>(
+    <Toggle label={label} options={["Sí","No"]} value={p[k]?"Sí":"No"} onChange={o=>set(k,o==="Sí")}/>
+  );
+  const celPct=(idx,field,w=52)=>(
+    <input type="number" value={+((dot[idx][field]||0)*100).toFixed(2)} step={1} min={0}
+      onChange={e=>updPos(idx,field,(parseFloat(e.target.value)||0)/100)} style={{width:w,textAlign:"right"}}/>
+  );
+  const celNum=(idx,field,step=0.05,w=52)=>(
+    <input type="number" value={dot[idx][field]} step={step} min={0}
+      onChange={e=>updPos(idx,field,parseFloat(e.target.value)||0)} style={{width:w,textAlign:"right"}}/>
+  );
+  const btnMini={padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontSize:8,fontWeight:700,cursor:"pointer"};
+
+  const filaDet=crew.filas.find(f=>f.id===detalle);
+
+  return (
+    <div>
+      {!esBBC(p) && (
+        <div style={{marginBottom:12,padding:"8px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
+          La tripulación propia solo se usa en modalidad <strong>Bare Boat Charter</strong> (pestaña Contrato Barco).
+        </div>
+      )}
+      <div className="kpis">
+        <KPI label="Personas a bordo"   value={crew.personas}                         color={C.navy}/>
+        <KPI label="Tripulación"        value={usd(crew.crewUSDDia)} unit="USD/día"   color={C.blue}/>
+        <KPI label="Management fee"     value={usd(crew.managementFee)} unit="USD/día" color={C.mid}/>
+        <KPI label="Total tripulación"  value={usd(crew.total)} unit="USD/día"        color={C.gold}/>
+        <KPI label="Por mes (30 d)"     value={`$${(crew.total*30/1000).toFixed(0)}k`} unit="USD" color={C.green}/>
+      </div>
+
+      {/* ── Dotación / Posición por día ── */}
+      <div className="card">
+        <div className="ct">Dotación y costo por posición <TipoBadge tipo="usuario"/>
+          <button onClick={()=>{set("crew_dotacion",DOTACION_DEFAULT);setDetalle(null);}} style={{...btnMini,marginLeft:"auto"}}>Resetear</button>
+        </div>
+        <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
+          Costo navegado de una persona por posición (liquidación de eventual). Adicionales en %:
+          RJ/Plus operativo 84% (140% con faltante, 218,69% escala CAR) · Supply A 0 / B 25% / C 50% · Costa afuera 25% · Acta 42,5%.
+          Régimen de franco 0,8 salvo 1×1 o 2×1 · Precio del franco 0,95 (capitanes 0,8). Con ▸ ves la liquidación del cargo.
+        </p>
+        <div style={{overflowX:"auto"}}>
+          <table className="cost-table keep" style={{minWidth:900}}>
+            <thead><tr>
+              <th>Cargo</th><th style={{textAlign:"right"}}>Cant.</th><th style={{textAlign:"right"}}>RJ %</th><th style={{textAlign:"right"}}>Supply %</th>
+              <th style={{textAlign:"right"}}>Locación %</th><th style={{textAlign:"right"}}>Acta %</th><th style={{textAlign:"right"}}>Rég. franco</th>
+              <th style={{textAlign:"right"}}>Precio franco</th><th>Lavand.</th><th style={{textAlign:"right"}}>ARS/mes c/u</th>
+              <th style={{textAlign:"right"}}>USD/día</th><th></th>
+            </tr></thead>
+            <tbody>
+              {crew.filas.map((f,i)=>(
+                <tr key={f.id} style={{background:detalle===f.id?"#FFFBEB":undefined}}>
+                  <td>
+                    <button onClick={()=>setDetalle(detalle===f.id?null:f.id)} title="Ver liquidación"
+                      style={{marginRight:4,border:"none",background:"none",color:C.blue,cursor:"pointer",fontSize:10}}>{detalle===f.id?"▾":"▸"}</button>
+                    <select value={f.cargo} onChange={e=>updPos(i,"cargo",e.target.value)} style={{maxWidth:190}}>
+                      {escala.map(e=><option key={e.cargo} value={e.cargo}>{e.cargo}</option>)}
+                    </select>
+                    <div style={{fontSize:8,color:C.mid,marginLeft:18}}>{CONVENIOS[f.liq.convenio]?.label}</div>
+                  </td>
+                  <td style={{textAlign:"right"}}>{celNum(i,"cantidad",1,44)}</td>
+                  <td style={{textAlign:"right"}}>{celPct(i,"rj")}</td>
+                  <td style={{textAlign:"right"}}>{celPct(i,"supply")}</td>
+                  <td style={{textAlign:"right"}}>{celPct(i,"locacion")}</td>
+                  <td style={{textAlign:"right"}}>{celPct(i,"acta")}</td>
+                  <td style={{textAlign:"right"}}>{celNum(i,"regFranco")}</td>
+                  <td style={{textAlign:"right"}}>{celNum(i,"precioFranco")}</td>
+                  <td style={{textAlign:"center"}}><input type="checkbox" checked={!!f.lavanderia} onChange={e=>updPos(i,"lavanderia",e.target.checked)}/></td>
+                  <td className="mono" style={{textAlign:"right"}}>{ars(f.liq.mensual)}</td>
+                  <td className="mono" style={{textAlign:"right",fontWeight:700}}>{usd(f.usdDia)}</td>
+                  <td><button onClick={()=>quitar(i)} title="Quitar" style={{border:"none",background:"none",color:C.mid,cursor:"pointer"}}>✕</button></td>
+                </tr>
+              ))}
+              <tr><td colSpan={12}><button onClick={agregar} style={{padding:"2px 8px",borderRadius:4,border:`1px dashed ${C.border}`,background:"#fff",color:C.mid,fontSize:9,cursor:"pointer"}}>+ Agregar posición</button></td></tr>
+              <tr><td style={{fontWeight:600}}>Total tripulación</td><td className="mono" style={{textAlign:"right",fontWeight:600}}>{crew.personas}</td><td colSpan={8}/>
+                <td className="mono" style={{textAlign:"right",fontWeight:600}}>{usd(crew.crewUSDDia)}</td><td/></tr>
+              <tr><td colSpan={10} style={{fontWeight:600}}>Management fee (fijo en USD)</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:600}}>{usd(crew.managementFee)}</td><td/></tr>
+              <tr className="total"><td colSpan={10}>Costo total por día</td><td className="mono" style={{textAlign:"right"}}>{usd(crew.total)}</td><td/></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {filaDet && (
+        <div className="card" style={{borderTop:`3px solid ${C.gold}`}}>
+          <div className="ct">Liquidación mensual — {filaDet.cargo} ({CONVENIOS[filaDet.liq.convenio]?.label})
+            <button onClick={()=>setDetalle(null)} style={{marginLeft:"auto",border:"none",background:"none",color:C.mid,cursor:"pointer"}}>✕</button>
+          </div>
+          <table className="cost-table keep">
+            <thead><tr><th>Concepto</th><th style={{textAlign:"right"}}>ARS/mes por persona</th></tr></thead>
+            <tbody>
+              {[
+                ["Básico",filaDet.liq.basico],["Responsabilidad jerárquica / Plus operativo",filaDet.liq.rj],
+                ["Adicional supply",filaDet.liq.supply],["Adicional costa afuera",filaDet.liq.locacion],
+                ["Feriados",filaDet.liq.feriados],["Adicional Acta 04-08-22",filaDet.liq.acta],["Antigüedad",filaDet.liq.antiguedad],
+                ["Subtotal A — Bruto",filaDet.liq.bruto,true],
+                ["Licencia anual",filaDet.liq.licAnual],["Francos",filaDet.liq.francos],["SAC",filaDet.liq.sac],
+                ["Subtotal B — Salario pre estabilidad",filaDet.liq.preEstab,true],
+                ["Estabilidad laboral",filaDet.liq.estabilidad],["Subtotal C — Salario final",filaDet.liq.salarioFinal,true],
+                ["Cargas sociales + ART + seguro de vida + FFEP",filaDet.liq.cargas],["Cuota sindical",filaDet.liq.sindical],
+                ["Decreto 633/2018",filaDet.liq.decreto633],["Subtotal D — Costo salarial bruto",filaDet.liq.costoBruto,true],
+                ["Ingresos brutos",filaDet.liq.iibb],["Impuesto créditos y débitos",filaDet.liq.credDeb],["Adicional lavandería",filaDet.liq.lavanderia],
+              ].map(([l,v,st])=>(
+                <tr key={l}><td style={{fontWeight:st?700:400}}>{l}</td><td className="mono" style={{textAlign:"right",fontWeight:st?700:400}}>{ars(v)}</td></tr>
+              ))}
+              <tr className="total"><td>Costo mensual por persona</td><td className="mono" style={{textAlign:"right"}}>{ars(filaDet.liq.mensual)}</td></tr>
+              <tr><td>Costo diario por persona (÷ {p.crew_diasMes||30})</td><td className="mono" style={{textAlign:"right"}}>{ars(filaDet.liq.diarioARS)} · USD {filaDet.liq.diarioUSD.toFixed(2)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="g2">
+        {/* ── Variables salariales ── */}
+        <div className="card">
+          <div className="ct">Variables salariales <TipoBadge tipo="usuario"/></div>
+          <Campo label="Tipo de cambio" value={p.crew_fx} onChange={v=>set("crew_fx",v)} tipo="usuario" unit="ARS/USD" min={1} step={10}
+            nota="Convierte el costo en pesos a dólares por día."/>
+          <Campo label="Management fee" value={p.crew_managementFee} onChange={v=>set("crew_managementFee",v)} tipo="usuario" unit="USD/día" min={0} step={50}
+            nota="Honorario de gestión de tripulación, fijo en USD."/>
+          {siNo("crew_contratoTercero","Contrato a tercero (aplica IIBB e Imp. créd/déb)")}
+          {siNo("crew_decreto633","Decreto 633/2018 (+2%)")}
+          {campoPct("crew_art","Prima ART")}
+          <Campo label="Antigüedad promedio" value={p.crew_antiguedad} onChange={v=>set("crew_antiguedad",v)} tipo="usuario" unit="años" min={0} step={1}
+            nota="0 años: 0% · hasta 5: 1% · hasta 9: 1,5% · más de 9: 2% por año."/>
+          <Campo label="Vacaciones promedio" value={p.crew_vacaciones} onChange={v=>set("crew_vacaciones",v)} tipo="usuario" unit="días" min={0} step={1}/>
+          <Campo label="Feriados al año" value={p.crew_feriados} onChange={v=>set("crew_feriados",v)} tipo="usuario" unit="días" min={0} step={1}/>
+          <details style={{marginTop:6}}>
+            <summary style={{fontSize:10,color:C.mid,cursor:"pointer"}}>Cargas y alícuotas</summary>
+            {campoPct("crew_cargasSociales","Contribuciones de cargas sociales")}
+            {campoPct("crew_estabilidad","Estabilidad laboral / previsión por despido",0.01)}
+            <Campo label="Seguro de vida obligatorio" value={p.crew_seguroVida} onChange={v=>set("crew_seguroVida",v)} tipo="usuario" unit="ARS/mes" min={0}/>
+            <Campo label="Fondo fiduciario enf. profesionales" value={p.crew_ffep} onChange={v=>set("crew_ffep",v)} tipo="usuario" unit="ARS/mes" min={0}/>
+            {campoPct("crew_iibb","Ingresos brutos")}
+            {campoPct("crew_impCredDeb","Impuesto créditos y débitos")}
+            <Campo label="Divisor de vacaciones" value={p.crew_divisorVac} onChange={v=>set("crew_divisorVac",v)} tipo="usuario" min={1}/>
+            <Campo label="Días del mes" value={p.crew_diasMes} onChange={v=>set("crew_diasMes",v)} tipo="usuario" min={1}/>
+            <Campo label="Adicional lavandería" value={p.crew_lavanderiaUSD} onChange={v=>set("crew_lavanderiaUSD",v)} tipo="usuario" unit="USD/mes por persona" min={0}
+              nota="Solo para posiciones con tarea programada (columna Lavand.)."/>
+          </details>
+        </div>
+
+        {/* ── Escala salarial ── */}
+        <div className="card">
+          <div className="ct">Escala salarial (sueldos básicos) <TipoBadge tipo="usuario"/>
+            <button onClick={()=>set("crew_escala",ESCALA_SUELDOS_DEFAULT)} style={{...btnMini,marginLeft:"auto"}}>Resetear</button>
+          </div>
+          <Campo label="Básico Jefe de Máquina" value={p.crew_basicoJM} onChange={v=>set("crew_basicoJM",v)} tipo="usuario" unit="ARS/mes" min={0} step={1000}
+            nota="Base de la escala: el básico de cada cargo es su coeficiente × este valor."/>
+          <Campo label="Vigencia de la escala" value={p.crew_escalaVigencia||""} onChange={v=>set("crew_escalaVigencia",v)} tipo="usuario" inputType="text"/>
+          <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}>
+            <table className="cost-table keep">
+              <thead><tr><th>Cargo</th><th style={{textAlign:"right"}}>Coef.</th><th style={{textAlign:"right"}}>Básico ARS/mes</th></tr></thead>
+              <tbody>
+                {escala.map((e,i)=>(
+                  <tr key={e.cargo}>
+                    <td>{e.cargo}<div style={{fontSize:8,color:C.mid}}>{CONVENIOS[e.convenio]?.label}</div></td>
+                    <td style={{textAlign:"right"}}>
+                      {e.coef!=null
+                        ? <input type="number" value={+e.coef.toFixed(4)} step={0.01} min={0} onChange={ev=>updEsc(i,"coef",parseFloat(ev.target.value)||0)} style={{width:64,textAlign:"right"}}/>
+                        : <span style={{fontSize:9,color:C.mid}}>fijo</span>}
+                    </td>
+                    <td style={{textAlign:"right"}}>
+                      {e.coef!=null
+                        ? <span className="mono">{ars(basicoCargo(p,e.cargo).basico)}</span>
+                        : <input type="number" value={Math.round(e.basico)} step={1000} min={0} onChange={ev=>updEsc(i,"basico",parseFloat(ev.target.value)||0)} style={{width:104,textAlign:"right"}}/>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="src-note">
+            Reglas por convenio, copiadas de EVENTUALES: cubierta sin feriados, SAC sin francos, cuota sindical {pctTxt(CONVENIOS.cubierta.cuotaSindical)} ·
+            máquinas y CAR con feriados ÷25 dentro del acta, SAC con francos, {pctTxt(CONVENIOS.maquinas.cuotaSindical)} ·
+            subalternos con feriados ÷30 fuera del acta, SAC con francos, {pctTxt(CONVENIOS.subalternos.cuotaSindical)} · pilotaje solo básico.
+          </div>
         </div>
       </div>
     </div>
@@ -928,7 +1371,7 @@ function TabRepo({p,set}) {
   const itemsFijos=[
     {key:"barco_limpiezaBodega",   label:"Limpieza de bodega",     nota:"Costo por escala para limpiar bodega antes de cargar arena."},
     {key:"barco_importacionWaiver",label:"Importación / Waiver",   nota:"Gastos de importación temporal del barco y/o waiver regulatorio."},
-  ];
+  ].filter(it => !(esBBC(p) && it.key === "barco_importacionWaiver"));
 
   return (
     <div>
@@ -937,8 +1380,8 @@ function TabRepo({p,set}) {
         <KPI label="Distancia"  value={`${e0.totalMn?.toFixed(0)||"—"}mn`}                                                 color={C.mid}/>
         <KPI label="Vel. prom." value={`${e0.velProm?.toFixed(1)||"—"}kt`}                                                 color={C.blue}/>
         <KPI label="Combustible"value={`${e0.combTotal.toFixed(1)}T`}                                                      color={C.orange}/>
-        <KPI label="Costo total"value={`$${(e0.costoTotal/1000).toFixed(0)}k`}                                             color={C.gold}/>
-        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}`}  color={C.green}/>
+        <KPI label="Costo total"value={`$${(e0.costoViaje/1000).toFixed(0)}k`}                                             color={C.gold}/>
+        <KPI label="USD/Tn"     value={`$${p.cap_capacidadBarco>0?(e0.costoViaje/p.cap_capacidadBarco).toFixed(2):"—"}`}  color={C.green}/>
       </div>
 
       {/* Tramo — solo velocidad editable */}
@@ -990,7 +1433,7 @@ function TabRepo({p,set}) {
               {/* Filas calculadas — read only */}
               {[
                 {label:"Combustible lastre",    eq:`${e0.combTotal.toFixed(1)}T × $${e0.vlsfo}/T`,  total:e0.combCosto,    hover:e0.hoverComb},
-                {label:"Time Charter+Trip+Misc", eq:`${e0.diasNav.toFixed(1)}d × $${e0.tc}/d`,      total:e0.fleteCosto,   hover:e0.hoverTC},
+                {label:"Costo diario barco",     eq:`${e0.diasNav.toFixed(1)}d × $${Math.round(e0.tc).toLocaleString("es-AR")}/d`,      total:e0.fleteCosto,   hover:e0.hoverTC},
               ].map((r,i)=>(
                 <tr key={i}>
                   <td style={{color:C.mid,fontSize:10}}>{r.label}</td>
@@ -1072,9 +1515,9 @@ function TabRepo({p,set}) {
                 <td colSpan={2} style={{textAlign:"right"}}>TOTAL</td>
                 <td className="eq">Σ viaje a puerto de carga</td>
                 <td style={{textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:13}}>
-                  ${e0.costoTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}
+                  ${e0.costoViaje.toLocaleString("es-AR",{maximumFractionDigits:0})}
                 </td>
-                <td className="mono" style={{textAlign:"right",fontWeight:800}}>${p.cap_capacidadBarco>0?(e0.costoTotal/p.cap_capacidadBarco).toFixed(2):"—"}</td>
+                <td className="mono" style={{textAlign:"right",fontWeight:800}}>${p.cap_capacidadBarco>0?(e0.costoViaje/p.cap_capacidadBarco).toFixed(2):"—"}</td>
               </tr>
             </tbody>
           </table>
@@ -1101,7 +1544,7 @@ function TabCarga({p,set,tnEntregadas}) {
     {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]]},
     {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
     {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb},
-    {label:"Time Charter+Trip.",eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
+    {label:"Costo diario barco",eq:`${e1.tReal_dias.toFixed(1)}d×$${Math.round(e1.tc).toLocaleString("es-AR")}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
     {label:"Agencia Zárate",    eq:"desde ítems Ag. Zárate",                                        total:e1.agencia},
     {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:costoTotalTabla1, hover:e1.hoverTotal, isTotal:true},
   ];
@@ -1155,7 +1598,7 @@ function TabNavegacion({p,set,tnEntregadas}) {
   const tramos=p.nav_tramos||[];
   const costRows=[
     {label:"Combustible ida",   eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,total:e2.combNav,  hover:e2.hoverComb},
-    {label:"Time Charter+Trip.",eq:`${e2.diasNav.toFixed(1)}d×$${e2.tc}/d`,      total:e2.fleteNav, hover:e2.hoverTC},
+    {label:"Costo diario barco",eq:`${e2.diasNav.toFixed(1)}d×$${Math.round(e2.tc).toLocaleString("es-AR")}/d`,      total:e2.fleteNav, hover:e2.hoverTC},
     {label:"TOTAL ETAPA 2",     eq:"Σ costos navegación ida",                    total:e2.costoTotal,hover:e2.hoverTotal,isTotal:true},
   ];
   const updateTramo=(i,field,val)=>{
@@ -1211,7 +1654,7 @@ function TabNavegacion({p,set,tnEntregadas}) {
       <div className="card">
         <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
         <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
-        <div style={{marginTop:8,padding:"6px 10px",background:"#EEF2F7",borderRadius:7,fontSize:10,color:C.muted}}>
+        <div style={{marginTop:8,padding:"6px 10px",background:"#EEF2F7",borderRadius:7,fontSize:10,color:C.mid}}>
           Vel. prom. ponderada: <HoverVal value={`${e2.velProm.toFixed(1)}kt`} title="Vel. Promedio Ponderada" lines={[e2.hoverVelProm]}/>
           &nbsp;·&nbsp; Consumo total: <strong style={{fontFamily:"DM Mono,monospace"}}>{e2.combNavTotal.toFixed(1)}T</strong> (interpolado de tabla Contrato Barco)
         </div>
@@ -1266,7 +1709,7 @@ function TabDescarga({p,set,tnEntregadas}) {
     {label:"Alquiler predio (acopio)",  eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                              total:sch.costoAlqTotal},
     {label:"Acopio → Neuquén",          eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                total:e3.costoFleteAcopio},
     {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                               total:e3.combPuerto, hover:e3.hoverComb},
-    {label:"Time Charter+Trip.",        eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                            total:e3.fleteEtapa, hover:e3.hoverTC},
+    {label:"Costo diario barco",        eq:`${e3.tReal_dias.toFixed(1)}d×$${Math.round(e3.tc).toLocaleString("es-AR")}/d`,                                                            total:e3.fleteEtapa, hover:e3.hoverTC},
     {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                   total:e3.agencia},
     {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                         total:e3.costoMermaDescarga},
     {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                           total:e3.costoMermaAcopio},
@@ -1579,7 +2022,7 @@ function TabVuelta({p,set,tnEntregadas}) {
   const e4=calcEtapa4(p);
   const costRows=[
     {label:"Combustible lastre",eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,total:e4.combLastre,hover:e4.hoverComb},
-    {label:"Time Charter+Trip.",eq:`${e4.diasNav.toFixed(1)}d×$${e4.tc}/d`,          total:e4.fleteNav,  hover:e4.hoverTC},
+    {label:"Costo diario barco",eq:`${e4.diasNav.toFixed(1)}d×$${Math.round(e4.tc).toLocaleString("es-AR")}/d`,          total:e4.fleteNav,  hover:e4.hoverTC},
     {label:"TOTAL ETAPA 4",     eq:"Σ costos vuelta en lastre",                      total:e4.costoTotal,hover:e4.hoverTotal,isTotal:true},
   ];
   return (
@@ -1632,7 +2075,7 @@ function TabMC({p,set,resultado,setResultado}) {
   const baseDe=(v)=>{
     switch(v.id){
       case "vlsfo":    return getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-      case "tc":       return p.barco_timeCharter;
+      case "tc":       return p[hireKey(p)];
       case "espBB":    return p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;
       case "espZ":     return p.des_esperaZarateDias;
       case "espCarga": return p.cap_esperaDias;
@@ -1704,7 +2147,7 @@ function TabMC({p,set,resultado,setResultado}) {
     const base=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
     switch(v.id){
       case "vlsfo":   return `$${(base-2*s).toFixed(0)} – $${(base+2*s).toFixed(0)}`;
-      case "tc":      return `$${(p.barco_timeCharter-2*s).toFixed(0)} – $${(p.barco_timeCharter+2*s).toFixed(0)}`;
+      case "tc":      return `$${(p[hireKey(p)]-2*s).toFixed(0)} – $${(p[hireKey(p)]+2*s).toFixed(0)}`;
       case "velFact": return `${((1-2*s)*100).toFixed(0)}% – ${((1+2*s)*100).toFixed(0)}%`;
       case "espBB": {const avg=p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;return `${Math.max(0,avg-2*s).toFixed(1)} – ${(avg+2*s).toFixed(1)} d`;}
       case "espZ":    return `${Math.max(0,p.des_esperaZarateDias-2*s).toFixed(1)} – ${(p.des_esperaZarateDias+2*s).toFixed(1)} d`;
@@ -1764,7 +2207,7 @@ function TabMC({p,set,resultado,setResultado}) {
                     {/* Valor base */}
                     <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid,whiteSpace:"nowrap"}}>
                       {v.id==="vlsfo" && `$${getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico)}/T`}
-                      {v.id==="tc"      && `$${p.barco_timeCharter.toLocaleString()}/d`}
+                      {v.id==="tc"      && `$${p[hireKey(p)].toLocaleString()}/d (${hireLabel(p)})`}
                       {v.id==="velFact" && "100%"}
                       {v.id==="espBB"   && `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom.`}
                       {v.id==="espZ"    && `${p.des_esperaZarateDias}d`}
@@ -1972,7 +2415,7 @@ function TabMC({p,set,resultado,setResultado}) {
                     {[
                       {k:"arena",    label:"Precio arena en origen",  color:C.navy},
                       {k:"mermas",   label:"Mermas totales",           color:C.red},
-                      {k:"barco",    label:"Barco (TC+Trip+Misc)",     color:C.blue},
+                      {k:"barco",    label:"Barco (costo diario)",     color:C.blue},
                       {k:"comb",     label:"Combustible total",        color:C.orange},
                       {k:"agZarate", label:"Agencia Zárate",           color:C.navy},
                       {k:"agBB",     label:"Agencia BB",               color:C.navy},
@@ -2050,13 +2493,17 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         {l:"Distancia",       v:`${e0.totalMn?.toFixed(0)||"—"}mn`},
         {l:"Combustible",     v:`${e0.combTotal.toFixed(1)}T`},
         {l:"Limpieza bodega", v:`$${(p.barco_limpiezaBodega||0).toLocaleString()}`},
-        {l:"Import./Waiver",  v:`$${(p.barco_importacionWaiver||0).toLocaleString()}`},
+        {l:"Import./Waiver",  v:`$${(e0.importacionWaiver||0).toLocaleString()}`},
       ],
       rows:[
         {label:"Combustible lastre",    eq:`${e0.combTotal.toFixed(1)}T×$${e0.vlsfo}`,   total:e0.combCosto,         hover:e0.hoverComb},
-        {label:"Time Charter+Trip+Misc",eq:`${e0.diasNav.toFixed(1)}d×$${e0.tc}/d`,      total:e0.fleteCosto,        hover:e0.hoverTC},
+        {label:"Costo diario barco",eq:`${e0.diasNav.toFixed(1)}d×$${Math.round(e0.tc).toLocaleString("es-AR")}/d`,      total:e0.fleteCosto,        hover:e0.hoverTC},
         {label:"Limpieza bodega",       eq:"por escala",                                  total:e0.limpiezaBodega,    hover:[e0.hoverTotal[2]]},
         {label:"Importación/Waiver",    eq:"por escala",                                  total:e0.importacionWaiver, hover:[e0.hoverTotal[3]]},
+        ...(e0.movInicio+e0.movFin>0 ? [
+          {label:"Movilización + adecuación", eq:"inicio de contrato", total:e0.movInicio, hover:[`Movilización $${(p.bbc_movilizacion||0).toLocaleString("es-AR")} + adecuación $${(p.bbc_adecuacion||0).toLocaleString("es-AR")}`]},
+          {label:"Desmovilización",           eq:"fin de contrato",    total:e0.movFin,    hover:["Contrato de un viaje: se carga en este viaje. En el multi-viaje va al último."]},
+        ] : []),
       ],
       subtotal:e0.costoTotal, dias:e0.diasNav,
     },
@@ -2074,7 +2521,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         {label:"Merma carga",         eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                                  total:e1.costoMerma,   hover:[e1.hoverTotal[1]]},
         {label:"Opex carga",          eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`,              total:e1.costoOpex,    hover:[e1.hoverTotal[2]]},
         {label:"Combustible puerto",  eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`,         total:e1.combPuerto,   hover:e1.hoverComb},
-        {label:"Time Charter+Trip.",  eq:`${e1.tReal_dias.toFixed(1)}d×$${e1.tc}/d`,                                       total:e1.fleteEtapa,   hover:e1.hoverTC},
+        {label:"Costo diario barco",  eq:`${e1.tReal_dias.toFixed(1)}d×$${Math.round(e1.tc).toLocaleString("es-AR")}/d`,                                       total:e1.fleteEtapa,   hover:e1.hoverTC},
         {label:"Agencia Zárate",      eq:"desde ítems Ag. Zárate",                                                         total:e1.agencia,      hover:[e1.hoverTotal[5]]},
       ],
       subtotal:e1.costoTotal, dias:e1.tReal_dias,
@@ -2089,7 +2536,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
       ],
       rows:[
         {label:"Combustible ida",     eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,  total:e2.combNav,  hover:e2.hoverComb},
-        {label:"Time Charter+Trip.",  eq:`${e2.diasNav.toFixed(1)}d×$${e2.tc}/d`,        total:e2.fleteNav, hover:e2.hoverTC},
+        {label:"Costo diario barco",  eq:`${e2.diasNav.toFixed(1)}d×$${Math.round(e2.tc).toLocaleString("es-AR")}/d`,        total:e2.fleteNav, hover:e2.hoverTC},
       ],
       subtotal:e2.costoTotal, dias:e2.diasNav,
     },
@@ -2110,7 +2557,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         {label:"Alquiler predio (acopio)",  eq:`${(e3.sch?.Tn_calesitas||0).toFixed(0)}Tn × $${(p.des_alquilerPredioUSDTn||0).toFixed(2)}/Tn`,            total:(e3.sch?.costoAlqTotal||0)},
         {label:"Flete acopio → Neuquén",    eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                    total:e3.costoFleteAcopio},
         {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                                   total:e3.combPuerto,   hover:e3.hoverComb},
-        {label:"Time Charter+Trip.",        eq:`${e3.tReal_dias.toFixed(1)}d×$${e3.tc}/d`,                                                                total:e3.fleteEtapa,   hover:e3.hoverTC},
+        {label:"Costo diario barco",        eq:`${e3.tReal_dias.toFixed(1)}d×$${Math.round(e3.tc).toLocaleString("es-AR")}/d`,                                                                total:e3.fleteEtapa,   hover:e3.hoverTC},
         {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                       total:e3.agencia},
         {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,                             total:e3.costoMermaDescarga},
         {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(2)}/Tn eq.`,                               total:e3.costoMermaAcopio||e3.mermaAcopio_Tn*e3.precioArenaEq},
@@ -2128,7 +2575,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         <KPI label="Días totales"  value={`${totEv.diasTotales.toFixed(1)}d`}        color={C.navy}/>
         <KPI label="Costo total"   value={`$${(totEv.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
         <KPI label="VLSFO"         value={`$${e1.vlsfo}/T`}                        color={C.orange}/>
-        <KPI label="TC+Trip."      value={`$${e1.tc.toLocaleString()}/d`}          color={C.mid}/>
+        <KPI label="Barco / día"   value={`$${Math.round(e1.tc).toLocaleString("es-AR")}/d`}          color={C.mid}/>
       </div>
 
       {/* Bloque por etapa */}
@@ -2268,7 +2715,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
           {l:"Merma de acopio",              v:costoMermaAcopio,    c:"#D97706"},
         ];
         const filasLog = [
-          {l:"Barco (TC+Trip+Misc, todas etapas)", v:e0.fleteCosto + e1.fleteEtapa + e2.fleteNav + e3.fleteEtapa, c:C.navy},
+          {l:"Barco (costo diario, todas etapas)", v:e0.fleteCosto + e1.fleteEtapa + e2.fleteNav + e3.fleteEtapa, c:C.navy},
           {l:"Combustible (todas etapas)",          v:e0.combCosto + e1.combPuerto + e2.combNav + e3.combPuerto,   c:C.orange},
           {l:"Agencia Zárate",                      v:e1.agencia || 0,     c:C.blue},
           {l:"Agencia BB",                          v:e3.agencia || 0,     c:C.blue},
@@ -2317,7 +2764,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
                   <tbody>
                     {[
-                      {l:"Barco (TC+Trip+Misc)", v: (e0.fleteCosto||0)+(e1.fleteEtapa||0)+(e2.fleteNav||0)+(e3.fleteEtapa||0)},
+                      {l:"Barco (costo diario)", v: (e0.fleteCosto||0)+(e1.fleteEtapa||0)+(e2.fleteNav||0)+(e3.fleteEtapa||0)},
                       {l:"Combustible total",    v: (e0.combCosto||0)+(e1.combPuerto||0)+(e2.combNav||0)+(e3.combPuerto||0)},
                       {l:"Agencia Zárate",       v: e1.agencia||0},
                       {l:"Agencia BB",           v: e3.agencia||0},
@@ -2361,7 +2808,9 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         const mv  = calcNViajes(p, tot);
         const n   = mv.nViajes;
         const fmt = v => `$${v.toLocaleString("es-AR",{maximumFractionDigits:0})}`;
-        const diasW = p.barco_diasWaiver || 30;
+        const diasW = diasPeriodoMultiViaje(p);
+        const bbc   = esBBC(p);
+        const nomPeriodo = bbc ? "Contrato" : "Waiver";
 
         // Construir filas por etapa para cada viaje
         const filas = [];
@@ -2382,9 +2831,9 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
               label:"Viaje a Pto. Carga (lastre, Río Grande → Zárate)",
               dias: tot.e0.diasNav,
               diasWaiver: 0,
-              costo: tot.e0.costoTotal,
+              costo: tot.e0.costoTotal - tot.e0.movFin,
               tn: tot.tnEntregadas,
-              nota: `Waiver ${fmt(p.barco_importacionWaiver||0)} + Limpieza ${fmt(p.barco_limpiezaBodega||0)} (únicos)`,
+              nota: bbc ? `Limpieza ${fmt(p.barco_limpiezaBodega||0)}${tot.e0.movInicio>0?` + movilización y adecuación ${fmt(tot.e0.movInicio)}`:""} (únicos) — BBC sin waiver` : `Waiver ${fmt(p.barco_importacionWaiver||0)} + Limpieza ${fmt(p.barco_limpiezaBodega||0)} (únicos)`,
             });
           } else {
             // Vuelta BB→ZTE — sí cuenta waiver (cabotaje)
@@ -2401,9 +2850,8 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
 
           // Carga
           diasWaiverAcum += tot.e1.tReal_dias;
-          const costoCarga = esV1
-            ? tot.e1.costoTotal
-            : tot.e1.costoTotal - (p.barco_importacionWaiver||0) - (p.barco_limpiezaBodega||0);
+          // Waiver y limpieza están en el viaje a puerto de carga, no en la carga
+          const costoCarga = tot.e1.costoTotal;
           filas.push({
             tipo:"etapa",
             label:`Carga ${i} — Zárate`,
@@ -2411,7 +2859,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
             diasWaiver: tot.e1.tReal_dias,
             costo: costoCarga,
             tn: tot.tnEntregadas,
-            nota: !esV1 ? "Waiver y limpieza ya pagados en V1" : null,
+            nota: !esV1 ? (bbc ? "Limpieza ya pagada en V1" : "Waiver y limpieza ya pagados en V1") : null,
           });
 
           // Navegación ida
@@ -2436,20 +2884,25 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
             tn: tot.tnEntregadas,
           });
 
-          costoAcum += esV1 ? tot.costoTotal : mv.costoViajeAdicional;
+          costoAcum += esV1 ? tot.costoTotal - tot.e0.movFin : mv.costoViajeAdicional;
           tnAcum    += tot.tnEntregadas;
+        }
+
+        if (tot.e0.movFin > 0) {
+          filas.push({ tipo:"etapa", label:"Desmovilización (fin de contrato)", dias:0, diasWaiver:0, costo:tot.e0.movFin, tn:tot.tnEntregadas });
+          costoAcum += tot.e0.movFin;
         }
 
         const diasTotalesContrato = tot.diasTotales + (n-1) * mv.diasCiclo2;
 
         return (
           <div className="card" style={{borderTop:`3px solid #0891B2`}}>
-            <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — Waiver {diasW} días</div>
+            <div className="ct" style={{color:"#0891B2"}}>🔁 Análisis Multi-Viaje — {nomPeriodo} {diasW} días</div>
 
             {/* KPIs */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
               {[
-                {l:"Waiver",         v:`${diasW}d`},
+                {l:nomPeriodo,       v:`${diasW}d`},
                 {l:"Ciclo viaje 1",  v:`${mv.diasCiclo1.toFixed(1)}d`, sub:"Carga+Nav+Desc"},
                 {l:"Ciclo viaje 2+", v:`${mv.diasCiclo2.toFixed(1)}d`, sub:`Vuelta(${mv.diasVuelta.toFixed(1)}d)+C+N+D`},
                 {l:"Viajes posibles",v:`${n}`, big:true, good:n>1},
@@ -2464,13 +2917,13 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
 
             {n > 1 && (
               <div style={{marginBottom:10,padding:"8px 12px",background:"#F0FDF4",border:"1px solid #86EFAC",borderRadius:8,fontSize:10,color:"#166534"}}>
-                <strong>Costos compartidos (1 sola vez):</strong> Waiver {fmt(p.barco_importacionWaiver||0)} + Limpieza {fmt(p.barco_limpiezaBodega||0)} = <strong>{fmt(mv.ahorroTotal)}</strong> ahorrado vs {n} viajes independientes
+                <strong>Costos compartidos (1 sola vez):</strong> {bbc ? "" : `Waiver ${fmt(p.barco_importacionWaiver||0)} + `}Limpieza {fmt(p.barco_limpiezaBodega||0)} = <strong>{fmt(mv.ahorroTotal)}</strong> ahorrado vs {n} viajes independientes{tot.e0.movInicio+tot.e0.movFin>0 ? <> · Movilización y adecuación {fmt(tot.e0.movInicio)} al inicio y desmovilización {fmt(tot.e0.movFin)} al final, una vez por contrato</> : null}
               </div>
             )}
 
             {n === 1 && (
               <div style={{marginBottom:10,padding:"8px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
-                Con {diasW}d de waiver y ciclo de {mv.diasCiclo1.toFixed(1)}d solo entra 1 viaje. Para el segundo necesitarías ≥{(mv.diasCiclo1+mv.diasCiclo2).toFixed(1)}d de waiver.
+                Con {diasW}d de {bbc ? "período" : "waiver"} y ciclo de {mv.diasCiclo1.toFixed(1)}d solo entra 1 viaje. Para el segundo necesitarías ≥{(mv.diasCiclo1+mv.diasCiclo2).toFixed(1)}d.
               </div>
             )}
 
@@ -2481,7 +2934,7 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
                   <tr>
                     <th>Etapa</th>
                     <th style={{textAlign:"right",width:60}}>Días</th>
-                    <th style={{textAlign:"right",width:80}}>Días Waiver</th>
+                    <th style={{textAlign:"right",width:80}}>Días {nomPeriodo}</th>
                     <th style={{textAlign:"right",width:110}}>Total USD</th>
                     <th style={{textAlign:"right",width:70}}>USD/Tn</th>
                   </tr>
@@ -3436,7 +3889,7 @@ function TabSensibilidades({p}) {
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
 
     const tn  = e3.tnEntregadas;
-    const tc  = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+    const tc  = costoDiarioBarco(p).total;
 
     // Días totales por etapa
     const diasE0 = e0.diasNav || 0;
@@ -3458,7 +3911,7 @@ function TabSensibilidades({p}) {
     const otros         = tot - tcTotal - combTotal - agZarate - agBB - camionesDirect - camionesAcopio - opex - arena - repo;
 
     const cats = [
-      { label:"Time Charter",        usd: tcTotal,        icon:"🚢" },
+      { label:"Barco (costo diario)",usd: tcTotal,        icon:"🚢" },
       { label:"Combustible",         usd: combTotal,      icon:"⛽" },
       { label:"Arena + Mermas",      usd: arena,          icon:"⛏️" },
       { label:"Camiones (directos)", usd: camionesDirect, icon:"🚛" },
@@ -3475,7 +3928,7 @@ function TabSensibilidades({p}) {
 
   // ─── GOAL SEEK STATE ──────────────────────────────────────────────────
   const GS_VARS = [
-    { id:"barco_timeCharter",       label:"Time Charter",         unit:"USD/día", icon:"🚢" },
+    { id:hireKey(p),                label:hireLabel(p),           unit:"USD/día", icon:"🚢" },
     { id:"nav_vlsfoManual",         label:"Precio VLSFO",         unit:"USD/T",   icon:"⛽" },
     { id:"des_costoCamionesDirUSDTn",label:"Camiones directos",   unit:"USD/Tn",  icon:"🚛" },
     { id:"des_costoFleteAcopioUSDTn",label:"Flete acopio Neuquén",unit:"USD/Tn",  icon:"🔄" },
@@ -3487,7 +3940,8 @@ function TabSensibilidades({p}) {
 
   const [gsTarget, setGsTarget]   = useState(() => Math.round(base.usdTn * 0.9));
   const [gsVars, setGsVars]       = useState(() =>
-    GS_VARS.reduce((acc,v) => ({ ...acc, [v.id]: { activa: false, peso: 100/GS_VARS.length, tope: 10 } }), {})
+    // Incluye las dos variables de alquiler: la que aplica depende de la modalidad del barco
+    [...GS_VARS, {id:"barco_timeCharter"}, {id:"bbc_hire"}].reduce((acc,v) => ({ ...acc, [v.id]: { activa: false, peso: 100/GS_VARS.length, tope: 10 } }), {})
   );
 
   // Normaliza pesos para que sumen 100 entre activas
@@ -3656,11 +4110,11 @@ function TabSensibilidades({p}) {
       icon: "🚢",
       items: [
         {
-          label: "Time Charter",
+          label: hireLabel(p),
           unidad: "USD/día",
           deltas: [-2000, -1000, +1000, +2000, +5000],
-          fn: d => calcConDelta({ barco_timeCharter: Math.max(0, p.barco_timeCharter + d) }),
-          base_val: p.barco_timeCharter,
+          fn: d => calcConDelta({ [hireKey(p)]: Math.max(0, p[hireKey(p)] + d) }),
+          base_val: p[hireKey(p)],
           nota: "Impacta en todas las etapas proporcional a los días totales del ciclo.",
         },
         {
@@ -4071,14 +4525,17 @@ function TabSensibilidades({p}) {
 
 // ─── MAIN ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab,setTab]=useState("barco");
+  const [tab,setTab]=useState("alc");
   const [params,setParams]=useState(DEFAULT_PARAMS);
   const [mcResultado,setMcResultado]=useState(null);
   const set=useCallback((k,v)=>setParams(prev=>({...prev,[k]:v})),[]);
   const tot=useMemo(()=>calcTotal(params),[params]);
+  const contrato=useMemo(()=>calcNViajes(params,tot),[params,tot]);
 
   const tabMap={
+    alc:  <TabAlcance    p={params} set={set}/>,
     barco:<TabBarco      p={params} set={set}/>,
+    crew: <TabTripulacion p={params} set={set}/>,
     repo: <TabRepo       p={params} set={set}/>,
     az:   <TabAgenciaZarate p={params} set={set}/>,
     e1:   <TabCarga      p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
@@ -4095,9 +4552,10 @@ export default function App() {
   };
 
   // Orden de secciones para impresión: Evaluación primero, luego el resto
-  const printOrder = ['ev','barco','repo','az','e1','e2','abb','e3','mc','sens'];
+  const printOrder = ['ev','alc','barco','crew','repo','az','e1','e2','abb','e3','mc','sens']
+    .filter(id => tabVisible(TABS.find(t => t.id === id), params));
   const printLabels = {
-    ev:'📊 Evaluación',barco:'🚢 Contrato Barco',repo:'🛳️ Viaje a Puerto Carga',
+    ev:'📊 Evaluación',alc:'✅ Alcance',barco:'🚢 Contrato Barco',crew:'👷 Tripulación',repo:'🛳️ Viaje a Puerto Carga',
     az:'⚓ Ag. Puerto Carga',e1:'⚓ Carga',e2:'🧭 Nav. a Puerto Descarga',
     abb:'⚓ Ag. Puerto Descarga',e3:'📦 Descarga',mc:'🎲 Monte Carlo',sens:'📐 Sensibilidades'
   };
@@ -4114,12 +4572,18 @@ export default function App() {
           <div className="hdr-sub">Terra Mare Services</div>
         </div>
         <div className="hdr-kpis">
-          {[
+          {(esBBC(params) ? [
+            // BBC: el número que importa es el del contrato completo (movilización repartida en todos los viajes)
+            {l:`USD/Tn contrato · ${contrato.nViajes} ${contrato.nViajes===1?"viaje":"viajes"}`,v:`$${contrato.usdTnSistema.toFixed(1)}`},
+            {l:"Tn contrato",v:contrato.tnTotales.toFixed(0)},
+            {l:"Días contrato",v:`${contrato.diasTotales.toFixed(1)}d`},
+            {l:"Total contrato",v:`$${(contrato.costoTotalSistema/1000).toFixed(0)}k`},
+          ] : [
             {l:"USD/Tn",v:`$${tot.usdTn.toFixed(1)}`},
             {l:"Tn entregadas",v:tot.tnEntregadas.toFixed(0)},
             {l:"Días",v:`${tot.diasTotales.toFixed(1)}d`},
             {l:"Total",v:`$${(tot.costoTotal/1000).toFixed(0)}k`},
-          ].map(({l,v})=>(
+          ]).map(({l,v})=>(
             <div key={l} className="hdr-kpi">
               <div className="hdr-kpi-v">{v}</div>
               <div className="hdr-kpi-l">{l}</div>
@@ -4145,7 +4609,7 @@ export default function App() {
         <button className="back" style={{marginLeft:6}} onClick={()=>supabase.auth.signOut()}>Salir</button>
       </header>
       <nav className="tabs">
-        {TABS.map(t=>(
+        {TABS.filter(t=>tabVisible(t,params)).map(t=>(
           <button key={t.id} className={`tab ${tab===t.id?"on":""}`} onClick={()=>setTab(t.id)}>
             {t.icon} {t.label}
           </button>
@@ -4154,7 +4618,7 @@ export default function App() {
       <div className="page" style={{display:'contents'}}>
         {/* Vista normal pantalla */}
         <div className="screen-only" style={{display:'block'}}>
-          {tabMap[tab]}
+          {tabMap[tabVisible(TABS.find(t=>t.id===tab)||{},params)?tab:"alc"]}
         </div>
         {/* Vista impresión — se renderiza solo al momento de imprimir, con params actuales */}
         {printReady && (
