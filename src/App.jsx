@@ -965,7 +965,7 @@ function TabAlcance({p,set}) {
     barco:       e0.fleteCosto+e1.fleteEtapa+e2.fleteNav+e3.fleteEtapa,
     tripulacion: bbc?cd.tripulacion*full.diasTotales:0,
     combustible: e0.combCosto+e1.combPuerto+e2.combNav+e3.combPuerto,
-    repo:        e0.costoTotal,
+    repo:        e0.costoViaje,
     agenciaCarga:e1.agencia,
     agenciaDescarga:e3.agencia,
     arena:       e1.costoArena+e1.costoMerma+e3.costoMermaDescarga+e3.costoMermaAcopio,
@@ -1669,7 +1669,7 @@ function TabDescarga({p,set,tnEntregadas}) {
   const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
-  const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
+  const costoArenaEq=e1.tnPostCarga>0?(e0.costoViaje+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},e1.tnPostCarga);
   const sch=e3.sch;
   const densidad=p.cap_densidadArena||1.45;
@@ -3654,7 +3654,7 @@ function TabAgenciaBB({p,set}) {
   const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
-  const costoArenaEq=e1.tnPostCarga>0?(e0.costoTotal+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
+  const costoArenaEq=e1.tnPostCarga>0?(e0.costoViaje+e1.costoTotal+e2.costoTotal)/e1.tnPostCarga:(p.cap_precioArenaOrigen||13.5);
   const e3=calcEtapa3({...p,_costoArenaEq:costoArenaEq},e1.tnPostCarga);
   const tReal=e3.tReal_dias;
   const diasDisp=p.abb_redondearDias?Math.ceil(tReal):tReal;
@@ -3884,7 +3884,7 @@ function TabSensibilidades({p}) {
     const e0 = calcEtapaRepo(p);
     const e1 = calcEtapa1(p);
     const e2 = calcEtapa2(p);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoViaje+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...p, _costoArenaEq: eq}, e1.tnPostCarga);
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
 
@@ -4006,7 +4006,7 @@ function TabSensibilidades({p}) {
       const e0b = calcEtapaRepo(pp);
       const e1b = calcEtapa1(pp);
       const e2b = calcEtapa2(pp);
-      const eqb = e1b.tnPostCarga > 0 ? (e0b.costoTotal+e1b.costoTotal+e2b.costoTotal)/e1b.tnPostCarga : pp.cap_precioArenaOrigen;
+      const eqb = e1b.tnPostCarga > 0 ? (e0b.costoViaje+e1b.costoTotal+e2b.costoTotal)/e1b.tnPostCarga : pp.cap_precioArenaOrigen;
       const e3b = calcEtapa3({...pp, _costoArenaEq: eqb}, e1b.tnPostCarga);
       const totb = e0b.costoTotal+e1b.costoTotal+e2b.costoTotal+e3b.costoTotal;
       return totb / e3b.tnEntregadas;
@@ -4053,7 +4053,7 @@ function TabSensibilidades({p}) {
     const e0 = calcEtapaRepo(pp);
     const e1 = calcEtapa1(pp);
     const e2 = calcEtapa2(pp);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoTotal+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
+    const eq  = e1.tnPostCarga > 0 ? (e0.costoViaje+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
     const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, e1.tnPostCarga);
     const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
     return tot / e3.tnEntregadas;
