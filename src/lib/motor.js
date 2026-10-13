@@ -1189,7 +1189,7 @@ export function calcEtapaVuelta(p) {
     return acc + (hs / 24) * consumoDia;
   }, 0);
 
-  const combLastre = combLastreTotal * vlsfo;
+  const combLastre = combLastreTotal * vlsfo * inc(p,"combustible");
   const fleteNav   = nav.diasNav * tc;
   const costoTotal = combLastre + fleteNav;
 
@@ -1227,16 +1227,10 @@ export function calcNViajes(p, tot) {
   const diasE3  = tot.e3.tReal_dias;
   const diasCiclo1 = diasE1 + diasE2 + diasE3;
 
-  // Vuelta BB→ZTE: misma ruta que E2, en lastre — mismos días, consumo lastre
-  const vlsfo = tot.e2.vlsfo;
-  const tc    = tot.e2.tc;
-  const combVuelta = (p.nav_tramos || []).reduce((acc, t) => {
-    const dist = (t.distancia > 0) ? t.distancia : (t.wpIds ? calcDistanciaTramo(t) : 0);
-    const hs   = dist / t.velocidad;
-    return acc + (hs / 24) * interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
-  }, 0);
-  const costoVuelta = combVuelta * vlsfo * inc(p,"combustible") + diasE2 * tc;
-  const diasVuelta  = diasE2;
+  // Vuelta BB→ZTE en lastre: ruta y velocidades de la pestaña "Vuelta en lastre" (vta_tramos)
+  const e4 = calcEtapaVuelta(p);
+  const costoVuelta = e4.costoTotal;
+  const diasVuelta  = e4.diasNav;
 
   // Ciclo viaje 2+: vuelta + ciclo1
   const diasCiclo2 = diasVuelta + diasCiclo1;
