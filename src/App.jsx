@@ -30,6 +30,7 @@ const C = {
   navy:"#213363",blue:"#235C96",mid:"#6381A7",light:"#A5B5CC",
   bg:"#EEF2F7",surface:"#FFFFFF",border:"#D6E0ED",
   gold:"#B07D0A",green:"#166534",red:"#991B1B",orange:"#92400E",
+  muted:"#64748B",  // se usaba en varias pestañas sin estar definido
   warn:"#FEF3C7",warnBorder:"#D4B84A",
   p10:"#166534",p50:"#B07D0A",p90:"#991B1B",
 };
@@ -561,7 +562,7 @@ function VLSFOWidget({p,set}) {
       </div>
       <div className="vlsfo-refs">
         {[
-          {l:"Hoy",    v:`$${stats.actual}`},
+          {l:"Último", v:`$${stats.actual}`},
           {l:"12M",   v:`$${stats.prom12m.toFixed(0)}`},
           {l:"5 años",v:`$${stats.prom5a.toFixed(0)}`},
           {l:"Mín",   v:`$${stats.min5a}`},
@@ -3072,7 +3073,26 @@ function TabCombustible({p,set}) {
     set("vlsfo_historico",p.vlsfo_historico.filter(h=>h.año!==último));
   };
 
-  const reset=()=>set("vlsfo_historico",VLSFO_HISTORICO_DEFAULT);
+  const reset=()=>{
+    if(!window.confirm("¿Volver la tabla a los valores por defecto? Se pierden los precios cargados en este escenario.")) return;
+    set("vlsfo_historico",VLSFO_HISTORICO_DEFAULT);
+  };
+
+  // Antigüedad del último dato respecto de hoy
+  const hoy=new Date();
+  const mesesAtraso=stats.ultimo?(hoy.getFullYear()-stats.ultimo.año)*12+(hoy.getMonth()-stats.ultimo.mes):0;
+  const ultimoTxt=stats.ultimo?`${MESES[stats.ultimo.mes]} ${stats.ultimo.año}`:"—";
+
+  // Valores atípicos: se apartan más de 40% del promedio del mes anterior y el siguiente con dato
+  const conDato=p.vlsfo_historico.filter(h=>h.precio>0);
+  const atipicos=new Map();
+  conDato.forEach((h,i)=>{
+    const vec=[conDato[i-1],conDato[i+1]].filter(Boolean).map(x=>x.precio);
+    if(vec.length<2) return;
+    const ref=vec.reduce((s,x)=>s+x,0)/vec.length;
+    const dev=(h.precio-ref)/ref;
+    if(Math.abs(dev)>0.4) atipicos.set(`${h.año}-${h.mes}`,{...h,ref,dev});
+  });
 
   // Chart data — solo puntos con precio > 0
   const chartData=p.vlsfo_historico
@@ -3091,15 +3111,17 @@ function TabCombustible({p,set}) {
 
   return (
     <div>
+      <VLSFOWidget p={p} set={set}/>
+
       {/* ── STATS PANEL ── */}
       <div className="card" style={{background:"#1E293B",borderColor:"#334155"}}>
         <div style={{fontSize:8,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>VLSFO 0.5%S Santos (Brasil)</div>
         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-          {[{l:"Actual",v:`$${stats.actual}/T`,c:"#fff"},
+          {[{l:`Último dato (${ultimoTxt})`,v:`$${stats.actual}/T`,c:"#fff"},
             {l:"Prom 12M",v:`$${stats.prom12m.toFixed(0)}/T`,c:"#93C5FD"},
-            {l:"Prom 24M (MC base)",v:`$${stats.prom24m.toFixed(0)}/T`,c:"#FCD34D"},
+            {l:"Prom 24M",v:`$${stats.prom24m.toFixed(0)}/T`,c:"#FCD34D"},
             {l:"Prom 5 años",v:`$${stats.prom5a.toFixed(0)}/T`,c:"#93C5FD"},
-            {l:"Rango 24M (MC)",v:`$${stats.min24m}–$${stats.max24m}`,c:"#86EFAC"},
+            {l:"Rango 24M (MC histórica)",v:`$${stats.min24m}–$${stats.max24m}`,c:"#86EFAC"},
             {l:"σ 24M",v:`$${stats.sigma24m.toFixed(0)}/T`,c:"#FCD34D"},
             {l:"vs Prom 12M",v:`${stats.pctVsPromedio12m>0?"+":""}${stats.pctVsPromedio12m.toFixed(1)}%`,c:stats.pctVsPromedio12m>10?"#FCA5A5":"#86EFAC"},
           ].map(({l,v,c})=>(
@@ -3111,7 +3133,20 @@ function TabCombustible({p,set}) {
         </div>
       </div>
 
-      <div className="warn-note">Fuente: <a href="https://shipandbunker.com/prices/am/samatl/br-ssz-santos" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Santos ↗</a> — actualizar mensualmente con el máximo del mes.</div>
+      <div className="warn-note">Fuente: <a href="https://shipandbunker.com/prices/am/samatl/br-ssz-santos" target="_blank" rel="noreferrer" style={{color:C.navy}}>Ship & Bunker Santos ↗</a> — actualizar mensualmente con el máximo del mes.
+        Los precios se guardan con cada escenario: al cargarlos acá, guardá el escenario para conservarlos.</div>
+      {mesesAtraso>1&&(
+        <div style={{marginBottom:12,padding:"8px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
+          ⚠️ El último precio cargado es de <strong>{ultimoTxt}</strong> ({mesesAtraso} meses atrás). "Último dato" y los promedios no incluyen los meses siguientes.
+        </div>
+      )}
+      {atipicos.size>0&&(
+        <div style={{marginBottom:12,padding:"8px 12px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,fontSize:10,color:C.red}}>
+          Revisar {atipicos.size===1?"un valor que se aparta":`${atipicos.size} valores que se apartan`} más de 40% de los meses vecinos (marcados en rojo en la tabla):{" "}
+          {[...atipicos.values()].map(a=>`${MESES[a.mes]} ${a.año}: $${a.precio} (vecinos ~$${a.ref.toFixed(0)})`).join(" · ")}.
+          Puede ser un dato mal cargado o un pico real del mercado.
+        </div>
+      )}
 
       {/* ── GRÁFICO ── */}
       <div className="card">
@@ -3200,6 +3235,7 @@ function TabCombustible({p,set}) {
                   <td style={{fontWeight:700,color:C.navy}}>{m}</td>
                   {añosConDefault.map(a=>{
                     const val=getVal(a,mi);
+                    const at=atipicos.get(`${a}-${mi}`);
                     return(
                       <td key={a} style={{padding:"2px 3px"}}>
                         <input
@@ -3208,7 +3244,8 @@ function TabCombustible({p,set}) {
                           placeholder="—"
                           step={5} min={0} max={3000}
                           onChange={e=>upd(a,mi,e.target.value)}
-                          style={cellStyle(val)}
+                          title={at?`Se aparta ${(at.dev*100).toFixed(0)}% del promedio de los meses vecinos (~$${at.ref.toFixed(0)})`:undefined}
+                          style={{...cellStyle(val),...(at?{border:`2px solid ${C.red}`,color:C.red}:{})}}
                         />
                       </td>
                     );
@@ -3377,7 +3414,7 @@ function TabEscenarios({p, onLoad}) {
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar"}</button>
           <span style={{fontSize:10,color:C.mid}}>USD/Tn{det.contrato?` (contrato, ${det.nViajes} viajes)`:""}: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}</strong></span>
-          <span style={{fontSize:10,color:C.muted}}>VLSFO: <strong style={{color:C.orange}}>${calcVLSFOStats(p.vlsfo_historico).actual}/T ({VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})</strong></span>
+          <span style={{fontSize:10,color:C.muted}}>VLSFO: <strong style={{color:C.orange}}>${getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico)}/T ({VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})</strong></span>
           {msg&&<span style={{fontSize:10,color:msg.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msg}</span>}
         </div>
       </div>

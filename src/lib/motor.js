@@ -98,6 +98,7 @@ export function calcVLSFOStats(historico) {
   const prom12m  = avg(ultimos12);
   const prom5a   = avg(ultimos60);
   const actual   = precios[precios.length-1];
+  const ultimo   = histValido[histValido.length-1];  // mes del dato más reciente {año, mes}
   const min5a    = Math.min(...ultimos60);
   const max5a    = Math.max(...ultimos60);
   const sigma12m = ultimos12.length > 1
@@ -110,7 +111,7 @@ export function calcVLSFOStats(historico) {
   const min24m   = Math.min(...ultimos24);
   const max24m   = Math.max(...ultimos24);
 
-  return { actual, prom12m, prom24m, prom5a, min5a, max5a, sigma12m, sigma24m, min24m, max24m,
+  return { actual, ultimo: { año: ultimo.año, mes: ultimo.mes }, prom12m, prom24m, prom5a, min5a, max5a, sigma12m, sigma24m, min24m, max24m,
     pctVsPromedio12m: prom12m > 0 ? ((actual-prom12m)/prom12m*100) : 0,
     pctVsPromedio5a:  prom5a  > 0 ? ((actual-prom5a) /prom5a *100) : 0,
   };
@@ -224,7 +225,7 @@ export const CAMPOS_ESPEJO = [
 ];
 
 export const VLSFO_ESCENARIOS = [
-  {id:"hoy",    label:"Valor hoy",       desc:"Precio más reciente"},
+  {id:"hoy",    label:"Último dato",     desc:"Precio del último mes cargado en la tabla"},
   {id:"prom12", label:"Prom. 12 meses",  desc:"Promedio últimos 12 meses"},
   {id:"prom5a", label:"Prom. 5 años",    desc:"Promedio últimos 5 años"},
   {id:"manual", label:"Manual",          desc:"Ingresás el valor vos"},
