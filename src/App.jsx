@@ -48,6 +48,7 @@ const TABS = [
   {id:"e2",    label:"Nav. a Puerto Descarga", icon:"🧭"},
   {id:"abb",   label:"Ag. Puerto Descarga",    icon:"⚓"},
   {id:"e3",    label:"Descarga",               icon:"🏭"},
+  {id:"e4",    label:"Vuelta en lastre",       icon:"↩️"},
   {id:"mc",    label:"Monte Carlo",            icon:"🎲"},
   {id:"ev",    label:"Evaluación",             icon:"📊"},
   {id:"sens",  label:"Sensibilidades",         icon:"📐"},
@@ -2019,7 +2020,7 @@ function TabDescarga({p,set,tnEntregadas}) {
 
 // ─── TAB E4: VUELTA EN LASTRE ──────────────────────────────────────────────
 function TabVuelta({p,set,tnEntregadas}) {
-  const e4=calcEtapa4(p);
+  const e4=calcEtapaVuelta(p);
   const costRows=[
     {label:"Combustible lastre",eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,total:e4.combLastre,hover:e4.hoverComb},
     {label:"Costo diario barco",eq:`${e4.diasNav.toFixed(1)}d×$${Math.round(e4.tc).toLocaleString("es-AR")}/d`,          total:e4.fleteNav,  hover:e4.hoverTC},
@@ -2036,6 +2037,10 @@ function TabVuelta({p,set,tnEntregadas}) {
       </div>
       <div className="card">
         <div className="ct">Ruta Vuelta — Sea White → Zárate (velocidad y consumo editables)</div>
+        <p style={{fontSize:10,color:C.mid,marginBottom:8,lineHeight:1.5}}>
+          Se usa entre viajes consecutivos (viaje 2 en adelante) en el análisis multi-viaje de Evaluación y en el contrato BBC.
+          Un viaje suelto no incluye la vuelta.
+        </p>
         <MapaNavegacion tramos={p.vta_tramos} onUpdate={arr=>set("vta_tramos",arr)} titulo="VUELTA EN LASTRE"/>
       </div>
       <div className="card">
@@ -4551,6 +4556,7 @@ export default function App() {
     e2:   <TabNavegacion p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     abb:  <TabAgenciaBB  p={params} set={set}/>,
     e3:   <TabDescarga   p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
+    e4:   <TabVuelta     p={params} set={set} tnEntregadas={tot.tnEntregadas}/>,
     mc:   <TabMC         p={params} set={set} resultado={mcResultado} setResultado={setMcResultado}/>,
     ev:   <TabEvaluacion p={params} tnEntregadas={tot.tnEntregadas} tot={tot}/>,
     sens: <TabSensibilidades p={params}/>,
@@ -4561,12 +4567,12 @@ export default function App() {
   };
 
   // Orden de secciones para impresión: Evaluación primero, luego el resto
-  const printOrder = ['ev','alc','barco','crew','repo','az','e1','e2','abb','e3','mc','sens']
+  const printOrder = ['ev','alc','barco','crew','repo','az','e1','e2','abb','e3','e4','mc','sens']
     .filter(id => tabVisible(TABS.find(t => t.id === id), params));
   const printLabels = {
     ev:'📊 Evaluación',alc:'✅ Alcance',barco:'🚢 Contrato Barco',crew:'👷 Tripulación',repo:'🛳️ Viaje a Puerto Carga',
     az:'⚓ Ag. Puerto Carga',e1:'⚓ Carga',e2:'🧭 Nav. a Puerto Descarga',
-    abb:'⚓ Ag. Puerto Descarga',e3:'📦 Descarga',mc:'🎲 Monte Carlo',sens:'📐 Sensibilidades'
+    abb:'⚓ Ag. Puerto Descarga',e3:'📦 Descarga',e4:'↩️ Vuelta en lastre',mc:'🎲 Monte Carlo',sens:'📐 Sensibilidades'
   };
 
   // printReady: true solo durante el proceso de impresión
