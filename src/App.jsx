@@ -3256,7 +3256,19 @@ function TabEscenarios({p, onLoad}) {
   const [editNom,setEditNom]=useState("");
   const [editDesc,setEditDesc]=useState("");
   const [dbStatus,setDbStatus]=useState(null); // null | "ok" | "error"
-  const det=calcTotal(p);
+  // TC: un viaje · BBC: contrato completo (igual que el encabezado)
+  const det=evaluarCostos(p);
+  // Modalidad y alcance de un escenario, para mostrarlos en la lista
+  const resumenEsc=(prm)=>{
+    const pp={...DEFAULT_PARAMS,...prm};
+    const alc={...ALCANCE_COMPLETO,...(pp.alcance||{})};
+    const igual=ref=>ALCANCE_BLOQUES.every(b=>b.fijo||!!alc[b.id]===!!ref[b.id]);
+    const alcTxt=igual(ALCANCE_COMPLETO)?"Proyecto completo":igual(ALCANCE_SOLO_BARCO)?"Solo barco":"Alcance a medida";
+    let actual;
+    try{ actual=evaluarCostos(pp); }catch{ actual=null; }  // escenario con datos incompletos
+    return {modalidad:esBBC(pp)?"Bare Boat":"Time Charter", alcTxt, actual};
+  };
+  const confirmar=txt=>window.confirm(txt);
 
   const cargar=async()=>{
     setLoad(true);
@@ -3319,7 +3331,9 @@ function TabEscenarios({p, onLoad}) {
     setTimeout(()=>setMsg(""),4000);
   };
 
-  const eliminar=async(tabla,id)=>{
+  const eliminar=async(tabla,id,nombre)=>{
+    const que=tabla==="escenarios_arena"?"el escenario":"la corrida";
+    if(!confirmar(`¿Eliminar ${que} "${nombre}"? Se borra para todos los usuarios y no se puede deshacer.`)) return;
     const{error}=await supabase.from(tabla).delete().eq("id",id);
     if(error) console.error("Error al eliminar:",error);
     cargar();
@@ -3334,7 +3348,7 @@ function TabEscenarios({p, onLoad}) {
     cancelarEdit();cargar();
   };
   const sobreescribir=async(id,nombre)=>{
-    const det=calcTotal(p);
+    if(!confirmar(`¿Reemplazar los parámetros guardados de "${nombre}" con la configuración actual? No se puede deshacer.`)) return;
     const{error}=await supabase.from("escenarios_arena").update({params:p,usd_tn:parseFloat(det.usdTn.toFixed(1))}).eq("id",id);
     if(error){setMsg("Error: "+error.message);}
     else{setMsg(`✓ Sobreescrito: ${nombre}`);}
@@ -3362,7 +3376,7 @@ function TabEscenarios({p, onLoad}) {
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button className="run" onClick={guardar} disabled={sav}>{sav?"Guardando...":"💾 Guardar"}</button>
-          <span style={{fontSize:10,color:C.muted}}>USD/Tn: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}</strong></span>
+          <span style={{fontSize:10,color:C.mid}}>USD/Tn{det.contrato?` (contrato, ${det.nViajes} viajes)`:""}: <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)}</strong></span>
           <span style={{fontSize:10,color:C.muted}}>VLSFO: <strong style={{color:C.orange}}>${calcVLSFOStats(p.vlsfo_historico).actual}/T ({VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})</strong></span>
           {msg&&<span style={{fontSize:10,color:msg.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msg}</span>}
         </div>
@@ -3430,19 +3444,25 @@ function TabEscenarios({p, onLoad}) {
                   onClick={()=>{if(e.params&&onLoad){onLoad({...DEFAULT_PARAMS,...e.params});setMsg(`✓ Cargado: ${e.nombre}`);setTimeout(()=>setMsg(""),3000);}}}
                   onMouseEnter={ev=>ev.currentTarget.style.background="#E5EBF5"}
                   onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                  {(()=>{ const r=e.params?resumenEsc(e.params):null; const difiere=r?.actual&&e.usd_tn!=null&&Math.abs(r.actual.usdTn-e.usd_tn)>=0.05; return (<>
                   <div>
                     <div style={{fontSize:11,fontWeight:700,color:C.navy}}>{e.nombre}</div>
                     {e.descripcion&&<div style={{fontSize:9,color:C.mid,marginTop:1}}>{e.descripcion}</div>}
+                    {r&&<div style={{fontSize:9,color:C.blue,marginTop:2,fontWeight:600}}>{r.modalidad} · {r.alcTxt}{r.actual?.contrato?` · contrato de ${r.actual.nViajes} viajes`:""}</div>}
                     <div style={{fontSize:8,color:C.mid,marginTop:2,fontFamily:"DM Mono,monospace"}}>{new Date(e.created_at).toLocaleDateString("es-AR")} · clic para cargar</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{fontSize:15,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${e.usd_tn?.toFixed(1)} USD/Tn</div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:15,fontWeight:800,color:C.blue,fontFamily:"DM Mono,monospace"}}>${(r?.actual?.usdTn??e.usd_tn)?.toFixed(1)} USD/Tn</div>
+                      {difiere&&<div style={{fontSize:8,color:C.orange}} title="El modelo cambió desde que se guardó el escenario">guardado: ${e.usd_tn.toFixed(1)} · recalculado con el modelo actual</div>}
+                    </div>
                     <button onClick={ev=>{ev.stopPropagation();abrirEdit(e);}}
                       title="Editar nombre / sobreescribir parámetros"
                       style={{padding:"3px 8px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.mid,fontSize:11,cursor:"pointer",fontWeight:600}}>✏️</button>
-                    <button onClick={ev=>{ev.stopPropagation();eliminar("escenarios_arena",e.id);}}
+                    <button onClick={ev=>{ev.stopPropagation();eliminar("escenarios_arena",e.id,e.nombre);}} title="Eliminar escenario"
                       style={{padding:"2px 7px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,fontWeight:600,cursor:"pointer"}}>×</button>
                   </div>
+                  </>); })()}
                 </div>
               )}
             </div>
@@ -3454,11 +3474,11 @@ function TabEscenarios({p, onLoad}) {
             <>
               <div style={{overflowX:"auto",marginBottom:10}}>
                 <table className="cost-table">
-                  <thead><tr><th>Nombre</th><th>Mes</th><th>N</th><th>VLSFO</th><th style={{color:"#86EFAC"}}>P10</th><th style={{color:"#FCD34D"}}>P50</th><th style={{color:"#FCA5A5"}}>P90</th><th>Spread</th><th>Fecha</th><th></th></tr></thead>
+                  <thead><tr><th>Nombre</th><th>Modalidad</th><th>N</th><th>VLSFO</th><th style={{color:"#86EFAC"}}>P10</th><th style={{color:"#FCD34D"}}>P50</th><th style={{color:"#FCA5A5"}}>P90</th><th>Spread</th><th>Fecha</th><th></th></tr></thead>
                   <tbody>{corridas.map(c=>(
                     <tr key={c.id}>
                       <td style={{fontWeight:600,color:C.navy,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.escenario_nombre}</td>
-                      <td className="mono" style={{textAlign:"right"}}>{c.mes_analizado!==null?MESES[c.mes_analizado]:"Anual"}</td>
+                      <td style={{fontSize:9,color:C.mid}}>{c.params?.barco_modalidad==="bbc"?"BBC":"TC"}</td>
                       <td className="mono" style={{textAlign:"right"}}>{c.n_simulaciones?.toLocaleString()}</td>
                       <td className="mono" style={{textAlign:"right",color:C.orange,fontSize:9}}>${c.vlsfo_precio}</td>
                       <td className="mono" style={{textAlign:"right",color:C.p10}}>${c.p10?.toFixed(1)}</td>
@@ -3466,7 +3486,7 @@ function TabEscenarios({p, onLoad}) {
                       <td className="mono" style={{textAlign:"right",color:C.p90}}>${c.p90?.toFixed(1)}</td>
                       <td className="mono" style={{textAlign:"right",color:C.orange}}>${c.spread?.toFixed(1)}</td>
                       <td style={{fontSize:8,color:C.muted}}>{new Date(c.created_at).toLocaleDateString("es-AR")}</td>
-                      <td><button onClick={()=>eliminar("corridas_montecarlo",c.id)} style={{padding:"2px 6px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,cursor:"pointer"}}>×</button></td>
+                      <td><button onClick={()=>eliminar("corridas_montecarlo",c.id,c.escenario_nombre)} style={{padding:"2px 6px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.red,fontSize:9,cursor:"pointer"}}>×</button></td>
                     </tr>
                   ))}</tbody>
                 </table>
