@@ -2698,7 +2698,8 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
         const costoArena   = e1.costoArena   || 0;
         const costoMermaCarga   = e1.costoMerma    || 0;
         const costoMermaDesc    = e3.costoMermaDescarga || 0;
-        const costoMermaAcopio  = e3.costoMermaAcopio || (e3.mermaAcopio_Tn||0) * (e3.precioArenaEq||0);
+        // ?? y no ||: con la arena fuera de alcance la merma vale 0 y no hay que recalcularla
+        const costoMermaAcopio  = e3.costoMermaAcopio ?? (e3.mermaAcopio_Tn||0) * (e3.precioArenaEq||0);
         const totalArenaMermas  = costoArena + costoMermaCarga + costoMermaDesc + costoMermaAcopio;
 
         // Costo logístico puro = todo lo demás
@@ -2770,6 +2771,8 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
                       {l:"Agencia BB",           v: e3.agencia||0},
                       {l:"Opex carga+desc.",     v: (e1.costoOpex||0)+(e3.costoOpex||0)},
                       {l:"Camiones+Acopio",      v: (e3.costoCamiones||0)+(e3.costoAcopio||0)+(e3.costoFleteAcopio||0)},
+                      {l:"Limpieza+waiver+extras", v: (e0.costoViaje||0)-(e0.fleteCosto||0)-(e0.combCosto||0)},
+                      ...((e0.movInicio||0)+(e0.movFin||0)>0 ? [{l:"Movilización+adecuación+desmov.", v:(e0.movInicio||0)+(e0.movFin||0)}] : []),
                     ].map(({l,v})=>(
                       <tr key={l} style={{borderBottom:"1px solid #EDE9FE"}}>
                         <td style={{padding:"4px 0",color:"#6D28D9",fontSize:9}}>{l}</td>
