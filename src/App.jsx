@@ -3884,70 +3884,92 @@ function TabFAQ() {
 }
 
 // ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
+// ─── MÉTRICA DE SENSIBILIDADES ─────────────────────────────────────────────
+// Time Charter: un viaje. Bare Boat: contrato completo, igual que el encabezado
+// (la movilización se reparte entre todos los viajes).
+function usdTnSens(pp) {
+  const t = calcTotal(pp);
+  return esBBC(pp) ? calcNViajes(pp, t).usdTnSistema : t.usdTn;
+}
+
+// Categorías de costo de un viaje. Con vuelta = viaje 2+ del contrato (sin reposicionamiento).
+function categoriasViaje(t, vuelta) {
+  const {e0,e1,e2,e3} = t;
+  const conRepo = !vuelta;
+  const barcoVuelta = vuelta ? vuelta.dias * vuelta.tc : 0;
+  return {
+    barco:    (conRepo ? e0.fleteCosto||0 : 0) + (e1.fleteEtapa||0) + (e2.fleteNav||0) + (e3.fleteEtapa||0) + barcoVuelta,
+    comb:     (conRepo ? e0.combCosto||0 : 0) + (e1.combPuerto||0) + (e2.combNav||0) + (e3.combPuerto||0) + (vuelta ? vuelta.costo - barcoVuelta : 0),
+    arena:    (e1.costoArena||0) + (e1.costoMerma||0) + (e3.costoMermaDescarga||0) + (e3.costoMermaAcopio||0),
+    camDir:   e3.costoCamiones || 0,
+    camAco:   (e3.costoAcopio||0) + (e3.costoFleteAcopio||0),
+    agZ:      e1.agencia || 0,
+    agB:      e3.agencia || 0,
+    opex:     (e1.costoOpex||0) + (e3.costoOpex||0),
+    repo:     conRepo ? (e0.costoViaje||0) - (e0.fleteCosto||0) - (e0.combCosto||0) : 0,
+    mov:      conRepo ? (e0.movInicio||0) + (e0.movFin||0) : 0,
+  };
+}
+
 function TabSensibilidades({p}) {
   // ─── BASE CALC ─────────────────────────────────────────────────────────
   const base = useMemo(() => {
-    const e0 = calcEtapaRepo(p);
-    const e1 = calcEtapa1(p);
-    const e2 = calcEtapa2(p);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoViaje+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : p.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...p, _costoArenaEq: eq}, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
-
-    const tn  = e3.tnEntregadas;
-    const tc  = costoDiarioBarco(p).total;
-
-    // Días totales por etapa
-    const diasE0 = e0.diasNav || 0;
-    const diasE1 = e1.tReal_dias || 0;
-    const diasE2 = e2.diasNav || 0;
-    const diasE3 = e3.tReal_dias || 0;
-    const diasTot = diasE0 + diasE1 + diasE2 + diasE3;
-
-    // ── Categorías de costo ──────────────────────────────────────────────
-    const tcTotal       = tc * diasTot;
-    const combTotal     = (e0.combCosto||0) + (e1.combPuerto||0) + (e2.combNav||0) + (e3.combPuerto||0);
-    const agZarate      = e1.agencia || 0;
-    const agBB          = e3.agencia || 0;
-    const camionesDirect= e3.costoCamiones || 0;
-    const camionesAcopio= (e3.costoAcopio||0) + (e3.costoFleteAcopio||0);
-    const opex          = (e1.costoOpex||0) + (e3.costoOpex||0);
-    const arena         = (e1.costoArena||0) + (e1.costoMerma||0) + (e3.costoMermaDescarga||0) + (e3.costoMermaAcopio||0);
-    const repo          = (e0.limpiezaBodega||0) + (e0.importacionWaiver||0);
-    const otros         = tot - tcTotal - combTotal - agZarate - agBB - camionesDirect - camionesAcopio - opex - arena - repo;
+    const t = calcTotal(p);
+    const bbc = esBBC(p);
+    let cat = categoriasViaje(t);
+    let tot = t.costoTotal, tn = t.tnEntregadas, nViajes = 1;
+    if (bbc) {
+      // Contrato: viaje 1 completo + (n-1) viajes adicionales (vuelta + carga + navegación + descarga)
+      const mv = calcNViajes(p, t);
+      const adic = categoriasViaje(t, { dias: mv.diasVuelta, costo: mv.costoVuelta, tc: t.e2.tc });
+      cat = Object.fromEntries(Object.keys(cat).map(k => [k, cat[k] + (mv.nViajes - 1) * adic[k]]));
+      tot = mv.costoTotalSistema; tn = mv.tnTotales; nViajes = mv.nViajes;
+    }
+    const otros = tot - Object.values(cat).reduce((s, v) => s + v, 0);
 
     const cats = [
-      { label:"Barco (costo diario)",usd: tcTotal,        icon:"🚢" },
-      { label:"Combustible",         usd: combTotal,      icon:"⛽" },
-      { label:"Arena + Mermas",      usd: arena,          icon:"⛏️" },
-      { label:"Camiones (directos)", usd: camionesDirect, icon:"🚛" },
-      { label:"Camiones (acopio)",   usd: camionesAcopio, icon:"🔄" },
-      { label:"Agencia Zárate",      usd: agZarate,       icon:"🏭" },
-      { label:"Agencia BB",          usd: agBB,           icon:"⚓" },
-      { label:"OPEX",                usd: opex,           icon:"🔧" },
-      { label:"Repo + Waiver",       usd: repo,           icon:"📋" },
+      { label:"Barco (costo diario)",usd: cat.barco,  icon:"🚢" },
+      { label:"Combustible",         usd: cat.comb,   icon:"⛽" },
+      { label:"Arena + Mermas",      usd: cat.arena,  icon:"⛏️" },
+      { label:"Camiones (directos)", usd: cat.camDir, icon:"🚛" },
+      { label:"Camiones (acopio)",   usd: cat.camAco, icon:"🔄" },
+      { label:"Agencia Zárate",      usd: cat.agZ,    icon:"🏭" },
+      { label:"Agencia BB",          usd: cat.agB,    icon:"⚓" },
+      { label:"OPEX",                usd: cat.opex,   icon:"🔧" },
+      { label:"Limpieza + waiver",   usd: cat.repo,   icon:"📋" },
+      { label:"Movilización + adecuación + desmov.", usd: cat.mov, icon:"🏗️" },
       { label:"Otros",               usd: Math.max(0,otros), icon:"➕" },
-    ].filter(c => c.usd > 0).sort((a,b) => b.usd - a.usd);
+    ].filter(c => c.usd > 0.5).sort((a,b) => b.usd - a.usd);
 
-    return { usdTn: tot / tn, tnEnt: tn, tot, cats };
+    return { usdTn: tot / tn, tnEnt: tn, tot, cats, contrato: bbc, nViajes, t };
   }, [p]);
+  // Precio de VLSFO del escenario activo (las variaciones se aplican sobre este, no sobre el manual)
+  const vlsfoBase = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
 
   // ─── GOAL SEEK STATE ──────────────────────────────────────────────────
-  const GS_VARS = [
+  // base: valor actual de la variable · aplicar(pct): overrides con el descuento · bloque: alcance requerido
+  const escalarItems = (items, pct) => (items||[]).map(it => ({ ...it, usd: it.usd * (1 - pct) }));
+  const GS_TODAS = [
     { id:hireKey(p),                label:hireLabel(p),           unit:"USD/día", icon:"🚢" },
-    { id:"nav_vlsfoManual",         label:"Precio VLSFO",         unit:"USD/T",   icon:"⛽" },
-    { id:"des_costoCamionesDirUSDTn",label:"Camiones directos",   unit:"USD/Tn",  icon:"🚛" },
-    { id:"des_costoFleteAcopioUSDTn",label:"Flete acopio Neuquén",unit:"USD/Tn",  icon:"🔄" },
-    { id:"cap_agenciaZarate",       label:"Agencia Zárate",       unit:"USD",     icon:"🏭" },
-    { id:"des_agenciaBB",           label:"Agencia BB",           unit:"USD",     icon:"⚓" },
-    { id:"cap_opexUSDTn",           label:"OPEX carga",           unit:"USD/Tn",  icon:"🔧" },
-    { id:"des_opexUSDTn",           label:"OPEX descarga",        unit:"USD/Tn",  icon:"🔧" },
-  ];
+    { id:"nav_vlsfoManual",         label:"Precio VLSFO",         unit:"USD/T",   icon:"⛽", bloque:"combustible", base:vlsfoBase,
+      aplicar: pct => ({ nav_escenarioVLSFO:"manual", nav_vlsfoManual: vlsfoBase * (1 - pct) }) },
+    { id:"des_costoCamionesDirUSDTn",label:"Camiones directos",   unit:"USD/Tn",  icon:"🚛", bloque:"logistica" },
+    { id:"des_costoFleteAcopioUSDTn",label:"Flete acopio Neuquén",unit:"USD/Tn",  icon:"🔄", bloque:"logistica" },
+    // Las agencias se calculan desde sus ítems: el descuento se aplica a todos los ítems
+    { id:"cap_agenciaZarate",       label:"Agencia Zárate",       unit:"USD",     icon:"🏭", bloque:"agenciaCarga", base:base.t.e1.agencia,
+      aplicar: pct => ({ agz_items: escalarItems(p.agz_items, pct) }) },
+    { id:"des_agenciaBB",           label:"Agencia BB",           unit:"USD",     icon:"⚓", bloque:"agenciaDescarga", base:base.t.e3.agencia,
+      aplicar: pct => ({ abb_items: escalarItems(p.abb_items, pct) }) },
+    { id:"cap_opexUSDTn",           label:"OPEX carga",           unit:"USD/Tn",  icon:"🔧", bloque:"operacion" },
+    { id:"des_opexUSDTn",           label:"OPEX descarga",        unit:"USD/Tn",  icon:"🔧", bloque:"operacion" },
+  ].map(v => ({ base:p[v.id], aplicar: pct => ({ [v.id]: p[v.id] * (1 - pct) }), ...v }));
+  // Solo variables de bloques en alcance
+  const GS_VARS = GS_TODAS.filter(v => !v.bloque || inc(p, v.bloque));
 
   const [gsTarget, setGsTarget]   = useState(() => Math.round(base.usdTn * 0.9));
   const [gsVars, setGsVars]       = useState(() =>
     // Incluye las dos variables de alquiler: la que aplica depende de la modalidad del barco
-    [...GS_VARS, {id:"barco_timeCharter"}, {id:"bbc_hire"}].reduce((acc,v) => ({ ...acc, [v.id]: { activa: false, peso: 100/GS_VARS.length, tope: 10 } }), {})
+    [...GS_TODAS, {id:"barco_timeCharter"}, {id:"bbc_hire"}].reduce((acc,v) => ({ ...acc, [v.id]: { activa: false, peso: 100/GS_VARS.length, tope: 10 } }), {})
   );
 
   // Normaliza pesos para que sumen 100 entre activas
@@ -4000,22 +4022,9 @@ function TabSensibilidades({p}) {
         const pesoNorm = gsVars[v.id].peso / totalPeso;
         const tope     = gsVars[v.id].tope / 100;
         const pct      = Math.min(pesoNorm * pctGlobal, tope);
-        // VLSFO: si está en modo manual lo tocamos directo; si no, forzamos manual
-        if (v.id === "nav_vlsfoManual") {
-          overrides["nav_escenarioVLSFO"] = "manual";
-          overrides["nav_vlsfoManual"]    = p[v.id] * (1 - pct);
-        } else {
-          overrides[v.id] = p[v.id] * (1 - pct);
-        }
+        Object.assign(overrides, v.aplicar(pct));
       });
-      const pp = { ...p, ...overrides };
-      const e0b = calcEtapaRepo(pp);
-      const e1b = calcEtapa1(pp);
-      const e2b = calcEtapa2(pp);
-      const eqb = e1b.tnPostCarga > 0 ? (e0b.costoViaje+e1b.costoTotal+e2b.costoTotal)/e1b.tnPostCarga : pp.cap_precioArenaOrigen;
-      const e3b = calcEtapa3({...pp, _costoArenaEq: eqb}, e1b.tnPostCarga);
-      const totb = e0b.costoTotal+e1b.costoTotal+e2b.costoTotal+e3b.costoTotal;
-      return totb / e3b.tnEntregadas;
+      return usdTnSens({ ...p, ...overrides });
     }
 
     // Buscar el pctGlobal máximo aplicable (donde alguna variable topa)
@@ -4043,7 +4052,7 @@ function TabSensibilidades({p}) {
       const pct      = alcanzable
         ? Math.min(pesoNorm * pctSol, gsVars[v.id].tope / 100)
         : Math.min(pesoNorm * maxPctGlobal, gsVars[v.id].tope / 100);
-      const valBase  = p[v.id];
+      const valBase  = v.base;
       const valNuevo = valBase * (1 - pct);
       const topado   = !alcanzable && pct >= gsVars[v.id].tope / 100 - 0.0001;
       return { ...v, pct: pct * 100, valBase, valNuevo, topado };
@@ -4055,14 +4064,7 @@ function TabSensibilidades({p}) {
   const activasCount = GS_VARS.filter(v => gsVars[v.id].activa).length;
 
   function calcConDelta(overrides) {
-    const pp = {...p, ...overrides};
-    const e0 = calcEtapaRepo(pp);
-    const e1 = calcEtapa1(pp);
-    const e2 = calcEtapa2(pp);
-    const eq  = e1.tnPostCarga > 0 ? (e0.costoViaje+e1.costoTotal+e2.costoTotal) / e1.tnPostCarga : pp.cap_precioArenaOrigen;
-    const e3  = calcEtapa3({...pp, _costoArenaEq: eq}, e1.tnPostCarga);
-    const tot = e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
-    return tot / e3.tnEntregadas;
+    return usdTnSens({...p, ...overrides});
   }
 
   // Definición de sensibilidades
@@ -4127,14 +4129,15 @@ function TabSensibilidades({p}) {
           label: "Precio VLSFO",
           unidad: "USD/T",
           deltas: [-100, -50, +50, +100, +200],
-          fn: d => calcConDelta({ nav_escenarioVLSFO: "manual", nav_vlsfoManual: Math.max(200, p.nav_vlsfoManual + d) }),
-          base_val: p.nav_vlsfoManual,
+          fn: d => calcConDelta({ nav_escenarioVLSFO: "manual", nav_vlsfoManual: Math.max(200, vlsfoBase + d) }),
+          base_val: vlsfoBase,
           nota: "Afecta navegación (mayor impacto) y estadía en puerto (menor impacto).",
         },
       ],
     },
     {
       titulo: "Precio y merma de arena",
+      bloque: "arena",
       icon: "⛏️",
       items: [
         {
@@ -4211,7 +4214,7 @@ function TabSensibilidades({p}) {
             <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${base.usdTn.toFixed(1)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD/Tn</span></div>
           </div>
           <div style={{background:C.navy,borderRadius:8,padding:"8px 16px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>Total viaje</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,.5)",textTransform:"uppercase",letterSpacing:.5,fontWeight:700}}>{base.contrato?`Total contrato · ${base.nViajes} ${base.nViajes===1?"viaje":"viajes"}`:"Total viaje"}</div>
             <div style={{fontSize:20,fontWeight:800,fontFamily:"DM Mono,monospace",color:"#FCD34D"}}>${fmtUSD(base.tot)} <span style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>USD</span></div>
           </div>
         </div>
@@ -4311,7 +4314,7 @@ function TabSensibilidades({p}) {
                         {v.icon} {v.label}
                       </span>
                       <span style={{fontSize:10,color:C.mid,fontFamily:"DM Mono,monospace"}}>
-                        ({v.unit} — base: {p[v.id]?.toLocaleString("es-AR",{maximumFractionDigits:1})})
+                        ({v.unit} — base: {v.base?.toLocaleString("es-AR",{maximumFractionDigits:1})})
                       </span>
                     </label>
                   </div>
@@ -4426,7 +4429,7 @@ function TabSensibilidades({p}) {
         <div className="warn-note">Cada fila muestra el USD/Tn resultante si solo cambia esa variable. El color indica si el cambio sube (🔴) o baja (🟢) el costo.</div>
       </div>
 
-      {grupos.map(grupo => (
+      {grupos.filter(g => !g.bloque || inc(p, g.bloque)).map(grupo => (
         <div key={grupo.titulo} className="card">
           <div className="ct">{grupo.icon} {grupo.titulo}</div>
           {grupo.items.map(item => {
