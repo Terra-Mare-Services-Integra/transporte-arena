@@ -1,3 +1,9 @@
+// Formateadores reutilizados: toLocaleString crea un formateador nuevo en cada llamada
+// y era el 85% del tiempo del modelo (importa en Monte Carlo, que lo corre miles de veces)
+const NF0 = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+const NF_AR = new Intl.NumberFormat("es-AR");
+const NF_DEF = new Intl.NumberFormat();
+
 // ─── CONSTANTES ────────────────────────────────────────────────────────────
 export const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
@@ -343,6 +349,96 @@ export const ALCANCE_SOLO_BARCO = { ...ALCANCE_COMPLETO, agenciaCarga:false, age
 // 1 si el bloque está en alcance, 0 si no (escenarios viejos sin alcance = proyecto completo)
 export const inc = (p, id) => (p.alcance?.[id] === false ? 0 : 1);
 
+// ─── MONTE CARLO: CATÁLOGO DE VARIABLES ───────────────────────────────────
+// Cada variable sabe leer su valor base del escenario y devolver los parámetros del modelo
+// con el valor sorteado. Monte Carlo corre el modelo real con esos parámetros.
+// tipo: cómo se muestra — usd | num | dias | pct (fracción, se muestra ×100) | factor (1 = 100%)
+const escalarTramos = (tramos, f) => (tramos || []).map(t => ({ ...t, velocidad: t.velocidad * f }));
+const promedio = arr => arr.reduce((s, v) => s + v, 0) / (arr.length || 1);
+export const MC_GRUPOS = ["Mercado", "Navegación y clima", "Puerto", "Mermas", "Barco y tripulación", "Precios de terceros"];
+export const MC_CATALOGO = [
+  { id:"vlsfo", grupo:"Mercado", label:"Precio VLSFO", unit:"USD/T", tipo:"usd", piso:200, bloque:"combustible", historica:true,
+    base: p => getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico),
+    aplicar: (p, x) => ({ nav_escenarioVLSFO:"manual", nav_vlsfoManual:x }),
+    def: { activa:true, dist:"historica", sigma:null },
+    nota:"Histórica: sorteo directo de los últimos 24 meses reales (Ship & Bunker Santos)." },
+  { id:"tc", grupo:"Mercado", label: p => hireLabel(p), unit:"USD/día", tipo:"usd", piso:0,
+    base: p => p[hireKey(p)], aplicar: (p, x) => ({ [hireKey(p)]: x }),
+    def: { activa:true, dist:"normal", sigma:1500 }, nota:"Volatilidad del mercado de fletamento." },
+  { id:"velFact", grupo:"Navegación y clima", label:"Factor velocidad", unit:"factor", tipo:"factor", piso:0.5,
+    base: () => 1,
+    aplicar: (p, f) => ({ nav_tramos: escalarTramos(p.nav_tramos, f), repo_tramos: escalarTramos(p.repo_tramos || TRAMOS_REPO_DEFAULT, f), vta_tramos: escalarTramos(p.vta_tramos, f) }),
+    def: { activa:true, dist:"normal", sigma:0.08 }, nota:"Multiplica la velocidad de todos los tramos (corrientes, estado del casco)." },
+  { id:"inop", grupo:"Navegación y clima", label:"Inoperatividad climática", unit:"factor", tipo:"factor", piso:0,
+    base: () => 1, aplicar: (p, f) => ({ inop_factor: f }),
+    def: { activa:true, dist:"normal", sigma:0.20 }, nota:"Factor sobre la probabilidad de inoperatividad calculada del clima, en carga y descarga." },
+  { id:"espCarga", grupo:"Puerto", label:"Espera en puerto de carga", unit:"días", tipo:"dias", piso:0,
+    base: p => p.cap_esperaDias, aplicar: (p, x) => ({ cap_esperaDias: x }),
+    def: { activa:false, dist:"normal", sigma:0.2 }, nota:"Espera antes de cargar en Zárate." },
+  { id:"espBB", grupo:"Puerto", label:"Espera en Bahía Blanca", unit:"días", tipo:"dias", piso:0,
+    base: p => promedio(p.des_esperaBBMes),
+    aplicar: (p, x) => { const d = x - promedio(p.des_esperaBBMes); return { des_esperaBBMes: p.des_esperaBBMes.map(v => Math.max(0, v + d)) }; },
+    def: { activa:true, dist:"normal", sigma:0.6 }, nota:"Desplaza la espera de todos los meses; base = promedio anual." },
+  { id:"espZ", grupo:"Puerto", label:"Espera vuelta a Zárate", unit:"días", tipo:"dias", piso:0,
+    base: p => p.des_esperaZarateDias, aplicar: (p, x) => ({ des_esperaZarateDias: x }),
+    def: { activa:true, dist:"normal", sigma:0.2 }, nota:"Espera configurada en la etapa de descarga." },
+  { id:"horasCarga", grupo:"Puerto", label:"Horas de trabajo/día — carga", unit:"h/día", tipo:"num", piso:1, techo:24,
+    base: p => p.cap_horasDia, aplicar: (p, x) => ({ cap_horasDia: x }),
+    def: { activa:false, dist:"normal", sigma:2 }, nota:"" },
+  { id:"horasDesc", grupo:"Puerto", label:"Horas de trabajo/día — descarga", unit:"h/día", tipo:"num", piso:1, techo:24,
+    base: p => p.des_horasDia, aplicar: (p, x) => ({ des_horasDia: x }),
+    def: { activa:false, dist:"normal", sigma:2 }, nota:"" },
+  { id:"gruasCarga", grupo:"Puerto", label:"Grúas en carga", unit:"grúas", tipo:"num", piso:1, entero:true,
+    base: p => p.cap_gruas, aplicar: (p, x) => ({ cap_gruas: x }),
+    def: { activa:false, dist:"triangular", sigma:0.5 }, nota:"Se redondea a un número entero de grúas." },
+  { id:"gruasDesc", grupo:"Puerto", label:"Grúas en descarga", unit:"grúas", tipo:"num", piso:1, entero:true,
+    base: p => p.des_gruas, aplicar: (p, x) => ({ des_gruas: x }),
+    def: { activa:false, dist:"triangular", sigma:0.5 }, nota:"Se redondea a un número entero de grúas." },
+  { id:"mCarga", grupo:"Mermas", label:"Merma de carga", unit:"%", tipo:"pct", piso:0,
+    base: p => p.cap_pctMerma, aplicar: (p, x) => ({ cap_pctMerma: x }),
+    def: { activa:true, dist:"normal", sigma:0.005 }, nota:"" },
+  { id:"mDesc", grupo:"Mermas", label:"Merma de descarga", unit:"%", tipo:"pct", piso:0,
+    base: p => p.des_pctMermaDescarga, aplicar: (p, x) => ({ des_pctMermaDescarga: x }),
+    def: { activa:true, dist:"normal", sigma:0.004 }, nota:"" },
+  { id:"mAcopio", grupo:"Mermas", label:"Merma de acopio", unit:"%", tipo:"pct", piso:0,
+    base: p => p.des_pctMermaAcopio, aplicar: (p, x) => ({ des_pctMermaAcopio: x }),
+    def: { activa:true, dist:"normal", sigma:0.003 }, nota:"" },
+  { id:"fx", grupo:"Barco y tripulación", label:"Tipo de cambio tripulación", unit:"ARS/USD", tipo:"num", piso:1, soloBBC:true,
+    base: p => p.crew_fx, aplicar: (p, x) => ({ crew_fx: x }),
+    def: { activa:false, dist:"normal", sigma:150 }, nota:"Convierte los sueldos en pesos a dólares." },
+  { id:"consumoPuerto", grupo:"Barco y tripulación", label:"Consumo en puerto", unit:"T/día", tipo:"num", piso:0, bloque:"combustible",
+    base: p => p.barco_consumoPuerto, aplicar: (p, x) => ({ barco_consumoPuerto: x }),
+    def: { activa:false, dist:"normal", sigma:0.8 }, nota:"" },
+  { id:"bbcFijos", grupo:"Barco y tripulación", label:"Costos fijos del barco (BBC)", unit:"factor", tipo:"factor", piso:0, soloBBC:true,
+    base: () => 1, aplicar: (p, f) => ({ bbc_items: (p.bbc_items || []).map(it => ({ ...it, valor: it.valor * f })) }),
+    def: { activa:false, dist:"normal", sigma:0.10 }, nota:"Factor sobre mantenimiento, dique, seguro, administración, etc." },
+  { id:"movil", grupo:"Barco y tripulación", label:"Movilización y adecuación", unit:"factor", tipo:"factor", piso:0, soloBBC:true, bloque:"movilizacion",
+    base: () => 1,
+    aplicar: (p, f) => ({ bbc_movilizacion: (p.bbc_movilizacion || 0) * f, bbc_adecuacion: (p.bbc_adecuacion || 0) * f, bbc_desmovilizacion: (p.bbc_desmovilizacion || 0) * f }),
+    def: { activa:false, dist:"normal", sigma:0.15 }, nota:"Factor sobre movilización, adecuación y desmovilización." },
+  { id:"precioArena", grupo:"Precios de terceros", label:"Precio de la arena en origen", unit:"USD/Tn", tipo:"usd", piso:0, bloque:"arena",
+    base: p => p.cap_precioArenaOrigen, aplicar: (p, x) => ({ cap_precioArenaOrigen: x }),
+    def: { activa:false, dist:"normal", sigma:1.5 }, nota:"" },
+  { id:"camiones", grupo:"Precios de terceros", label:"Camiones directos", unit:"USD/Tn", tipo:"usd", piso:0, bloque:"logistica",
+    base: p => p.des_costoCamionesDirUSDTn, aplicar: (p, x) => ({ des_costoCamionesDirUSDTn: x }),
+    def: { activa:false, dist:"normal", sigma:3 }, nota:"Flete Bahía Blanca → Neuquén." },
+  { id:"fleteAcopio", grupo:"Precios de terceros", label:"Flete desde el acopio", unit:"USD/Tn", tipo:"usd", piso:0, bloque:"logistica",
+    base: p => p.des_costoFleteAcopioUSDTn ?? 37.14, aplicar: (p, x) => ({ des_costoFleteAcopioUSDTn: x }),
+    def: { activa:false, dist:"normal", sigma:3 }, nota:"Depósito → Neuquén." },
+  { id:"agencias", grupo:"Precios de terceros", label:"Agencias portuarias", unit:"factor", tipo:"factor", piso:0,
+    aplica: p => !!(inc(p, "agenciaCarga") || inc(p, "agenciaDescarga")),
+    base: () => 1,
+    aplicar: (p, f) => ({ agz_items: (p.agz_items || []).map(it => ({ ...it, usd: it.usd * f })), abb_items: (p.abb_items || []).map(it => ({ ...it, usd: it.usd * f })) }),
+    def: { activa:false, dist:"normal", sigma:0.10 }, nota:"Factor sobre todos los ítems de las dos agencias." },
+];
+export const MC_DISTRIBUCIONES = [
+  { id:"normal",     label:"Normal",     params:["sigma"] },
+  { id:"uniforme",   label:"Uniforme",   params:["min","max"] },
+  { id:"triangular", label:"Triangular", params:["min","moda","max"] },
+  { id:"pert",       label:"PERT",       params:["min","moda","max"] },
+  { id:"historica",  label:"Histórica",  params:[] },
+];
+
 // ─── DEFAULT PARAMS ────────────────────────────────────────────────────────
 export const DEFAULT_PARAMS = {
   // ALCANCE — bloques de costo a cargo nuestro
@@ -526,19 +622,8 @@ export const DEFAULT_PARAMS = {
   clima_bb:                  CLIMA_DB_DEFAULT.bb,
   vlsfo_historico:           VLSFO_HISTORICO_DEFAULT,
 
-  // MONTE CARLO — control de variables estocásticas
-  mc_vars: [
-    { id:"vlsfo",   label:"Precio VLSFO",     activa:true,  sigma:null,  unit:"USD/T",  nota:"Bootstrap histórico — sorteo directo de los últimos 24 meses reales (Ship&Bunker Santos)" },
-    { id:"tc",      label:"Time Charter",      activa:true,  sigma:1500,  unit:"USD/d",  nota:"Volatilidad del mercado spot de fletamento" },
-    { id:"velFact", label:"Factor velocidad",  activa:true,  sigma:0.08,  unit:"factor", nota:"Relativo sobre velocidad de todos los tramos (corrientes, estado del casco)" },
-    { id:"espBB",   label:"Espera en BB",      activa:true,  sigma:0.6,   unit:"dias",   nota:"Variabilidad alrededor de la espera media mensual configurada" },
-    { id:"espZ",    label:"Espera en Zarate",  activa:true,  sigma:0.2,   unit:"dias",   nota:"Variabilidad de la espera configurada en Etapa Carga" },
-    { id:"espCarga",label:"Espera en carga",   activa:false, sigma:0.2,   unit:"dias",   nota:"Espera en el puerto de carga (Etapa Carga). Arranca fija para no cambiar corridas viejas" },
-    { id:"mCarga",  label:"Merma carga",       activa:true,  sigma:0.005, unit:"frac.",  nota:"Equivale a variabilidad alrededor del % configurado" },
-    { id:"mDesc",   label:"Merma descarga",    activa:true,  sigma:0.004, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
-    { id:"mAcopio", label:"Merma acopio",      activa:true,  sigma:0.003, unit:"frac.",  nota:"Variabilidad alrededor del % configurado" },
-    { id:"inop",    label:"Inop. climatica",   activa:true,  sigma:0.20,  unit:"factor", nota:"sigma% multiplicado por pBase calculado del clima" },
-  ],
+  // MONTE CARLO — configuración de cada variable (distribución, parámetros, activa)
+  mc_vars: MC_CATALOGO.map(v => ({ id: v.id, ...v.def })),
 };
 
 // ─── HELPERS AGENCIA ───────────────────────────────────────────────────────
@@ -637,7 +722,7 @@ export const hireKey = p => esBBC(p) ? "bbc_hire" : "barco_timeCharter";
 export const hireLabel = p => esBBC(p) ? "Bare Boat hire" : "Time Charter";
 
 export function costoDiarioBarco(p) {
-  const fmt = v => `$${Math.round(v).toLocaleString("es-AR")}`;
+  const fmt = v => `$${NF_AR.format(Math.round(v))}`;
   if (!esBBC(p)) {
     const hire = p.barco_timeCharter, trip = p.barco_tripulacion, misc = p.barco_miscPorDia || 0;
     const total = hire + trip + misc;
@@ -746,7 +831,7 @@ export function calcEtapa1(p) {
   const tIdeal_dias   =tIdeal_hr/p.cap_horasDia;
 
   const inopDet =getInopDetalle(p.clima_zarate,p.cap_inopLluvia,p.cap_inopViento);
-  const pInop   =inopDet.pInop;
+  const pInop   =Math.min(0.95, inopDet.pInop*(p.inop_factor ?? 1));  // inop_factor: Monte Carlo
   const diasInop=tIdeal_dias*pInop/Math.max(0.01,1-pInop);
   const tReal_dias=tIdeal_dias+diasInop+p.cap_esperaDias;
 
@@ -776,24 +861,24 @@ export function calcEtapa1(p) {
       `⚠️ Estimado — validar SMN. Ver Base Clima.`,
     ],
     hoverTReal:`${tIdeal_dias.toFixed(1)}+${diasInop.toFixed(1)}+${p.cap_esperaDias} = ${tReal_dias.toFixed(1)}días`,
-    hoverMerma:`Merma carga (bruta): ${p.cap_capacidadBarco.toLocaleString()}Tn × ${(p.cap_pctMerma*100).toFixed(1)}% = ${mermaTn.toFixed(0)}Tn extra desde origen. Barco zarpa con ${p.cap_capacidadBarco.toLocaleString()}Tn.`,
+    hoverMerma:`Merma carga (bruta): ${NF_DEF.format(p.cap_capacidadBarco)}Tn × ${(p.cap_pctMerma*100).toFixed(1)}% = ${mermaTn.toFixed(0)}Tn extra desde origen. Barco zarpa con ${NF_DEF.format(p.cap_capacidadBarco)}Tn.`,
     hoverComb:[
       `Escenario VLSFO: ${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}`,
       `Precio: $${vlsfo}/T | Hoy: $${vlsfoStats.actual} | Prom12M: $${vlsfoStats.prom12m.toFixed(0)}`,
       `Posición: ${vlsfoStats.pctVsPromedio12m>0?"+":""}${vlsfoStats.pctVsPromedio12m.toFixed(1)}% vs prom 12M`,
-      `${tReal_dias.toFixed(1)}d × ${p.barco_consumoPuerto}T/d × $${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${tReal_dias.toFixed(1)}d × ${p.barco_consumoPuerto}T/d × $${vlsfo} = $${NF0.format(combPuerto)}`,
     ],
     hoverTC:[
       cd.resumen,
-      `${tReal_dias.toFixed(1)}d × $${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${tReal_dias.toFixed(1)}d × $${tc}/d = $${NF0.format(fleteEtapa)}`,
     ],
     hoverTotal:[
-      `Arena: $${precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn = $${costoArena.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Merma: $${precioArena}×${mermaTn.toFixed(0)}Tn = $${costoMerma.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Opex: $${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn = $${costoOpex.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Agencia Zárate: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Arena: $${precioArena}×${NF_DEF.format(p.cap_capacidadBarco)}Tn = $${NF0.format(costoArena)}`,
+      `Merma: $${precioArena}×${mermaTn.toFixed(0)}Tn = $${NF0.format(costoMerma)}`,
+      `Opex: $${p.cap_opexUSDTn}/Tn×${NF_DEF.format(p.cap_capacidadBarco)}Tn = $${NF0.format(costoOpex)}`,
+      `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${NF0.format(combPuerto)}`,
+      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteEtapa)}`,
+      `Agencia Zárate: $${NF0.format(agencia)}`,
     ],
   };
 }
@@ -821,16 +906,16 @@ export function calcEtapa2(p) {
     hoverVelProm:`${nav.totalMn}mn÷${nav.totalHrs.toFixed(1)}hs = ${nav.velProm.toFixed(1)}kt`,
     hoverComb:[
       `Consumo interpolado por tramo (tabla Contrato Barco)`,
-      `Total combustible: ${combNavTotal.toFixed(1)}T × $${vlsfo} = $${combNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Total combustible: ${combNavTotal.toFixed(1)}T × $${vlsfo} = $${NF0.format(combNav)}`,
       `Escenario: ${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}`,
     ],
     hoverTC:[
       cd.resumen,
-      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${NF0.format(fleteNav)}`,
     ],
     hoverTotal:[
-      `Comb. ida: ${combNavTotal.toFixed(1)}T×$${vlsfo} = $${combNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Comb. ida: ${combNavTotal.toFixed(1)}T×$${vlsfo} = $${NF0.format(combNav)}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteNav)}`,
     ],
   };
 }
@@ -1041,7 +1126,7 @@ export function calcEtapa3(p, tnEntrada=null) {
 
   // Inoperabilidad — promedio anual
   const inopDet = getInopDetalle(p.clima_bb, p.des_inopLluvia, p.des_inopViento);
-  const pInop   = inopDet.pInop;
+  const pInop   = Math.min(0.95, inopDet.pInop * (p.inop_factor ?? 1));  // inop_factor: Monte Carlo
   const diasInop= tIdeal_dias * pInop / Math.max(0.01, 1 - pInop);
   // Espera BB — promedio anual del array (o valor escalar si ya migrado)
   const esperaBB= Array.isArray(p.des_esperaBBMes)
@@ -1098,23 +1183,23 @@ export function calcEtapa3(p, tnEntrada=null) {
     hoverComb:[
       `Escenario VLSFO: ${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}`,
       `Precio: $${vlsfo}/T | Hoy: $${vlsfoStats.actual} | Prom12M: $${vlsfoStats.prom12m.toFixed(0)}`,
-      `${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${NF0.format(combPuerto)}`,
     ],
     hoverTC:[
       cd.resumen,
       `Incluye: t_scheduler + inop + espera BB + espera Zárate`,
-      `${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${tReal_dias.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteEtapa)}`,
     ],
     hoverTotal:[
-      `Opex: $${p.des_opexUSDTn}/Tn×${tn.toFixed(0)}Tn = $${costoOpex.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Directos: ${sch.nDir} cam×${sch.Tn_cam_dir.toFixed(1)}Tn = ${sch.Tn_directos.toFixed(0)}Tn → $${costoCamiones.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Calesitas transp: ${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn = $${(sch.costoTranspUSDTn*sch.Tn_calesitas).toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Alquiler predio: ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn = $${sch.costoAlqTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Flete acopio → Neuquén: ${tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn = $${costoFleteAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Agencia BB: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Merma desc: ${mermaDescarga_Tn.toFixed(0)}Tn × $${precioArenaEq.toFixed(1)}/Tn eq. = $${costoMermaDescarga.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Opex: $${p.des_opexUSDTn}/Tn×${tn.toFixed(0)}Tn = $${NF0.format(costoOpex)}`,
+      `Directos: ${sch.nDir} cam×${sch.Tn_cam_dir.toFixed(1)}Tn = ${sch.Tn_directos.toFixed(0)}Tn → $${NF0.format(costoCamiones)}`,
+      `Calesitas transp: ${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn = $${(sch.costoTranspUSDTn*NF0.format(sch.Tn_calesitas))}`,
+      `Alquiler predio: ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn = $${NF0.format(sch.costoAlqTotal)}`,
+      `Flete acopio → Neuquén: ${tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn = $${NF0.format(costoFleteAcopio)}`,
+      `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${NF0.format(combPuerto)}`,
+      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteEtapa)}`,
+      `Agencia BB: $${NF0.format(agencia)}`,
+      `Merma desc: ${mermaDescarga_Tn.toFixed(0)}Tn × $${precioArenaEq.toFixed(1)}/Tn eq. = $${NF0.format(costoMermaDescarga)}`,
     ],
   };
 }
@@ -1156,18 +1241,18 @@ export function calcEtapaRepo(p) {
     limpiezaBodega, importacionWaiver, costoViaje, movInicio:mov.inicio, movFin:mov.fin, costoTotal,
     hoverComb:[
       `Consumo lastre interpolado por tramo`,
-      `Total: ${combTotal.toFixed(1)}T × $${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Total: ${combTotal.toFixed(1)}T × $${vlsfo} = $${NF0.format(combCosto)}`,
     ],
     hoverTC:[
       cd.resumen,
-      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${NF0.format(fleteCosto)}`,
     ],
     hoverTotal:[
-      `Combustible lastre: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`),
+      `Combustible lastre: ${combTotal.toFixed(1)}T×$${vlsfo} = $${NF0.format(combCosto)}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteCosto)}`,
+      `Limpieza bodega: $${NF0.format(limpiezaBodega)}`,
+      `Importación/Waiver: $${NF0.format(importacionWaiver)}`,
+      ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${NF0.format(it.usd)}`),
     ],
   };
 }
@@ -1198,15 +1283,15 @@ export function calcEtapaVuelta(p) {
     combLastreTotal, combLastre, fleteNav, costoTotal,
     hoverComb:[
       `Consumo lastre interpolado por tramo`,
-      `Total: ${combLastreTotal.toFixed(1)}T × $${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Total: ${combLastreTotal.toFixed(1)}T × $${vlsfo} = $${NF0.format(combLastre)}`,
     ],
     hoverTC:[
       cd.resumen,
-      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${NF0.format(fleteNav)}`,
     ],
     hoverTotal:[
-      `Combustible lastre: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Combustible lastre: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${NF0.format(combLastre)}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${NF0.format(fleteNav)}`,
     ],
   };
 }
@@ -1300,6 +1385,41 @@ export function calcTotal(p) {
   return {e0,e1,e2,e3,costoTotal,usdTn,diasTotales,tnEntregadas:e3.tnEntregadas};
 }
 
+// ─── EVALUACIÓN DE COSTOS (TC: un viaje · BBC: contrato completo) ─────────
+// Categorías de costo de un viaje. Con vuelta = viaje 2+ del contrato (sin reposicionamiento).
+export function categoriasViaje(t, vuelta) {
+  const {e0,e1,e2,e3} = t;
+  const conRepo = !vuelta;
+  const barcoVuelta = vuelta ? vuelta.dias * vuelta.tc : 0;
+  return {
+    barco:    (conRepo ? e0.fleteCosto||0 : 0) + (e1.fleteEtapa||0) + (e2.fleteNav||0) + (e3.fleteEtapa||0) + barcoVuelta,
+    comb:     (conRepo ? e0.combCosto||0 : 0) + (e1.combPuerto||0) + (e2.combNav||0) + (e3.combPuerto||0) + (vuelta ? vuelta.costo - barcoVuelta : 0),
+    arena:    (e1.costoArena||0) + (e1.costoMerma||0) + (e3.costoMermaDescarga||0) + (e3.costoMermaAcopio||0),
+    camDir:   e3.costoCamiones || 0,
+    camAco:   (e3.costoAcopio||0) + (e3.costoFleteAcopio||0),
+    agZ:      e1.agencia || 0,
+    agB:      e3.agencia || 0,
+    opex:     (e1.costoOpex||0) + (e3.costoOpex||0),
+    repo:     conRepo ? (e0.costoViaje||0) - (e0.fleteCosto||0) - (e0.combCosto||0) : 0,
+    mov:      conRepo ? (e0.movInicio||0) + (e0.movFin||0) : 0,
+  };
+}
+
+// USD/tn y costos por categoría. En BBC: viaje 1 + (n−1) viajes adicionales del contrato.
+export function evaluarCostos(p) {
+  const t = calcTotal(p);
+  let cat = categoriasViaje(t);
+  let tot = t.costoTotal, tn = t.tnEntregadas, nViajes = 1;
+  const contrato = esBBC(p);
+  if (contrato) {
+    const mv = calcNViajes(p, t);
+    const adic = categoriasViaje(t, { dias: mv.diasVuelta, costo: mv.costoVuelta, tc: t.e2.tc });
+    cat = Object.fromEntries(Object.keys(cat).map(k => [k, cat[k] + (mv.nViajes - 1) * adic[k]]));
+    tot = mv.costoTotalSistema; tn = mv.tnTotales; nViajes = mv.nViajes;
+  }
+  return { usdTn: tot / tn, tot, tn, cat, contrato, nViajes, t };
+}
+
 // ─── MONTE CARLO ───────────────────────────────────────────────────────────
 function randn(){
   let u=0,v=0;
@@ -1320,190 +1440,123 @@ export function sampleTriangular(a, c, b) {
     : max - Math.sqrt((1 - u) * (max - min) * (max - moda));
 }
 
-// Variables del Monte Carlo de un escenario. Los escenarios guardados antes de que
-// existiera una variable no la traen: se completa con la de DEFAULT_PARAMS.
+// Gamma(k ≥ 1) — Marsaglia y Tsang
+function sampleGamma(k) {
+  const d = k - 1/3, c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x, v;
+    do { x = randn(); v = 1 + c * x; } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+
+// PERT: Beta escalada entre mín y máx; concentra más probabilidad cerca del más probable que la triangular
+export function samplePert(a, m, b) {
+  const [min, max] = a <= b ? [a, b] : [b, a];
+  if (max === min) return min;
+  const moda = Math.min(max, Math.max(min, m ?? (min + max) / 2));
+  const alfa = 1 + 4 * (moda - min) / (max - min);
+  const beta = 1 + 4 * (max - moda) / (max - min);
+  const g1 = sampleGamma(alfa), g2 = sampleGamma(beta);
+  return min + (max - min) * g1 / (g1 + g2);
+}
+
+const etiquetaMC = (v, p) => typeof v.label === "function" ? v.label(p) : v.label;
+export const mcAplica = (v, p) => (!v.soloBBC || esBBC(p)) && (!v.bloque || !!inc(p, v.bloque)) && (!v.aplica || v.aplica(p));
+
+// σ por defecto: el configurado, o el histórico de 12 meses para el VLSFO
+function sigmaDe(v, p) {
+  if (v.sigma != null) return v.sigma;
+  if (v.id === "vlsfo") return calcVLSFOStats(p.vlsfo_historico).sigma12m;
+  return 0;
+}
+
+// Variables del escenario: catálogo + configuración guardada. Migra el formato anterior:
+// dist "rango" → triangular; sin dist → normal (el VLSFO sin σ era el sorteo histórico).
 export function mcVarsDe(p) {
   const guardadas = p.mc_vars || [];
-  return DEFAULT_PARAMS.mc_vars.map(d => ({ ...d, ...(guardadas.find(v => v.id === d.id) || {}) }));
+  return MC_CATALOGO.map(cat => {
+    const g = guardadas.find(v => v.id === cat.id) || {};
+    let dist = g.dist;
+    if (dist === "rango") dist = "triangular";
+    if (!dist) dist = cat.id === "vlsfo" && g.sigma == null && "sigma" in g ? "historica" : (g.sigma !== undefined ? "normal" : cat.def.dist);
+    const v = { ...cat, ...cat.def, ...g, dist, label: etiquetaMC(cat, p), aplicaAqui: mcAplica(cat, p) };
+    v.baseVal = cat.base(p);
+    // Distribución con rango sin valores cargados (default o recién elegida): base ±2σ
+    if (["uniforme","triangular","pert"].includes(dist) && (v.min == null || v.max == null || (dist !== "uniforme" && v.moda == null)))
+      { const r = mcCompletarRango(v, p); v.min = v.min ?? r.min; v.moda = v.moda ?? r.moda; v.max = v.max ?? r.max; }
+    return v;
+  });
 }
 
-// sampleInop usa promedio anual — sin selección de mes
-function sampleInop(climaDB, umbralL, umbralV, sigmaFactor=0.20){
-  const d = getClimaAnual(climaDB);
-  const pL=probSuperaUmbral(d.lluviaProm,d.lluviaSigma,umbralL);
-  const pV=probSuperaUmbral(d.vientoProm,d.vientoSigma,umbralV);
-  const pBase=Math.min(pL+pV-pL*pV,0.90);
-  return Math.max(0,Math.min(0.50,pBase+randn()*pBase*sigmaFactor));
+// Completa mín/más probable/máx desde la base ±2σ cuando la distribución los necesita
+export function mcCompletarRango(v, p) {
+  const b = v.baseVal ?? v.base(p), sg = sigmaDe(v, p) || Math.abs(b) * 0.1 || 0.1;
+  const r = x => parseFloat(x.toFixed(4));
+  const lo = Math.max(v.piso ?? -Infinity, b - 2 * sg), hi = Math.min(v.techo ?? Infinity, b + 2 * sg);
+  return { min: r(v.entero ? Math.floor(lo) : lo), moda: r(b), max: r(v.entero ? Math.ceil(hi) : hi) };
 }
 
+export const mcRangoInvalido = v => ["uniforme","triangular","pert"].includes(v.dist)
+  && !(v.min <= (v.dist === "uniforme" ? v.max : v.moda) && (v.dist === "uniforme" || v.moda <= v.max));
+
+function muestrear(v, p, pool) {
+  const base = v.baseVal;
+  let x;
+  switch (v.dist) {
+    case "uniforme":   x = v.min + Math.random() * (v.max - v.min); break;
+    case "triangular": x = sampleTriangular(v.min, v.moda, v.max); break;
+    case "pert":       x = samplePert(v.min, v.moda, v.max); break;
+    case "historica":
+      if (pool && pool.length >= 6) { x = pool[Math.floor(Math.random() * pool.length)]; break; }
+      // pocos datos: Normal con el σ histórico
+      // falls through
+    default: {
+      // Normal truncada: se vuelve a sortear si cae fuera de [piso, techo]
+      const sg = sigmaDe(v, p);
+      for (let i = 0; i < 30; i++) {
+        x = base + randn() * sg;
+        if ((v.piso == null || x >= v.piso) && (v.techo == null || x <= v.techo)) break;
+      }
+    }
+  }
+  if (v.piso != null) x = Math.max(v.piso, x);
+  if (v.techo != null) x = Math.min(v.techo, x);
+  return v.entero ? Math.round(x) : x;
+}
+
+// Muestras de una variable sola (sin correr el modelo), para dibujar la forma de su distribución
+export function mcMuestras(v, p, n = 2000) {
+  const pool = p.vlsfo_historico.filter(h => h.precio > 0).slice(-24).map(h => h.precio);
+  return Array.from({ length: n }, () => muestrear(v, p, pool));
+}
+
+// Corre el modelo real n veces con las variables activas sorteadas.
 export function runMonteCarlo(p, n=5000) {
-  const mcVars = mcVarsDe(p);
-  const cfg = {};
-  mcVars.forEach(v => { cfg[v.id] = v; });
-  const S = id => cfg[id]?.activa !== false;
-  const sigma = id => cfg[id]?.sigma ?? DEFAULT_PARAMS.mc_vars.find(v=>v.id===id)?.sigma ?? 0;
-  // Rango: la variable se sortea con una triangular (mín, más probable, máx) en vez de la Normal
-  const R = id => cfg[id]?.dist === "rango";
-  const tri = id => sampleTriangular(cfg[id].min, cfg[id].moda, cfg[id].max);
+  const vars = mcVarsDe(p).filter(v => v.aplicaAqui);
+  const activas = vars.filter(v => v.activa && !mcRangoInvalido(v));
+  const pool = p.vlsfo_historico.filter(h => h.precio > 0).slice(-24).map(h => h.precio);
+  const det = evaluarCostos(p);
 
-  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
-  const basePrecio = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
-  const sigmaVLSFO = sigma('vlsfo') !== null ? sigma('vlsfo') : vlsfoStats.sigma12m;
-
-  // Bootstrap histórico VLSFO — últimos 24 meses con precio real (> 0)
-  // En lugar de asumir distribución Normal, sorteamos directamente del histórico real.
-  // Esto captura la asimetría real del mercado (spikes, colas largas al alza).
-  const vlsfoPool = p.vlsfo_historico
-    .filter(h => h.precio > 0)
-    .slice(-24)
-    .map(h => h.precio);
-  // Si no hay suficientes datos, caemos en distribución Normal (fallback)
-  const usarBootstrap = vlsfoPool.length >= 6;
-
-  // Promedio anual de esperaBB
-  const esperaBBBase = Array.isArray(p.des_esperaBBMes)
-    ? p.des_esperaBBMes.reduce((s,v)=>s+v,0) / p.des_esperaBBMes.length
-    : (p.des_esperaBB ?? 1.97);
-
-  // Inop base anual para rama S('inop')=false
-  const dZanual = getClimaAnual(p.clima_zarate);
-  const dBanual = getClimaAnual(p.clima_bb);
-  const pLzBase = probSuperaUmbral(dZanual.lluviaProm,dZanual.lluviaSigma,p.cap_inopLluvia);
-  const pVzBase = probSuperaUmbral(dZanual.vientoProm,dZanual.vientoSigma,p.cap_inopViento);
-  const pZbase  = Math.min(pLzBase+pVzBase-pLzBase*pVzBase, 0.90);
-  const pLbBase = probSuperaUmbral(dBanual.lluviaProm,dBanual.lluviaSigma,p.des_inopLluvia);
-  const pVbBase = probSuperaUmbral(dBanual.vientoProm,dBanual.vientoSigma,p.des_inopViento);
-  const pBbase  = Math.min(pLbBase+pVbBase-pLbBase*pVbBase, 0.90);
-
-  // Costo diario del barco: se calcula una vez (la liquidación de tripulación no se sortea)
-  const cdBase   = costoDiarioBarco(p);
-  const hireBase = cdBase.hire;
-  // Alcance: 1 = bloque a nuestro cargo, 0 = no suma
-  const kComb = inc(p,"combustible"), kRepo = inc(p,"repo"), kAgZ = inc(p,"agenciaCarga"), kAgB = inc(p,"agenciaDescarga");
-  const kAre  = inc(p,"arena"), kOpe = inc(p,"operacion"), kLog = inc(p,"logistica");
-  const movContrato = costoMovilizacion(p).total;
+  const ITEM_KEYS = ["barco","comb","arena","camiones","agZarate","agBB","opex","repo","mov"];
+  const itemsDe = (cat, tn) => ({
+    barco: cat.barco/tn, comb: cat.comb/tn, arena: cat.arena/tn, camiones: (cat.camDir + cat.camAco)/tn,
+    agZarate: cat.agZ/tn, agBB: cat.agB/tn, opex: cat.opex/tn, repo: cat.repo/tn, mov: cat.mov/tn,
+  });
 
   const results = [];
-
   for (let i = 0; i < n; i++) {
-    const vlsfo  = !S('vlsfo') ? basePrecio
-      : R('vlsfo') ? tri('vlsfo')
-      : usarBootstrap
-          ? vlsfoPool[Math.floor(Math.random() * vlsfoPool.length)]  // bootstrap: sorteo directo del histórico 24M
-          : Math.max(300, basePrecio + randn()*sigmaVLSFO);           // fallback: Normal si hay pocos datos
-    const tcBase = !S('tc') ? hireBase
-      : R('tc') ? tri('tc')
-      : Math.max(5000, hireBase + randn()*sigma('tc'));
-    // El resto del costo diario no varía; en BBC los recargos % se aplican sobre el hire sorteado
-    const tc     = cdBase.total + (tcBase - hireBase) * cdBase.factorHire;
-    // Cada variable: fija → valor base; rango → triangular; si no → Normal alrededor del base
-    const sortear = (id, base, piso) => !S(id) ? base : R(id) ? tri(id) : Math.max(piso, base + randn()*sigma(id));
-    const espBB  = sortear('espBB',    esperaBBBase,              0);
-    const espZ   = sortear('espZ',     p.des_esperaZarateDias,    0);
-    const espC   = sortear('espCarga', p.cap_esperaDias,          0);
-    const mC     = sortear('mCarga',   p.cap_pctMerma,            0);
-    const mD     = sortear('mDesc',    p.des_pctMermaDescarga,    0);
-    const mA     = sortear('mAcopio',  p.des_pctMermaAcopio,      0);
-    const vF     = sortear('velFact',  1,                         0.5);
-    const pa     = p.cap_precioArenaOrigen;
-
-    let pZ, pB;
-    if (S('inop') && R('inop')) {
-      // Rango de inop: factor sobre la probabilidad base del clima (1 = 100%)
-      const f = tri('inop');
-      pZ = Math.max(0, Math.min(0.50, pZbase*f));
-      pB = Math.max(0, Math.min(0.50, pBbase*f));
-    } else if (S('inop')) {
-      pZ = sampleInop(p.clima_zarate, p.cap_inopLluvia, p.cap_inopViento, sigma('inop'));
-      pB = sampleInop(p.clima_bb,     p.des_inopLluvia, p.des_inopViento, sigma('inop'));
-    } else {
-      pZ = pZbase;
-      pB = pBbase;
-    }
-
-    // E0 — Reposicionamiento
-    const tramosR = (p.repo_tramos||TRAMOS_REPO_DEFAULT).map(t=>({...t,velocidad:t.velocidad*vF}));
-    const {diasNav:diasNavR} = velPromedioPonderada(tramosR);
-    const combRepoT = tramosR.reduce((acc,t)=>{
-      const dist = (t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t}):(t.distancia||0));
-      const hs = dist/t.velocidad;
-      return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
-    },0);
-    const c0 = kRepo * (combRepoT*vlsfo*kComb + diasNavR*tc + (p.barco_limpiezaBodega||0) + costoWaiver(p)
-             + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0))
-             + movContrato;
-
-    // E1 — Carga (F-06: barco zarpa con cap_capacidadBarco, merma es costo adicional)
-    const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
-    const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
-    const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + espC;
-    const mCTn = p.cap_capacidadBarco*mC;  // Tn merma compradas extra en origen
-    const c1   = kAre*(pa*p.cap_capacidadBarco + pa*mCTn) + kOpe*p.cap_opexUSDTn*p.cap_capacidadBarco
-               + kComb*tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + kAgZ*calcAgenciaZarate(p,tR1);
-
-    // E2 — Navegación ida
-    const tramosV = p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
-    const {diasNav} = velPromedioPonderada(tramosV);
-    const combNavT = tramosV.reduce((acc,t)=>{
-      const dist = (t.distancia>0)?t.distancia:(t.wpIds?calcDistanciaTramo({...t,velocidad:t.velocidad}):(t.distancia||0));
-      const hs = dist/t.velocidad;
-      return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");
-    },0);
-    const c2 = kComb*combNavT*vlsfo + diasNav*tc;
-
-    // E3 — Descarga (usa Scheduler completo — F-02)
-    // F-06: usar cap_capacidadBarco como tnEntrada (igual que determinístico)
-    // la merma de carga afecta el costo pero el barco llega con cap_capacidadBarco
-    const mCTn_gross = p.cap_capacidadBarco * mC;  // Tn merma pagadas en origen
-    const tnABordo   = p.cap_capacidadBarco;         // Tn que llegan al puerto
-    const schMC = calcScheduler(p, tnABordo);
-    const tI3  = isFinite(schMC.t_total_dias) && schMC.t_total_dias < 500
-      ? schMC.t_total_dias
-      : (schMC.t_fase1_hrs / Math.max(1, p.des_horasDia || 14));
-    const tR3  = tI3 + tI3*pB/Math.max(0.01,1-pB) + espBB + espZ;
-    const mDTn = tnABordo*mD; const tnPD = tnABordo-mDTn;
-    const tnDi = Math.min(schMC.Tn_directos, tnPD);
-    const tnAc = tnPD - tnDi;
-    const mATn = tnAc*mA; const tnEnt = tnPD-mATn;
-    // F-05: precEq includes E0+E1+E2 (igual que determinístico)
-    const precEq = tnABordo>0 ? (c0-movContrato+c1+c2)/tnABordo : pa;
-    const fleteAcopioUSDTn = p.des_costoFleteAcopioUSDTn ?? 37.14;
-    // F-04: agregar mATn*precEq (merma acopio) a c3
-    const c3 = kOpe*p.des_opexUSDTn*tnABordo + kLog*(p.des_costoCamionesDirUSDTn*tnDi
-             + schMC.costoCal + fleteAcopioUSDTn*tnAc)
-             + kComb*tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
-             + kAgB*calcAgenciaBB(p,tR3) + kAre*(mDTn*precEq + mATn*precEq);
-
-    // Desglose de ítems para proforma MC
-    const combTotal = kComb*(combRepoT*kRepo + (tR1*p.barco_consumoPuerto) + combNavT + (tR3*p.barco_consumoPuerto));
-    const barcoTotal = (diasNavR*kRepo + tR1 + diasNav + tR3) * tc;
-    const agZarate   = kAgZ*calcAgenciaZarate(p, tR1);
-    const agBB       = kAgB*calcAgenciaBB(p, tR3);
-    const opex       = kOpe*(p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnABordo);
-    const camiones   = kLog*(p.des_costoCamionesDirUSDTn*tnDi + schMC.costoCal + fleteAcopioUSDTn*tnAc);
-    const arena      = kAre*pa*p.cap_capacidadBarco;
-    const mermas     = kAre*(pa*mCTn_gross + mDTn*precEq + mATn*precEq);
-    const repo       = c0;
-    const total      = c0+c1+c2+c3;
-
-    results.push({
-      total: parseFloat((total/tnEnt).toFixed(3)),
-      items: {
-        arena:    parseFloat((arena/tnEnt).toFixed(3)),
-        mermas:   parseFloat((mermas/tnEnt).toFixed(3)),
-        barco:    parseFloat((barcoTotal/tnEnt).toFixed(3)),
-        comb:     parseFloat((combTotal*vlsfo/tnEnt).toFixed(3)),
-        agZarate: parseFloat((agZarate/tnEnt).toFixed(3)),
-        agBB:     parseFloat((agBB/tnEnt).toFixed(3)),
-        opex:     parseFloat((opex/tnEnt).toFixed(3)),
-        camiones: parseFloat((camiones/tnEnt).toFixed(3)),
-        repo:     parseFloat((repo/tnEnt).toFixed(3)),
-      },
-    });
+    // Cada variable arma sus overrides sobre el escenario original
+    const overrides = {};
+    for (const v of activas) Object.assign(overrides, v.aplicar(p, muestrear(v, p, pool)));
+    const r = activas.length ? evaluarCostos({ ...p, ...overrides }) : det;
+    results.push({ total: r.usdTn, items: itemsDe(r.cat, r.tn) });
   }
 
   results.sort((a,b)=>a.total-b.total);
-  const pct  = q => results[Math.floor(q*n)].total;
+  const pct  = q => parseFloat(results[Math.min(n-1, Math.floor(q*n))].total.toFixed(3));
   const totals = results.map(r=>r.total);
   const mean = totals.reduce((a,b)=>a+b,0)/n;
   const std  = Math.sqrt(totals.reduce((a,b)=>a+(b-mean)**2,0)/n);
@@ -1513,37 +1566,15 @@ export function runMonteCarlo(p, n=5000) {
   totals.forEach(v=>{const bi=bs>0?Math.min(Math.floor((v-mn)/bs),bins-1):0;hist[bi].count++;});
   hist.forEach(h=>h.pct=parseFloat(((h.count/n)*100).toFixed(1)));
 
-  // Percentiles por ítem — tomados en los índices P10/P50/P90 del total ordenado
-  const idxP10=Math.floor(0.10*n), idxP50=Math.floor(0.50*n), idxP90=Math.floor(0.90*n);
-  const ITEM_KEYS = ['arena','mermas','barco','comb','agZarate','agBB','opex','camiones','repo'];
+  // Ítems en el escenario P10/P50/P90 del total (no son percentiles independientes)
+  const idx = q => Math.min(n-1, Math.floor(q*n));
   const proforma = {};
-  ITEM_KEYS.forEach(k=>{
-    proforma[k] = {
-      p10: results[idxP10].items[k],
-      p50: results[idxP50].items[k],
-      p90: results[idxP90].items[k],
-    };
+  ITEM_KEYS.forEach(k => {
+    proforma[k] = { p10: results[idx(0.10)].items[k], p50: results[idx(0.50)].items[k], p90: results[idx(0.90)].items[k] };
   });
 
-  // Descripción de cada variable para el panel de la UI
-  const varsDesc = mcVars.map(v => {
-    let base = "";
-    switch(v.id) {
-      case "vlsfo":   base = `$${basePrecio}/T (${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})`; break;
-      case "tc":      base = `$${hireBase.toLocaleString()}/d (${hireLabel(p)})`; break;
-      case "velFact": base = "100% (neutro)"; break;
-      case "espBB":   base = `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom. anual`; break;
-      case "espZ":    base = `${p.des_esperaZarateDias}d`; break;
-      case "espCarga":base = `${p.cap_esperaDias}d`; break;
-      case "mCarga":  base = `${(p.cap_pctMerma*100).toFixed(1)}%`; break;
-      case "mDesc":   base = `${(p.des_pctMermaDescarga*100).toFixed(1)}%`; break;
-      case "mAcopio": base = `${(p.des_pctMermaAcopio*100).toFixed(1)}%`; break;
-      case "inop":    base = "pBase calculado del clima"; break;
-      default:        base = "—";
-    }
-    const s = v.id==="vlsfo" ? sigmaVLSFO : (v.sigma??0);
-    return { ...v, base, sigmaEfectivo: s };
-  });
+  const varsDesc = vars.map(v => ({ id:v.id, label:v.label, unit:v.unit, tipo:v.tipo, activa:v.activa, dist:v.dist,
+    baseVal:v.baseVal, sigma:sigmaDe(v, p), min:v.min, moda:v.moda, max:v.max }));
 
   return {
     hist, n,
@@ -1553,5 +1584,6 @@ export function runMonteCarlo(p, n=5000) {
     min:mn, max:mx,
     proforma,
     varsDesc,
+    det: det.usdTn, contrato: det.contrato, nViajes: det.nViajes,
   };
 }

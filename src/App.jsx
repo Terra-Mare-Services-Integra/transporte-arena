@@ -12,7 +12,7 @@ import {
   calcEtapaRepo, calcEtapaVuelta, calcEtapa1, calcEtapa2, calcEtapa3, calcTotal, calcNViajes, getClimaAnual,
   calcAgenciaZarate, calcAgenciaBB, calcScheduler,
   getPctInopFromDB, getInopDetalle, velPromedioPonderada, checkEspejo,
-  runMonteCarlo, mcVarsDe,
+  runMonteCarlo, mcVarsDe, evaluarCostos, MC_GRUPOS, MC_DISTRIBUCIONES, mcCompletarRango, mcRangoInvalido, mcMuestras,
   costoDiarioBarco, calcTripulacion, basicoCargo, esBBC, hireKey, hireLabel,
   diasPeriodoMultiViaje, CONVENIOS, ALCANCE_BLOQUES, ALCANCE_COMPLETO, ALCANCE_SOLO_BARCO, TABS_POR_BLOQUE, inc, ESCALA_SUELDOS_DEFAULT, DOTACION_DEFAULT, BBC_ITEMS_DEFAULT,
 } from "./lib/motor";
@@ -2064,53 +2064,104 @@ function TabMC({p,set,resultado,setResultado}) {
   const [savingMC,setSavingMC]=useState(false);
   const [nomMC,setNomMC]=useState("");
   const [msgMC,setMsgMC]=useState("");
-  const det=calcTotal(p);
+  const det=evaluarCostos(p);
   const res=resultado;
 
-  // mc_vars vive en p — editamos a través de set("mc_vars", ...)
-  const mcVars = mcVarsDe(p);
-  const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
+  // mc_vars vive en p — se guarda solo la configuración (id, activa, dist, sigma, min, moda, max)
+  const mcVars=mcVarsDe(p);
+  const visibles=mcVars.filter(v=>v.aplicaAqui);
+  const ocultas=mcVars.length-visibles.length;
+  const guardar=(id,extra)=>set("mc_vars",mcVars.map(({id:vid,activa,dist,sigma,min,moda,max})=>{
+    const cfg={id:vid,activa,dist,sigma,min,moda,max};
+    return vid===id?{...cfg,...extra}:cfg;
+  }));
 
-  const updateVar=(id,field,val)=>{
-    const arr=mcVars.map(v=>v.id===id?{...v,[field]:val}:v);
-    set("mc_vars",arr);
-  };
-
-  // Valor base de cada variable, en las unidades en que se guarda (frac., factor, días, USD)
-  const baseDe=(v)=>{
-    switch(v.id){
-      case "vlsfo":    return getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-      case "tc":       return p[hireKey(p)];
-      case "espBB":    return p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;
-      case "espZ":     return p.des_esperaZarateDias;
-      case "espCarga": return p.cap_esperaDias;
-      case "mCarga":   return p.cap_pctMerma;
-      case "mDesc":    return p.des_pctMermaDescarga;
-      case "mAcopio":  return p.des_pctMermaAcopio;
-      default:         return 1; // velFact e inop: factor neutro
-    }
-  };
-  // Las variables en fracción o factor se muestran y se cargan en %
-  const enPct=(v)=>v.id==="velFact"||v.id==="inop"||v.unit==="frac.";
+  // Mostrar en las unidades del usuario: fracciones y factores en %
+  const enPct=v=>v.tipo==="pct"||v.tipo==="factor";
+  const aVista=(v,x)=>x==null?"":parseFloat((enPct(v)?x*100:x).toFixed(4));
+  const deVista=(v,x)=>enPct(v)?x/100:x;
   const fmtVal=(v,x)=>{
-    if(v.id==="vlsfo"||v.id==="tc") return `$${Math.round(x).toLocaleString()}`;
-    if(enPct(v)) return `${(x*100).toFixed(v.unit==="frac."?1:0)}%`;
-    return `${x.toFixed(1)} d`;
+    if(x==null||isNaN(x)) return "—";
+    if(v.tipo==="usd") return `$${Math.round(x).toLocaleString("es-AR")}`;
+    if(enPct(v)) return `${(x*100).toFixed(v.tipo==="pct"?2:0)}%`;
+    if(v.tipo==="dias") return `${x.toFixed(1)} d`;
+    return `${parseFloat(x.toFixed(2)).toLocaleString("es-AR")}`;
   };
+  const unidadVista=v=>enPct(v)?"%":v.unit;
+  const paso=v=>v.tipo==="usd"?(v.baseVal>1000?100:0.5):enPct(v)?(v.tipo==="pct"?0.1:1):v.entero?1:0.1;
 
-  // Al pasar a rango se arranca de base ±2σ, con el base como más probable
   const cambiarDist=(v,dist)=>{
     const extra={dist};
-    if(dist==="rango"&&v.min==null){
-      const b=baseDe(v);
-      const s=v.id==="vlsfo"?(v.sigma??vlsfoStats.sigma12m):(v.sigma??0);
-      const r=x=>parseFloat(x.toFixed(4));
-      Object.assign(extra,{min:r(Math.max(0,b-2*s)),moda:r(b),max:r(b+2*s)});
-    }
-    set("mc_vars",mcVars.map(x=>x.id===v.id?{...x,...extra}:x));
+    if(["uniforme","triangular","pert"].includes(dist)&&(v.min==null||v.max==null||v.moda==null)) Object.assign(extra,mcCompletarRango(v,p));
+    guardar(v.id,extra);
   };
-  const rangoInvalido=(v)=>v.dist==="rango"&&!(v.min<=v.moda&&v.moda<=v.max);
 
+  // Rango que cubre ~95% de los sorteos (Normal: ±2σ truncado al piso)
+  const rangoTxt=v=>{
+    if(!v.activa) return "Fija";
+    if(v.dist==="historica") return "24 meses reales";
+    if(v.dist==="normal"){
+      const sg=v.sigma??(v.id==="vlsfo"?calcVLSFOStats(p.vlsfo_historico).sigma12m:0);
+      if(!sg) return "Fija (σ = 0)";
+      const lo=Math.max(v.piso??-Infinity,v.baseVal-2*sg), hi=Math.min(v.techo??Infinity,v.baseVal+2*sg);
+      return `${fmtVal(v,lo)} – ${fmtVal(v,hi)}`;
+    }
+    return `${fmtVal(v,v.min)} – ${fmtVal(v,v.max)}`;
+  };
+
+  const inputNum=(v,campo,valor,onCambio,ancho=62)=>(
+    <input type="number" value={valor} disabled={!v.activa} step={paso(v)}
+      onChange={e=>{const x=parseFloat(e.target.value); if(!isNaN(x)) onCambio(x);}}
+      style={{width:ancho,background:v.activa?T.usuario.bg:"#F3F4F6",
+        border:`1px solid ${campo!=="sigma"&&mcRangoInvalido(v)?C.red:(v.activa?T.usuario.border:C.border)}`,
+        borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
+        color:v.activa?T.usuario.text:C.mid,fontWeight:700,textAlign:"center"}}/>
+  );
+
+  const parametros=v=>{
+    if(v.dist==="historica") return <span style={{fontSize:9,color:T.stat.text}}>Sorteo directo de los últimos 24 meses</span>;
+    if(v.dist==="normal"){
+      const auto=v.id==="vlsfo"&&v.sigma==null;
+      const sg=auto?calcVLSFOStats(p.vlsfo_historico).sigma12m:(v.sigma??0);
+      return (
+        <label style={{display:"flex",alignItems:"center",gap:4,fontSize:8,color:C.mid}}>
+          σ {inputNum(v,"sigma",aVista(v,sg),x=>guardar(v.id,{sigma:Math.max(0,deVista(v,x))}))}
+          <span style={{fontSize:9}}>{unidadVista(v)}</span>
+          {auto&&<span style={{fontSize:8,color:T.stat.text}}>(histórico 12 m)</span>}
+        </label>
+      );
+    }
+    const campos=v.dist==="uniforme"?[["min","mín"],["max","máx"]]:[["min","mín"],["moda","más prob."],["max","máx"]];
+    return (
+      <div style={{display:"flex",alignItems:"flex-end",gap:4}}>
+        {campos.map(([c,l])=>(
+          <label key={c} style={{display:"flex",flexDirection:"column",fontSize:8,color:C.mid}}>
+            {l}{inputNum(v,c,aVista(v,v[c]),x=>guardar(v.id,{[c]:deVista(v,x)}),58)}
+          </label>
+        ))}
+        <span style={{fontSize:9,color:C.mid,paddingBottom:5}}>{unidadVista(v)}</span>
+      </div>
+    );
+  };
+
+  // Forma de la distribución: histograma de muestras de la variable sola
+  const forma=v=>{
+    if(!v.activa) return null;
+    const xs=mcMuestras(v,p,1500);
+    const lo=Math.min(...xs), hi=Math.max(...xs), B=22;
+    if(hi-lo<1e-9) return <span style={{fontSize:8,color:C.mid}}>constante</span>;
+    const cnt=Array(B).fill(0); xs.forEach(x=>cnt[Math.min(B-1,Math.floor((x-lo)/(hi-lo)*B))]++);
+    const mx=Math.max(...cnt), W=88, H=24, bw=W/B;
+    const xb=(v.baseVal-lo)/(hi-lo)*W;
+    return (
+      <svg width={W} height={H} style={{display:"block"}} aria-label={`Forma de ${v.label}`}>
+        {cnt.map((c,i)=><rect key={i} x={i*bw+0.5} y={H-c/mx*H} width={bw-1} height={c/mx*H} fill={C.blue} opacity={0.75}/>)}
+        {xb>=0&&xb<=W&&<line x1={xb} x2={xb} y1={0} y2={H} stroke={C.gold} strokeWidth={1.5}/>}
+      </svg>
+    );
+  };
+
+  const invalidas=visibles.filter(v=>v.activa&&mcRangoInvalido(v));
   const run=useCallback(()=>{
     setR(true);
     setTimeout(()=>{setResultado(runMonteCarlo(p,n));setR(false);},60);
@@ -2141,181 +2192,84 @@ function TabMC({p,set,resultado,setResultado}) {
     {l:"P75",               v:res.p75,bg:"#FEF3C7",bc:"#D4B84A",c:C.orange, d:"Cuartil pesimista."},
     {l:"P90 — Pesimista",   v:res.p90,bg:"#FEE2E2",bc:"#FECACA",c:C.p90,   d:"Solo 10% de escenarios tiene costo mayor."},
   ]:[];
-
-  // Rango ±2σ para mostrar en la tabla
-  const rango=(v)=>{
-    if(v.dist==="rango") return `${fmtVal(v,v.min)} – ${fmtVal(v,v.max)} (más prob. ${fmtVal(v,v.moda)})`;
-    const s = v.id==="vlsfo"
-      ? (v.sigma!==null&&v.sigma!==undefined ? v.sigma : vlsfoStats.sigma12m)
-      : (v.sigma??0);
-    if(!v.activa || s===0) return "Fijo";
-    const base=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
-    switch(v.id){
-      case "vlsfo":   return `$${(base-2*s).toFixed(0)} – $${(base+2*s).toFixed(0)}`;
-      case "tc":      return `$${(p[hireKey(p)]-2*s).toFixed(0)} – $${(p[hireKey(p)]+2*s).toFixed(0)}`;
-      case "velFact": return `${((1-2*s)*100).toFixed(0)}% – ${((1+2*s)*100).toFixed(0)}%`;
-      case "espBB": {const avg=p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12;return `${Math.max(0,avg-2*s).toFixed(1)} – ${(avg+2*s).toFixed(1)} d`;}
-      case "espZ":    return `${Math.max(0,p.des_esperaZarateDias-2*s).toFixed(1)} – ${(p.des_esperaZarateDias+2*s).toFixed(1)} d`;
-      case "mCarga":  return `${Math.max(0,(p.cap_pctMerma-2*s)*100).toFixed(1)}% – ${((p.cap_pctMerma+2*s)*100).toFixed(1)}%`;
-      case "mDesc":   return `${Math.max(0,(p.des_pctMermaDescarga-2*s)*100).toFixed(1)}% – ${((p.des_pctMermaDescarga+2*s)*100).toFixed(1)}%`;
-      case "mAcopio": return `${Math.max(0,(p.des_pctMermaAcopio-2*s)*100).toFixed(1)}% – ${((p.des_pctMermaAcopio+2*s)*100).toFixed(1)}%`;
-      case "inop":    return `±${(s*100).toFixed(0)}% del pBase calculado`;
-      default: return "—";
-    }
-  };
-
-  const sigmaLabel=(v)=>{
-    if(v.dist==="rango") return `△ ${fmtVal(v,v.min)} / ${fmtVal(v,v.moda)} / ${fmtVal(v,v.max)}`;
-    if(v.id==="vlsfo") return v.sigma!==null&&v.sigma!==undefined ? `$${v.sigma}` : `$${vlsfoStats.sigma12m.toFixed(0)} (auto)`;
-    if(!v.sigma&&v.sigma!==0) return "—";
-    switch(v.id){
-      case "tc":      return `$${v.sigma}`;
-      case "velFact": return `${(v.sigma*100).toFixed(0)}%`;
-      case "inop":    return `${(v.sigma*100).toFixed(0)}%`;
-      default: return v.unit==="frac." ? `${(v.sigma*100).toFixed(1)}%` : `${v.sigma}`;
-    }
-  };
+  const baseTxt=det.contrato?`contrato de ${det.nViajes} ${det.nViajes===1?"viaje":"viajes"}`:"un viaje";
+  const distLabel=id=>MC_DISTRIBUCIONES.find(d=>d.id===id)?.label||id;
+  const th={padding:"6px 9px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,textTransform:"uppercase",letterSpacing:.5,textAlign:"left",whiteSpace:"nowrap"};
 
   return (
     <div>
       <div className="card" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
         <div className="ct" style={{color:"#0369A1"}}>¿Qué es el Monte Carlo?</div>
         <p style={{fontSize:11,color:"#0369A1",lineHeight:1.7}}>
-          Corre el modelo <strong>N veces</strong> sorteando valores aleatorios para cada variable activa: con una Normal centrada en el valor base,
-          o con un <strong>rango</strong> (mínimo, más probable, máximo) que se sortea con una distribución triangular.
-          El mes se sortea al azar en cada iteración — el resultado representa el <strong>costo anualizado esperado</strong>, ponderando todos los meses según su clima y estacionalidad.
-          Las variables marcadas <strong>Fija</strong> se toman sin ruido.
+          Corre <strong>el mismo modelo de las otras pestañas</strong> N veces. En cada iteración sortea un valor para cada variable activa
+          con la distribución que elijas y recalcula todo: etapas, alcance y, en Bare Boat, el contrato completo ({baseTxt}).
+          Las variables fijas se toman con su valor del escenario.
         </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:6,marginTop:6,fontSize:10,color:"#0369A1"}}>
+          <div><strong>Normal</strong> — valor base ± σ; ~95% de los sorteos dentro de ±2σ. No baja del mínimo físico.</div>
+          <div><strong>Uniforme</strong> — cualquier valor entre mín y máx con la misma probabilidad.</div>
+          <div><strong>Triangular</strong> — mín, más probable y máx; probabilidad lineal hacia los extremos.</div>
+          <div><strong>PERT</strong> — mismos tres valores, más concentrada en el más probable. Buena para estimaciones de expertos.</div>
+          <div><strong>Histórica</strong> — solo VLSFO: sortea precios reales de los últimos 24 meses.</div>
+        </div>
       </div>
 
       {/* ── TABLA DE VARIABLES ── */}
       <div className="card">
-        <div className="ct">Variables Estocásticas <TipoBadge tipo="usuario"/></div>
+        <div className="ct">Variables estocásticas <TipoBadge tipo="usuario"/></div>
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:860}}>
             <thead>
               <tr style={{background:C.navy}}>
-                {["Variable","Valor base","Distribución (editable)","Rango de sorteo","Activa","Nota"].map(h=>(
-                  <th key={h} style={{padding:"6px 9px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,
-                    textTransform:"uppercase",letterSpacing:.5,textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
-                ))}
+                {["Variable","Valor base","Distribución","Parámetros","Rango ~95%","Forma","Estado"].map(h=><th key={h} style={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
-              {mcVars.map((v,i)=>{
-                const esFija=!v.activa;
-                const sigmaAuto=v.id==="vlsfo"&&(v.sigma===null||v.sigma===undefined);
+              {MC_GRUPOS.map(g=>{
+                const vs=visibles.filter(v=>v.grupo===g);
+                if(!vs.length) return null;
                 return (
-                  <tr key={v.id} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB",opacity:esFija?0.55:1}}>
-                    {/* Variable */}
-                    <td style={{padding:"7px 9px",fontWeight:700,color:C.navy,whiteSpace:"nowrap"}}>{v.label}</td>
-                    {/* Valor base */}
-                    <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid,whiteSpace:"nowrap"}}>
-                      {v.id==="vlsfo" && `$${getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico)}/T`}
-                      {v.id==="tc"      && `$${p[hireKey(p)].toLocaleString()}/d (${hireLabel(p)})`}
-                      {v.id==="velFact" && "100%"}
-                      {v.id==="espBB"   && `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom.`}
-                      {v.id==="espZ"    && `${p.des_esperaZarateDias}d`}
-                      {v.id==="espCarga"&& `${p.cap_esperaDias}d`}
-                      {v.id==="mCarga"  && `${(p.cap_pctMerma*100).toFixed(1)}%`}
-                      {v.id==="mDesc"   && `${(p.des_pctMermaDescarga*100).toFixed(1)}%`}
-                      {v.id==="mAcopio" && `${(p.des_pctMermaAcopio*100).toFixed(1)}%`}
-                      {v.id==="inop"    && "pBase clima"}
-                    </td>
-                    {/* Distribución: Normal (σ) o Rango (mín / más probable / máx) */}
-                    <td style={{padding:"5px 9px"}}>
-                      <select value={v.dist==="rango"?"rango":"normal"} disabled={esFija}
-                        onChange={e=>cambiarDist(v,e.target.value)}
-                        style={{fontSize:9,marginBottom:4,padding:"2px 4px",borderRadius:4,
-                          border:`1px solid ${C.border}`,background:"#fff",color:C.navy,fontWeight:700}}>
-                        <option value="normal">Normal (σ)</option>
-                        <option value="rango">Rango (mín–máx)</option>
-                      </select>
-                      {v.dist==="rango" ? (
-                        <div style={{display:"flex",alignItems:"flex-end",gap:4}}>
-                          {[["min","mín"],["moda","más prob."],["max","máx"]].map(([campo,lbl])=>(
-                            <label key={campo} style={{display:"flex",flexDirection:"column",fontSize:8,color:C.mid}}>
-                              {lbl}
-                              <input type="number" disabled={esFija}
-                                value={parseFloat(((v[campo]??0)*(enPct(v)?100:1)).toFixed(4))}
-                                step={v.id==="vlsfo"?5:v.id==="tc"?50:enPct(v)?(v.unit==="frac."?0.1:1):0.25}
-                                onChange={e=>{
-                                  const val=parseFloat(e.target.value);
-                                  if(isNaN(val))return;
-                                  updateVar(v.id,campo,enPct(v)?val/100:val);
-                                }}
-                                style={{width:58,background:esFija?"#F3F4F6":T.usuario.bg,
-                                  border:`1px solid ${rangoInvalido(v)?C.red:(esFija?C.border:T.usuario.border)}`,
-                                  borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
-                                  color:esFija?C.mid:T.usuario.text,fontWeight:700,textAlign:"center"}}/>
-                            </label>
-                          ))}
-                          <span style={{fontSize:9,color:C.mid,paddingBottom:5}}>{enPct(v)?"%":v.unit}</span>
-                        </div>
-                      ) : sigmaAuto ? (
-                        <div style={{display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{fontSize:10,fontFamily:"DM Mono,monospace",color:T.stat.text,
-                            background:T.stat.bg,border:`1px solid ${T.stat.border}`,borderRadius:4,padding:"2px 7px"}}>
-                            ${vlsfoStats.sigma12m.toFixed(0)} auto
-                          </span>
-                          <button onClick={()=>updateVar(v.id,"sigma",vlsfoStats.sigma12m)}
-                            style={{fontSize:8,padding:"2px 6px",borderRadius:4,border:`1px solid ${C.border}`,
-                            background:"#fff",color:C.mid,cursor:"pointer"}}>fijar</button>
-                        </div>
-                      ):(
-                        <div style={{display:"flex",alignItems:"center",gap:4}}>
-                          <input type="number"
-                            value={v.id==="velFact"||v.id==="inop" ? (v.sigma??0)*100 : (v.sigma??0)}
-                            min={0} step={v.id==="vlsfo"?5:v.id==="tc"?50:v.id==="velFact"||v.id==="inop"?1:0.1}
-                            onChange={e=>{
-                              const val=parseFloat(e.target.value)||0;
-                              const stored=(v.id==="velFact"||v.id==="inop")?val/100:val;
-                              updateVar(v.id,"sigma",stored);
-                            }}
-                            disabled={esFija}
-                            style={{width:65,background:esFija?"#F3F4F6":T.usuario.bg,
-                              border:`1px solid ${esFija?C.border:T.usuario.border}`,
-                              borderRadius:5,padding:"3px 5px",fontSize:11,fontFamily:"DM Mono,monospace",
-                              color:esFija?C.mid:T.usuario.text,fontWeight:700,textAlign:"center"}}/>
-                          <span style={{fontSize:9,color:C.mid}}>{v.id==="velFact"||v.id==="inop"?"%":v.unit==="frac."?"":v.unit}</span>
-                          {v.id==="vlsfo"&&<button onClick={()=>updateVar(v.id,"sigma",null)}
-                            style={{fontSize:8,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.stat.border}`,
-                            background:T.stat.bg,color:T.stat.text,cursor:"pointer"}}>auto</button>}
-                        </div>
-                      )}
-                    </td>
-                    {/* Rango */}
-                    <td style={{padding:"7px 9px",fontFamily:"DM Mono,monospace",fontSize:10,
-                      color:esFija?C.mid:C.gold,fontWeight:esFija?400:700}}>
-                      {esFija?"—":rango(v)}
-                      {!esFija&&rangoInvalido(v)&&(
-                        <div style={{color:C.red,fontSize:9,fontFamily:"Montserrat,sans-serif",marginTop:2}}>
-                          Tiene que ser mín ≤ más prob. ≤ máx
-                        </div>
-                      )}
-                    </td>
-                    {/* Toggle activa/fija */}
-                    <td style={{padding:"7px 9px",textAlign:"center"}}>
-                      <button onClick={()=>updateVar(v.id,"activa",!v.activa)}
-                        style={{padding:"3px 10px",borderRadius:5,fontSize:9,fontWeight:700,cursor:"pointer",
-                          border:`1px solid ${v.activa?C.navy:C.border}`,
-                          background:v.activa?C.navy:"#fff",
-                          color:v.activa?"#fff":C.mid,transition:"all .15s"}}>
-                        {v.activa?"Activa":"Fija"}
-                      </button>
-                    </td>
-                    {/* Nota */}
-                    <td style={{padding:"7px 9px",fontSize:9,color:C.mid,maxWidth:220}}>{v.nota}</td>
-                  </tr>
+                  <React.Fragment key={g}>
+                    <tr><td colSpan={7} style={{padding:"8px 9px 4px",fontSize:9,fontWeight:800,color:C.gold,textTransform:"uppercase",letterSpacing:.6,borderBottom:`1px solid ${C.border}`}}>{g}</td></tr>
+                    {vs.map((v,i)=>(
+                      <tr key={v.id} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB",opacity:v.activa?1:0.6}}>
+                        <td style={{padding:"6px 9px",maxWidth:220}}>
+                          <div style={{fontWeight:700,color:C.navy}}>{v.label}</div>
+                          {v.nota&&<div style={{fontSize:8,color:C.mid,marginTop:1}}>{v.nota}</div>}
+                        </td>
+                        <td style={{padding:"6px 9px",fontFamily:"DM Mono,monospace",fontSize:10,color:C.mid,whiteSpace:"nowrap"}}>
+                          {fmtVal(v,v.baseVal)} <span style={{fontSize:8}}>{v.tipo==="usd"?v.unit:""}</span>
+                        </td>
+                        <td style={{padding:"6px 9px"}}>
+                          <select value={v.dist} disabled={!v.activa} onChange={e=>cambiarDist(v,e.target.value)}
+                            style={{fontSize:10,padding:"2px 4px",borderRadius:4,border:`1px solid ${C.border}`,background:"#fff",color:C.navy,fontWeight:700}}>
+                            {MC_DISTRIBUCIONES.filter(d=>d.id!=="historica"||v.historica).map(d=><option key={d.id} value={d.id}>{d.label}</option>)}
+                          </select>
+                        </td>
+                        <td style={{padding:"5px 9px"}}>
+                          {parametros(v)}
+                          {v.activa&&mcRangoInvalido(v)&&<div style={{color:C.red,fontSize:9,marginTop:2}}>Tiene que ser mín ≤ más prob. ≤ máx</div>}
+                        </td>
+                        <td style={{padding:"6px 9px",fontFamily:"DM Mono,monospace",fontSize:10,color:v.activa?C.gold:C.mid,fontWeight:v.activa?700:400,whiteSpace:"nowrap"}}>{rangoTxt(v)}</td>
+                        <td style={{padding:"6px 9px"}}>{forma(v)}</td>
+                        <td style={{padding:"6px 9px",textAlign:"center"}}>
+                          <button onClick={()=>guardar(v.id,{activa:!v.activa})}
+                            style={{padding:"3px 10px",borderRadius:5,fontSize:9,fontWeight:700,cursor:"pointer",
+                              border:`1px solid ${v.activa?C.navy:C.border}`,background:v.activa?C.navy:"#fff",color:v.activa?"#fff":C.mid}}>
+                            {v.activa?"Activa":"Fija"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
         <div style={{marginTop:8,fontSize:9,color:C.mid,fontStyle:"italic"}}>
-          Normal: σ = desviación estándar; ~95% de los sorteos caen dentro de ±2σ del valor base.
-          Rango: triangular entre mín y máx, con más sorteos cerca del valor más probable. En Inop. climática el rango es un factor sobre la probabilidad base del clima (100% = sin cambio).
-          El mes se sortea al azar en cada iteración (análisis anual ponderado).
+          La línea dorada de la forma marca el valor base. Los factores (100% = sin cambio) multiplican el valor del escenario.
+          {ocultas>0&&` ${ocultas} ${ocultas===1?"variable no aplica":"variables no aplican"} con la modalidad o el alcance actual y no se muestran.`}
         </div>
       </div>
 
@@ -2324,17 +2278,17 @@ function TabMC({p,set,resultado,setResultado}) {
         <div className="ct">Configuración</div>
         <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
           <div>
-            <div style={{fontSize:8,color:C.muted,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>N simulaciones</div>
+            <div style={{fontSize:8,color:C.mid,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>N simulaciones</div>
             <select className="campo-input" value={n} onChange={e=>setN(Number(e.target.value))}
               style={{width:130,background:T.usuario.bg,borderColor:T.usuario.border,color:T.usuario.text}}>
-              {[1000,3000,5000,10000].map(v=><option key={v} value={v}>{v.toLocaleString()}</option>)}
+              {[1000,3000,5000,10000].map(v=><option key={v} value={v}>{v.toLocaleString("es-AR")}</option>)}
             </select>
           </div>
-          <button className="run" onClick={run} disabled={running||mcVars.some(v=>v.activa&&rangoInvalido(v))}
-            title={mcVars.some(v=>v.activa&&rangoInvalido(v))?"Revisá los rangos marcados en rojo":undefined}>
+          <button className="run" onClick={run} disabled={running||invalidas.length>0}
+            title={invalidas.length?"Revisá los rangos marcados en rojo":undefined}>
             {running?"Calculando...":"▶ Correr"}
           </button>
-          <span style={{fontSize:10,color:C.muted}}>Base det. (Jun): <strong style={{color:C.gold}}>${det.usdTn.toFixed(1)} USD/Tn</strong></span>
+          <span style={{fontSize:10,color:C.mid}}>Base determinística ({baseTxt}): <strong style={{color:C.gold}}>${det.usdTn.toFixed(2)} USD/Tn</strong></span>
         </div>
       </div>
 
@@ -2350,9 +2304,9 @@ function TabMC({p,set,resultado,setResultado}) {
               </div>
             ))}
             <div className="pbadge" style={{background:"#EEF2F7",borderColor:C.border}}>
-              <div className="pbadge-l" style={{color:C.muted}}>Spread P10–P90</div>
+              <div className="pbadge-l" style={{color:C.mid}}>Spread P10–P90</div>
               <div className="pbadge-v" style={{color:C.navy}}>${(res.p90-res.p10).toFixed(1)}</div>
-              <div className="pbadge-d" style={{color:C.muted}}>σ=${res.std.toFixed(1)}</div>
+              <div className="pbadge-d" style={{color:C.mid}}>σ=${res.std.toFixed(1)}</div>
             </div>
             <div className="pbadge" style={{background:"#F0F9FF",borderColor:"#BAE6FD"}}>
               <div className="pbadge-l" style={{color:"#0369A1"}}>Media</div>
@@ -2360,12 +2314,17 @@ function TabMC({p,set,resultado,setResultado}) {
               <div className="pbadge-d" style={{color:"#0369A1"}}>±${(res.std/Math.sqrt(res.n)*2).toFixed(3)} error</div>
             </div>
           </div>
+          {res.contrato!=null&&res.contrato!==det.contrato&&(
+            <div style={{marginBottom:10,padding:"8px 12px",background:"#FEF9C3",border:"1px solid #FDE047",borderRadius:8,fontSize:10,color:"#92400E"}}>
+              Esta corrida se hizo con la otra modalidad del barco. Volvé a correrla para comparar con el escenario actual.
+            </div>
+          )}
 
           <div className="card" style={{background:"#F0FDF4",borderColor:"#86EFAC"}}>
             <div className="ct" style={{color:C.green}}>Guardar esta corrida</div>
             <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
               <input type="text" value={nomMC} onChange={e=>setNomMC(e.target.value)}
-                placeholder="Ej: Anual 2026 — VLSFO hoy — 5000 sims"
+                placeholder="Ej: BBC 3 años — PERT en hire — 5000 sims"
                 style={{flex:2,minWidth:180,background:T.usuario.bg,border:`1px solid ${T.usuario.border}`,
                   borderRadius:6,padding:"6px 8px",color:T.usuario.text,fontSize:12,fontFamily:"Montserrat,sans-serif"}}/>
               <button className="run" onClick={guardarMC} disabled={savingMC} style={{background:C.green}}>
@@ -2374,22 +2333,22 @@ function TabMC({p,set,resultado,setResultado}) {
               {msgMC&&<span style={{fontSize:11,color:msgMC.startsWith("✓")?C.green:C.red,fontWeight:700}}>{msgMC}</span>}
             </div>
             <div style={{fontSize:9,color:C.green,marginTop:5}}>
-              Anualizado — P10=${res.p10} P50=${res.p50} P90=${res.p90} · Spread=${(res.p90-res.p10).toFixed(1)}
+              {res.contrato?`Contrato (${res.nViajes} viajes)`:"Un viaje"} — P10=${res.p10.toFixed(2)} P50=${res.p50.toFixed(2)} P90=${res.p90.toFixed(2)} · Spread=${(res.p90-res.p10).toFixed(1)}
             </div>
           </div>
 
           <div className="card">
-            <div className="ct">Distribución de Probabilidad — Anual</div>
+            <div className="ct">Distribución del costo — USD/Tn {res.contrato?"del contrato":"por viaje"}</div>
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={res.hist} margin={{top:8,right:8,left:0,bottom:5}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border}/>
-                <XAxis dataKey="x" tick={{fill:C.muted,fontSize:9}} tickCount={10}/>
-                <YAxis tick={{fill:C.muted,fontSize:9}} unit="%"/>
+                <XAxis dataKey="x" tick={{fill:C.mid,fontSize:9}} tickCount={10}/>
+                <YAxis tick={{fill:C.mid,fontSize:9}} unit="%"/>
                 <Tooltip {...TTip} formatter={(v,_,{payload})=>[`${v}% a $${payload.x}`]}/>
                 <ReferenceLine x={res.p10} stroke={C.p10} strokeWidth={2} label={{value:"P10",fill:C.p10,fontSize:9}}/>
                 <ReferenceLine x={res.p50} stroke={C.p50} strokeWidth={2} label={{value:"P50",fill:C.p50,fontSize:9}}/>
                 <ReferenceLine x={res.p90} stroke={C.p90} strokeWidth={2} label={{value:"P90",fill:C.p90,fontSize:9}}/>
-                <ReferenceLine x={det.usdTn} stroke={C.mid} strokeDasharray="4 4" label={{value:"Det.",fill:C.mid,fontSize:9}}/>
+                <ReferenceLine x={res.det??det.usdTn} stroke={C.mid} strokeDasharray="4 4" label={{value:"Det.",fill:C.mid,fontSize:9}}/>
                 <Bar dataKey="pct" radius={[2,2,0,0]}>
                   {res.hist.map((h,i)=>(
                     <Cell key={i} fill={h.x<=res.p10?C.p10:h.x<=res.p25?"#2a9a5a":h.x<=res.p75?C.blue:h.x<=res.p90?C.orange:C.p90}/>
@@ -2402,50 +2361,49 @@ function TabMC({p,set,resultado,setResultado}) {
           {/* Proforma MC — desglose USD/Tn por ítem */}
           {res.proforma&&(
             <div className="card">
-              <div className="ct">Proforma de Costos — P10 / P50 / P90</div>
+              <div className="ct">Proforma de costos — P10 / P50 / P90</div>
               <div style={{fontSize:10,color:C.mid,marginBottom:8}}>
-                Cada línea muestra el percentil de ese ítem <strong>en el escenario P10/P50/P90 del costo total</strong> — no son percentiles independientes.
+                Cada línea muestra el ítem <strong>en el escenario P10/P50/P90 del costo total</strong> — no son percentiles independientes.
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                   <thead>
                     <tr style={{background:C.navy}}>
                       {["Concepto","P10 — Optimista","P50 — Base","P90 — Pesimista","Δ P90−P10"].map((h,i)=>(
-                        <th key={h} style={{padding:"6px 10px",color:"rgba(255,255,255,.65)",fontSize:8,fontWeight:700,
-                          textTransform:"uppercase",letterSpacing:.5,textAlign:i===0?"left":"right"}}>{h}</th>
+                        <th key={h} style={{...th,textAlign:i===0?"left":"right"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {[
-                      {k:"arena",    label:"Precio arena en origen",  color:C.navy},
-                      {k:"mermas",   label:"Mermas totales",           color:C.red},
-                      {k:"barco",    label:"Barco (costo diario)",     color:C.blue},
-                      {k:"comb",     label:"Combustible total",        color:C.orange},
-                      {k:"agZarate", label:"Agencia Zárate",           color:C.navy},
-                      {k:"agBB",     label:"Agencia BB",               color:C.navy},
-                      {k:"opex",     label:"Opex carga + descarga",    color:C.navy},
-                      {k:"camiones", label:"Camiones + Acopio",        color:C.navy},
-                    ].map(({k,label,color},i)=>{
+                      {k:"barco",    label:"Barco (costo diario)"},
+                      {k:"comb",     label:"Combustible"},
+                      {k:"arena",    label:"Arena + mermas"},
+                      {k:"camiones", label:"Camiones + acopio"},
+                      {k:"agZarate", label:"Agencia Zárate"},
+                      {k:"agBB",     label:"Agencia BB"},
+                      {k:"opex",     label:"Opex carga + descarga"},
+                      {k:"repo",     label:"Limpieza + waiver"},
+                      {k:"mov",      label:"Movilización + adecuación + desmov."},
+                    ].filter(({k})=>res.proforma[k]&&(res.proforma[k].p10||res.proforma[k].p50||res.proforma[k].p90)).map(({k,label},i)=>{
                       const r=res.proforma[k];
-                      const delta=(r.p90-r.p10).toFixed(1);
+                      const delta=r.p90-r.p10;
                       return (
                         <tr key={k} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB"}}>
-                          <td style={{padding:"6px 10px",fontWeight:600,color}}>{label}</td>
-                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p10,fontWeight:700}}>${r.p10.toFixed(1)}</td>
-                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p50,fontWeight:700}}>${r.p50.toFixed(1)}</td>
-                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p90,fontWeight:700}}>${r.p90.toFixed(1)}</td>
-                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,
-                            color:parseFloat(delta)>0.5?C.red:C.mid}}>{parseFloat(delta)>0?"+ $"+delta:"$"+delta}</td>
+                          <td style={{padding:"6px 10px",fontWeight:600,color:C.navy}}>{label}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p10,fontWeight:700}}>${r.p10.toFixed(2)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p50,fontWeight:700}}>${r.p50.toFixed(2)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",color:C.p90,fontWeight:700}}>${r.p90.toFixed(2)}</td>
+                          <td style={{padding:"6px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontSize:10,color:delta>0.5?C.red:C.mid}}>{delta>=0?"+ ":"− "}${Math.abs(delta).toFixed(2)}</td>
                         </tr>
                       );
                     })}
                     <tr style={{background:C.navy}}>
                       <td style={{padding:"7px 10px",fontWeight:800,color:"#fff",fontSize:12}}>TOTAL USD/Tn</td>
-                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#86EFAC",fontSize:13}}>${res.p10.toFixed(1)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:13}}>${res.p50.toFixed(1)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCA5A5",fontSize:13}}>${res.p90.toFixed(1)}</td>
-                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:"#FCA5A5",fontSize:12}}>+ ${(res.p90-res.p10).toFixed(1)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#86EFAC",fontSize:13}}>${res.p10.toFixed(2)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCD34D",fontSize:13}}>${res.p50.toFixed(2)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:800,color:"#FCA5A5",fontSize:13}}>${res.p90.toFixed(2)}</td>
+                      <td style={{padding:"7px 10px",textAlign:"right",fontFamily:"DM Mono,monospace",fontWeight:700,color:"#FCA5A5",fontSize:12}}>+ ${(res.p90-res.p10).toFixed(2)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2453,23 +2411,28 @@ function TabMC({p,set,resultado,setResultado}) {
             </div>
           )}
 
-          {/* Tabla de variables usadas en esta corrida */}
+          {/* Variables usadas en esta corrida */}
           {res.varsDesc&&(
             <div className="card">
               <div className="ct">Variables en esta corrida</div>
-              <div className="mc-var-row" style={{fontWeight:700,fontSize:8,color:C.muted,background:"transparent",textTransform:"uppercase",letterSpacing:.5}}>
-                <span>Variable</span><span>Valor base</span><span>σ efectivo</span><span>Estado</span>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr style={{background:C.navy}}>{["Variable","Valor base","Distribución","Parámetros"].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {res.varsDesc.filter(v=>v.activa).map((v,i)=>(
+                      <tr key={v.id} style={{borderBottom:`1px solid ${C.border}`,background:i%2===0?"#fff":"#F9FAFB"}}>
+                        <td style={{padding:"5px 9px",fontWeight:600,color:C.navy}}>{v.label}</td>
+                        <td style={{padding:"5px 9px",fontFamily:"DM Mono,monospace",color:C.mid}}>{fmtVal(v,v.baseVal)}</td>
+                        <td style={{padding:"5px 9px"}}>{distLabel(v.dist)}</td>
+                        <td style={{padding:"5px 9px",fontFamily:"DM Mono,monospace",color:T.usuario.text}}>
+                          {v.dist==="normal"?`σ ${fmtVal(v,v.sigma)}`:v.dist==="historica"?"24 meses":v.dist==="uniforme"?`${fmtVal(v,v.min)} – ${fmtVal(v,v.max)}`:`${fmtVal(v,v.min)} / ${fmtVal(v,v.moda)} / ${fmtVal(v,v.max)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              {res.varsDesc.map((v,i)=>(
-                <div key={i} className="mc-var-row" style={{opacity:v.activa?1:0.5}}>
-                  <span style={{fontWeight:600,color:C.navy}}>{v.label}</span>
-                  <span style={{fontFamily:"DM Mono,monospace",fontSize:9,color:C.mid}}>{v.base}</span>
-                  <span style={{fontFamily:"DM Mono,monospace",fontSize:9,color:v.activa?T.usuario.text:C.mid}}>
-                    {v.activa?sigmaLabel(v):"—"}
-                  </span>
-                  <TipoBadge tipo={v.activa?"usuario":"formula"}/>
-                </div>
-              ))}
+              <div style={{fontSize:9,color:C.mid,marginTop:6}}>{res.varsDesc.filter(v=>!v.activa).length} variables fijas en su valor del escenario.</div>
             </div>
           )}
         </>
@@ -2477,6 +2440,7 @@ function TabMC({p,set,resultado,setResultado}) {
     </div>
   );
 }
+
 // ─── TAB EV: EVALUACIÓN TOTAL ──────────────────────────────────────────────
 function TabEvaluacion({p,tnEntregadas,tot}) {
   const e0=calcEtapaRepo(p);
@@ -3889,47 +3853,11 @@ function TabFAQ() {
 }
 
 // ─── TAB SENSIBILIDADES ────────────────────────────────────────────────────
-// ─── MÉTRICA DE SENSIBILIDADES ─────────────────────────────────────────────
-// Time Charter: un viaje. Bare Boat: contrato completo, igual que el encabezado
-// (la movilización se reparte entre todos los viajes).
-function usdTnSens(pp) {
-  const t = calcTotal(pp);
-  return esBBC(pp) ? calcNViajes(pp, t).usdTnSistema : t.usdTn;
-}
-
-// Categorías de costo de un viaje. Con vuelta = viaje 2+ del contrato (sin reposicionamiento).
-function categoriasViaje(t, vuelta) {
-  const {e0,e1,e2,e3} = t;
-  const conRepo = !vuelta;
-  const barcoVuelta = vuelta ? vuelta.dias * vuelta.tc : 0;
-  return {
-    barco:    (conRepo ? e0.fleteCosto||0 : 0) + (e1.fleteEtapa||0) + (e2.fleteNav||0) + (e3.fleteEtapa||0) + barcoVuelta,
-    comb:     (conRepo ? e0.combCosto||0 : 0) + (e1.combPuerto||0) + (e2.combNav||0) + (e3.combPuerto||0) + (vuelta ? vuelta.costo - barcoVuelta : 0),
-    arena:    (e1.costoArena||0) + (e1.costoMerma||0) + (e3.costoMermaDescarga||0) + (e3.costoMermaAcopio||0),
-    camDir:   e3.costoCamiones || 0,
-    camAco:   (e3.costoAcopio||0) + (e3.costoFleteAcopio||0),
-    agZ:      e1.agencia || 0,
-    agB:      e3.agencia || 0,
-    opex:     (e1.costoOpex||0) + (e3.costoOpex||0),
-    repo:     conRepo ? (e0.costoViaje||0) - (e0.fleteCosto||0) - (e0.combCosto||0) : 0,
-    mov:      conRepo ? (e0.movInicio||0) + (e0.movFin||0) : 0,
-  };
-}
-
 function TabSensibilidades({p}) {
   // ─── BASE CALC ─────────────────────────────────────────────────────────
   const base = useMemo(() => {
-    const t = calcTotal(p);
-    const bbc = esBBC(p);
-    let cat = categoriasViaje(t);
-    let tot = t.costoTotal, tn = t.tnEntregadas, nViajes = 1;
-    if (bbc) {
-      // Contrato: viaje 1 completo + (n-1) viajes adicionales (vuelta + carga + navegación + descarga)
-      const mv = calcNViajes(p, t);
-      const adic = categoriasViaje(t, { dias: mv.diasVuelta, costo: mv.costoVuelta, tc: t.e2.tc });
-      cat = Object.fromEntries(Object.keys(cat).map(k => [k, cat[k] + (mv.nViajes - 1) * adic[k]]));
-      tot = mv.costoTotalSistema; tn = mv.tnTotales; nViajes = mv.nViajes;
-    }
+    // TC: un viaje · BBC: contrato completo (igual que el encabezado)
+    const { tot, tn, cat, contrato: bbc, nViajes, t } = evaluarCostos(p);
     const otros = tot - Object.values(cat).reduce((s, v) => s + v, 0);
 
     const cats = [
@@ -4029,7 +3957,7 @@ function TabSensibilidades({p}) {
         const pct      = Math.min(pesoNorm * pctGlobal, tope);
         Object.assign(overrides, v.aplicar(pct));
       });
-      return usdTnSens({ ...p, ...overrides });
+      return evaluarCostos({ ...p, ...overrides }).usdTn;
     }
 
     // Buscar el pctGlobal máximo aplicable (donde alguna variable topa)
@@ -4069,7 +3997,7 @@ function TabSensibilidades({p}) {
   const activasCount = GS_VARS.filter(v => gsVars[v.id].activa).length;
 
   function calcConDelta(overrides) {
-    return usdTnSens({...p, ...overrides});
+    return evaluarCostos({...p, ...overrides}).usdTn;
   }
 
   // Definición de sensibilidades
