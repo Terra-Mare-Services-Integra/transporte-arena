@@ -522,22 +522,25 @@ const MesSelector = ({value,onChange}) => (
 const TTip={contentStyle:{background:"#213363",border:"1px solid #1a3356",color:"#fff",fontSize:10}};
 
 // ─── COST TABLE ────────────────────────────────────────────────────────────
-function CostTable({rows,tnEntregadas}) {
+// bloque: bloque de alcance de la fila; si está destildado se muestra "fuera de alcance" y no suma
+function CostTable({rows,tnEntregadas,p}) {
   return (
     <table className="cost-table">
       <thead><tr><th>Concepto</th><th>Ecuación</th><th style={{textAlign:"right"}}>Total USD</th><th style={{textAlign:"right"}}>USD/Tn</th></tr></thead>
       <tbody>
         {rows.map((r,i)=>{
-          const usdTn=tnEntregadas>0?r.total/tnEntregadas:0;
+          const fuera=!!(p&&r.bloque&&!inc(p,r.bloque));
+          const usdTn=tnEntregadas>0&&!fuera?r.total/tnEntregadas:0;
           return (
-            <tr key={i} className={r.isTotal?"total":""}>
+            <tr key={i} className={r.isTotal?"total":""} style={fuera?{opacity:0.5}:undefined}>
               <td style={{fontWeight:r.isTotal?800:500,color:r.isTotal?C.navy:undefined}}>{r.label}</td>
-              <td className="eq">{r.eq}</td>
+              <td className="eq">{fuera?<em>fuera de alcance</em>:r.eq}</td>
               <td style={{textAlign:"right"}}>
+                {fuera?<span style={{color:C.mid}}>—</span>:
                 <HoverVal value={`$${r.total.toLocaleString("es-AR",{maximumFractionDigits:0})}`}
-                  title={r.label} lines={r.hover||[r.eq]} isTotal={r.isTotal}/>
+                  title={r.label} lines={r.hover||[r.eq]} isTotal={r.isTotal}/>}
               </td>
-              <td className="mono" style={{textAlign:"right",color:C.mid}}>${usdTn.toFixed(1)}</td>
+              <td className="mono" style={{textAlign:"right",color:C.mid}}>{fuera?"—":`$${usdTn.toFixed(1)}`}</td>
             </tr>
           );
         })}
@@ -1542,12 +1545,12 @@ function TabCarga({p,set,tnEntregadas}) {
 
   const costoTotalTabla1 = e1.costoArena + e1.costoMerma + e1.costoOpex + e1.combPuerto + e1.fleteEtapa + e1.agencia;
   const costRows=[
-    {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]]},
-    {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]]},
-    {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]]},
-    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb},
+    {label:"Costo arena",       eq:`$${e1.precioArena}×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoArena,  hover:[e1.hoverTotal[0]], bloque:"arena"},
+    {label:"Costo merma",       eq:`$${e1.precioArena}×${e1.mermaTn.toFixed(0)}Tn`,                total:e1.costoMerma,  hover:[e1.hoverTotal[1]], bloque:"arena"},
+    {label:"Opex carga",        eq:`$${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn`, total:e1.costoOpex, hover:[e1.hoverTotal[2]], bloque:"operacion"},
+    {label:"Combustible puerto",eq:`${e1.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e1.vlsfo}`, total:e1.combPuerto, hover:e1.hoverComb, bloque:"combustible"},
     {label:"Costo diario barco",eq:`${e1.tReal_dias.toFixed(1)}d×$${Math.round(e1.tc).toLocaleString("es-AR")}/d`,                     total:e1.fleteEtapa,  hover:e1.hoverTC},
-    {label:"Agencia Zárate",    eq:"desde ítems Ag. Zárate",                                        total:e1.agencia},
+    {label:"Agencia Zárate",    eq:"desde ítems Ag. Zárate",                                        total:e1.agencia, bloque:"agenciaCarga"},
     {label:"TOTAL ETAPA 1",     eq:"Σ costos carga",                                               total:costoTotalTabla1, hover:e1.hoverTotal, isTotal:true},
   ];
 
@@ -1588,7 +1591,7 @@ function TabCarga({p,set,tnEntregadas}) {
         horasDia={p.cap_horasDia} pctMerma={p.cap_pctMerma} capacidad={p.cap_capacidadBarco}/>
       <div className="card">
         <div className="ct">Costos Etapa 1</div>
-        <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
+        <CostTable rows={costRows} tnEntregadas={tnEntregadas} p={p}/>
       </div>
     </div>
   );
@@ -1599,7 +1602,7 @@ function TabNavegacion({p,set,tnEntregadas}) {
   const e2=calcEtapa2(p);
   const tramos=p.nav_tramos||[];
   const costRows=[
-    {label:"Combustible ida",   eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,total:e2.combNav,  hover:e2.hoverComb},
+    {label:"Combustible ida",   eq:`${e2.combNavTotal.toFixed(1)}T×$${e2.vlsfo}`,total:e2.combNav,  hover:e2.hoverComb, bloque:"combustible"},
     {label:"Costo diario barco",eq:`${e2.diasNav.toFixed(1)}d×$${Math.round(e2.tc).toLocaleString("es-AR")}/d`,      total:e2.fleteNav, hover:e2.hoverTC},
     {label:"TOTAL ETAPA 2",     eq:"Σ costos navegación ida",                    total:e2.costoTotal,hover:e2.hoverTotal,isTotal:true},
   ];
@@ -1655,7 +1658,7 @@ function TabNavegacion({p,set,tnEntregadas}) {
       </div>
       <div className="card">
         <div className="ct">Costos Etapa 2 <TipoBadge tipo="formula"/></div>
-        <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
+        <CostTable rows={costRows} tnEntregadas={tnEntregadas} p={p}/>
         <div style={{marginTop:8,padding:"6px 10px",background:"#EEF2F7",borderRadius:7,fontSize:10,color:C.mid}}>
           Vel. prom. ponderada: <HoverVal value={`${e2.velProm.toFixed(1)}kt`} title="Vel. Promedio Ponderada" lines={[e2.hoverVelProm]}/>
           &nbsp;·&nbsp; Consumo total: <strong style={{fontFamily:"DM Mono,monospace"}}>{e2.combNavTotal.toFixed(1)}T</strong> (interpolado de tabla Contrato Barco)
@@ -1705,16 +1708,16 @@ function TabDescarga({p,set,tnEntregadas}) {
   },[p, e1.tnPostCarga, sensFilas, sensCols]);
 
   const costoRows=[
-    {label:"Opex descarga",            eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                   total:e3.costoOpex},
-    {label:"Directos → Neuquén",       eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,                   total:e3.costoCamiones},
-    {label:"Calesitas (transp. local)", eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn`,         total:sch.costoTranspUSDTn*sch.Tn_calesitas},
-    {label:"Alquiler predio (acopio)",  eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                              total:sch.costoAlqTotal},
-    {label:"Acopio → Neuquén",          eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                total:e3.costoFleteAcopio},
-    {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                               total:e3.combPuerto, hover:e3.hoverComb},
+    {label:"Opex descarga",            eq:`$${p.des_opexUSDTn}/Tn×${e3.tnEntrada.toFixed(0)}Tn`,                                                   total:e3.costoOpex, bloque:"operacion"},
+    {label:"Directos → Neuquén",       eq:`${sch.nDir} cam × ${sch.Tn_cam_dir.toFixed(1)}Tn → ${sch.Tn_directos.toFixed(0)}Tn`,                   total:e3.costoCamiones, bloque:"logistica"},
+    {label:"Calesitas (transp. local)", eq:`${sch.nCal} cam → ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoTranspUSDTn.toFixed(2)}/Tn`,         total:sch.costoTranspUSDTn*sch.Tn_calesitas, bloque:"logistica"},
+    {label:"Alquiler predio (acopio)",  eq:`${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn`,                              total:sch.costoAlqTotal, bloque:"logistica"},
+    {label:"Acopio → Neuquén",          eq:`${e3.tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn`,                total:e3.costoFleteAcopio, bloque:"logistica"},
+    {label:"Combustible puerto",        eq:`${e3.tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${e3.vlsfo}`,                               total:e3.combPuerto, hover:e3.hoverComb, bloque:"combustible"},
     {label:"Costo diario barco",        eq:`${e3.tReal_dias.toFixed(1)}d×$${Math.round(e3.tc).toLocaleString("es-AR")}/d`,                                                            total:e3.fleteEtapa, hover:e3.hoverTC},
-    {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                   total:e3.agencia},
-    {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                         total:e3.costoMermaDescarga},
-    {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                           total:e3.costoMermaAcopio},
+    {label:"Agencia BB",                eq:"desde ítems Ag. BB",                                                                                   total:e3.agencia, bloque:"agenciaDescarga"},
+    {label:"Merma descarga",            eq:`${e3.mermaDescarga_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                         total:e3.costoMermaDescarga, bloque:"arena"},
+    {label:"Merma acopio",              eq:`${e3.mermaAcopio_Tn.toFixed(0)}Tn×$${e3.precioArenaEq.toFixed(1)}/Tn eq.`,                           total:e3.costoMermaAcopio, bloque:"arena"},
   ];
   const costoTotalTabla = costoRows.reduce((s,r)=>s+(r.total||0),0);
   costoRows.push({label:"TOTAL ETAPA 3", eq:"Σ costos descarga", total:costoTotalTabla, hover:e3.hoverTotal, isTotal:true});
@@ -2012,7 +2015,7 @@ function TabDescarga({p,set,tnEntregadas}) {
         horasDia={p.des_horasDia} pctMerma={p.des_pctMermaDescarga} capacidad={p.cap_capacidadBarco}/>
       <div className="card">
         <div className="ct">Costos Etapa 3</div>
-        <CostTable rows={costoRows} tnEntregadas={tnEntregadas}/>
+        <CostTable rows={costoRows} tnEntregadas={tnEntregadas} p={p}/>
       </div>
     </div>
   );
@@ -2023,7 +2026,7 @@ function TabDescarga({p,set,tnEntregadas}) {
 function TabVuelta({p,set,tnEntregadas}) {
   const e4=calcEtapaVuelta(p);
   const costRows=[
-    {label:"Combustible lastre",eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,total:e4.combLastre,hover:e4.hoverComb},
+    {label:"Combustible lastre",eq:`${e4.combLastreTotal.toFixed(1)}T×$${e4.vlsfo}`,total:e4.combLastre,hover:e4.hoverComb,bloque:"combustible"},
     {label:"Costo diario barco",eq:`${e4.diasNav.toFixed(1)}d×$${Math.round(e4.tc).toLocaleString("es-AR")}/d`,          total:e4.fleteNav,  hover:e4.hoverTC},
     {label:"TOTAL ETAPA 4",     eq:"Σ costos vuelta en lastre",                      total:e4.costoTotal,hover:e4.hoverTotal,isTotal:true},
   ];
@@ -2046,7 +2049,7 @@ function TabVuelta({p,set,tnEntregadas}) {
       </div>
       <div className="card">
         <div className="ct">Costos Etapa 4 <TipoBadge tipo="formula"/></div>
-        <CostTable rows={costRows} tnEntregadas={tnEntregadas}/>
+        <CostTable rows={costRows} tnEntregadas={tnEntregadas} p={p}/>
         <div style={{marginTop:8,padding:"8px 10px",background:C.warn,border:`1px solid ${C.warnBorder}`,borderRadius:8}}>
           <div style={{fontSize:9,color:C.orange,fontWeight:700,textTransform:"uppercase"}}>Ahorro combustible vs. ida cargado</div>
           <div style={{fontSize:13,fontWeight:800,color:C.orange,fontFamily:"DM Mono,monospace",marginTop:2}}>
