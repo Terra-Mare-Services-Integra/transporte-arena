@@ -235,10 +235,126 @@ export function getPrecioVLSFO(escenario, vlsfoManual, vlsfoHistorico) {
   }
 }
 
+// ─── TRIPULACIÓN PROPIA (Bare Boat Charter) ───────────────────────────────
+// Réplica del Cotizador V22 (Comercial/Arena): pestañas "Sueldos Basicos y Divisas",
+// "EVENTUALES", "2. Calculadora Crewing" y "3. Posicion Dia".
+// Básico de cada cargo = coeficiente × básico del Jefe de Máquina (escala FENA).
+// Pilotaje y CAR tienen básico propio (no siguen la escala).
+
+// Reglas de liquidación por convenio. En EVENTUALES cada bloque de columnas liquida
+// distinto; se copian tal cual:
+//   cubierta    (cols C–F):  sin feriados, SAC sin francos, cuota sindical 6%
+//   maquinas    (cols G–J, y CAR AC–AF): feriados ÷25 dentro del acta, SAC con francos, 4%
+//   subalternos (cols K–Y):  feriados ÷30 fuera del acta, SAC con francos, 4%
+//   pilotaje    (cols Z–AB): solo básico — sin adicionales, SAC ni estabilidad, 4%
+export const CONVENIOS = {
+  cubierta:    { label:"Oficiales de cubierta", feriados:false, divFeriados:25, actaConFeriados:true,  sacConFrancos:false, cuotaSindical:0.06 },
+  maquinas:    { label:"Oficiales de máquinas", feriados:true,  divFeriados:25, actaConFeriados:true,  sacConFrancos:true,  cuotaSindical:0.04 },
+  subalternos: { label:"Subalternos",           feriados:true,  divFeriados:30, actaConFeriados:false, sacConFrancos:true,  cuotaSindical:0.04 },
+  pilotaje:    { label:"Pilotaje",              soloBasico:true, cuotaSindical:0.04 },
+};
+
+export const ESCALA_SUELDOS_DEFAULT = [
+  { cargo:"CAPITAN ULTRAMAR",         coef:1.31428599390423,    convenio:"cubierta" },
+  { cargo:"1ER OF CUBIERTA",          coef:0.937143056523019,   convenio:"cubierta" },
+  { cargo:"2DO OF CUBIERTA",          coef:0.708571579322283,   convenio:"cubierta" },
+  { cargo:"3ER OF CUBIERTA",          coef:0.708571579322283,   convenio:"cubierta" },
+  { cargo:"JEFE DE MÁQUINA",          coef:1,                   convenio:"maquinas" },
+  { cargo:"1ER OF MÁQUINA",           coef:0.8199999366746293,  convenio:"maquinas" },
+  { cargo:"2DO OF MÁQUINA",           coef:0.6200002820857421,  convenio:"maquinas" },
+  { cargo:"3ER OF MÁQUINA",           coef:0.6200002820857421,  convenio:"maquinas" },
+  { cargo:"ELECTRICISTA",             coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"1ER.BOMBERO",              coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"2DO.BOMBERO",              coef:0.5100000834743522,  convenio:"subalternos" },
+  { cargo:"CONTRAMAESTRE",            coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"MARINERO",                 coef:0.42000005181166683, convenio:"subalternos" },
+  { cargo:"COCINERO",                 coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"2DO. COCINERO",            coef:0.510000083474352,   convenio:"subalternos" },
+  { cargo:"AYUDANTE DE COCINA",       coef:0.42000005181166683, convenio:"subalternos" },
+  { cargo:"1ER.MOZO",                 coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"2DO.MOZO",                 coef:0.42000005181166683, convenio:"subalternos" },
+  { cargo:"MECÁNICO",                 coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"1ER.CABO",                 coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"ENFERMERO",                coef:0.5500001295291672,  convenio:"subalternos" },
+  { cargo:"AUX DE MAQUINA",           coef:0.42000005181166683, convenio:"subalternos" },
+  { cargo:"ENGRASADOR",               coef:0.42000005181166683, convenio:"subalternos" },
+  { cargo:"CAPITAN PILOTAJE",         basico:1122206*365/12,    convenio:"pilotaje" },
+  { cargo:"1ER OF CUBIERTA-PILOTAJE", basico:1047393*365/12,    convenio:"pilotaje" },
+  { cargo:"2DO OF CUBIERTA-PILOTAJE", basico:935179*365/12,     convenio:"pilotaje" },
+  { cargo:"CAR - Capitan",            basico:1892968.38*0.9*1.15,   convenio:"maquinas" },
+  { cargo:"CAR - Jefe de Maquina",    basico:1892968.38*0.9,        convenio:"maquinas" },
+  { cargo:"CAR - Contramaestre",      basico:1892968.38*0.9*0.62,   convenio:"maquinas" },
+  { cargo:"CAR - Marinero",           basico:1892968.38*0.9*0.5853, convenio:"maquinas" },
+];
+
+// Adicionales por posición (fracciones). Ver ayuda de la Calculadora Crewing:
+// RJ/Plus Op 84% (140% con faltante, 218,69% escala CAR) · Supply A 0 / B 25% / C 50% ·
+// Costa afuera 25% · Acta 42,5% · Régimen de franco 0,8 · Precio del franco 0,95 (capitanes 0,8).
+const POS = (cargo, cantidad, rj, supply, precioFranco) =>
+  ({ cargo, cantidad, rj, supply, locacion:0.15, acta:0.425, regFranco:0.8, precioFranco, lavanderia:false });
+export const DOTACION_DEFAULT = [
+  POS("CAPITAN ULTRAMAR",   1, 0.84, 0.07, 0.8),
+  POS("1ER OF CUBIERTA",    1, 1.4,  0.07, 0.8),
+  POS("2DO OF CUBIERTA",    1, 1.4,  0.07, 0.8),
+  POS("JEFE DE MÁQUINA",    1, 0.84, 0,    0.95),
+  POS("1ER OF MÁQUINA",     1, 0.84, 0,    0.95),
+  POS("2DO OF MÁQUINA",     1, 0.84, 0,    0.95),
+  POS("CONTRAMAESTRE",      1, 0.84, 0,    0.95),
+  POS("1ER.CABO",           1, 0.84, 0,    0.95),
+  POS("ENGRASADOR",         2, 0.84, 0,    0.95),
+  POS("COCINERO",           1, 0.84, 0,    0.95),
+  POS("1ER.MOZO",           1, 0.84, 0,    0.95),
+  POS("MARINERO",           5, 0.84, 0,    0.95),
+  POS("AYUDANTE DE COCINA", 1, 0.84, 0,    0.95),
+].map((r, i) => ({ id:`pos_${i+1}`, ...r }));
+
+// Costos fijos del barco en BBC (pestaña "Proyecto" del cotizador)
+// unidad: "dia" = USD/día | "anio" = USD/año (se prorratea por bbc_diasAnio)
+export const BBC_ITEMS_DEFAULT = [
+  { id:"bbc_mant",    label:"Mantenimiento / consumibles",        valor:1000,   unidad:"dia",  activo:true },
+  { id:"bbc_dique",   label:"Provisión dique seco / mant. mayor", valor:200000, unidad:"anio", activo:true },
+  { id:"bbc_com",     label:"Comunicaciones / aceite / agua / slop", valor:500, unidad:"dia",  activo:true },
+  { id:"bbc_viveres", label:"Víveres / ropa / viajes",            valor:200,    unidad:"dia",  activo:true },
+  { id:"bbc_seguro",  label:"Seguro",                             valor:100000, unidad:"anio", activo:true },
+  { id:"bbc_otros",   label:"Otros",                              valor:100000, unidad:"anio", activo:true },
+  { id:"bbc_admin",   label:"Administración anual",               valor:450000, unidad:"anio", activo:true },
+];
+
+// ─── ALCANCE DEL PROYECTO ──────────────────────────────────────────────────
+// Qué bloques de costo son responsabilidad nuestra. Un bloque fuera de alcance se
+// oculta y su costo no suma; los días (carga, navegación, descarga) se siguen
+// calculando porque el barco los paga igual.
+export const ALCANCE_BLOQUES = [
+  { id:"barco",           label:"Barco",                         fijo:true,   desc:"Costo diario del barco por todos los días del ciclo, incluida la vuelta en lastre entre viajes." },
+  { id:"tripulacion",     label:"Tripulación propia",            soloBBC:true, fijo:true, desc:"Se incluye siempre en Bare Boat Charter, dentro del costo diario del barco." },
+  { id:"movilizacion",    label:"Movilización, adecuación y desmovilización", soloBBC:true, desc:"Costos únicos del contrato: movilización y adecuación al inicio, desmovilización al final." },
+  { id:"combustible",     label:"Combustible",                   desc:"VLSFO navegando y en puerto." },
+  { id:"repo",            label:"Viaje a puerto de carga",       desc:"Reposicionamiento inicial en lastre: días, combustible, limpieza de bodega y waiver." },
+  { id:"agenciaCarga",    label:"Agencia puerto de carga",       desc:"Peajes, prácticos, muellaje y servicios en Zárate." },
+  { id:"agenciaDescarga", label:"Agencia puerto de descarga",    desc:"Prácticos, remolques, canal y servicios en Bahía Blanca." },
+  { id:"arena",           label:"Compra de arena y mermas",      desc:"Arena en origen y valor de las mermas de carga, descarga y acopio." },
+  { id:"operacion",       label:"Operación portuaria",           desc:"OPEX por tonelada de carga y descarga." },
+  { id:"logistica",       label:"Logística terrestre",           desc:"Camiones directos, calesitas, acopio y flete a Neuquén." },
+];
+// Pestañas que dependen de un bloque: se ocultan si el bloque está fuera de alcance
+export const TABS_POR_BLOQUE = { combustible:["cb"], repo:["repo"], agenciaCarga:["az"], agenciaDescarga:["abb"] };
+export const ALCANCE_COMPLETO = Object.fromEntries(ALCANCE_BLOQUES.map(b => [b.id, true]));
+export const ALCANCE_SOLO_BARCO = { ...ALCANCE_COMPLETO, agenciaCarga:false, agenciaDescarga:false, arena:false, operacion:false, logistica:false };
+// 1 si el bloque está en alcance, 0 si no (escenarios viejos sin alcance = proyecto completo)
+export const inc = (p, id) => (p.alcance?.[id] === false ? 0 : 1);
+
 // ─── DEFAULT PARAMS ────────────────────────────────────────────────────────
 export const DEFAULT_PARAMS = {
+  // ALCANCE — bloques de costo a cargo nuestro
+  alcance:                   ALCANCE_COMPLETO,
+
   // IDENTIFICACIÓN DEL PROYECTO
   proyecto_titulo:           "Transporte Arena",
+
+  // MODALIDAD DEL BARCO
+  // "tc"  = barco con waiver y daily hire (time charter, tripulación del armador)
+  // "bbc" = bare boat charter: administramos barco y tripulación, sin waiver
+  barco_modalidad:           "tc",
 
   // CONTRATO BARCO
   barco_timeCharter:         20000,  // USD/día — centralizado acá
@@ -249,6 +365,41 @@ export const DEFAULT_PARAMS = {
   barco_miscPorDia:          500,    // USD/día — misceláneos operativos
   barco_tablaVelConsumo:     TABLA_VEL_CONSUMO_DEFAULT,
   barco_consumoPuerto:       4.6,    // T/día en puerto (carga y descarga)
+
+  // BARE BOAT CHARTER — costo diario del barco a casco desnudo
+  bbc_hire:                  12000,  // USD/día — alquiler a casco desnudo
+  bbc_items:                 BBC_ITEMS_DEFAULT,
+  bbc_diasAnio:              365,    // días para prorratear los costos anuales
+  bbc_pctImprevistos:        0.10,   // sobre el subtotal diario
+  bbc_pctImpVentas:          0.025,  // sobre subtotal + imprevistos
+  bbc_pctImpTransf:          0.008,  // sobre subtotal + imprevistos
+  bbc_diasPeriodo:           30,     // duración del contrato: define los viajes del análisis multi-viaje
+  bbc_movilizacion:          0,      // USD, al inicio del contrato
+  bbc_adecuacion:            0,      // USD, al inicio del contrato
+  bbc_desmovilizacion:       0,      // USD, al final del contrato
+
+  // TRIPULACIÓN PROPIA — liquidación tipo EVENTUALES, contrato a tercero
+  crew_fx:                   1550,   // ARS/USD
+  crew_managementFee:        500,    // USD/día — fijo en USD
+  crew_basicoJM:             4855635.21420186, // ARS/mes — básico Jefe de Máquina
+  crew_escalaVigencia:       "Septiembre 2026",
+  crew_escala:               ESCALA_SUELDOS_DEFAULT,
+  crew_dotacion:             DOTACION_DEFAULT,
+  crew_contratoTercero:      true,   // si true aplica Ingresos Brutos e Imp. Créd/Déb
+  crew_decreto633:           false,  // Decreto 633/2018 (+2%)
+  crew_art:                  0.03,   // prima ART
+  crew_antiguedad:           0,      // años promedio
+  crew_vacaciones:           24,     // días de vacaciones promedio
+  crew_feriados:             20,     // feriados al año (entran en los francos)
+  crew_diasMes:              30,
+  crew_divisorVac:           25,
+  crew_cargasSociales:       0.24,
+  crew_estabilidad:          0.0833, // estabilidad laboral / previsión por despido
+  crew_seguroVida:           335,    // ARS/mes por persona
+  crew_ffep:                 1521,   // ARS/mes — fondo fiduciario enf. profesionales
+  crew_iibb:                 0.05,
+  crew_impCredDeb:           0.012,
+  crew_lavanderiaUSD:        500,    // USD/mes por persona con tarea programada
 
   // VIAJE A PUERTO DE CARGA (reposicionamiento Rio Grande → Zárate)
   repo_tramos:               TRAMOS_REPO_DEFAULT,
@@ -413,6 +564,119 @@ export function precioArenaEquivalenteDescarga(p) {
   return e1.tnPostCarga > 0 ? costoHastaLlegada / e1.tnPostCarga : 0;
 }
 
+// ─── TRIPULACIÓN PROPIA: LIQUIDACIÓN POR POSICIÓN ─────────────────────────
+export function basicoCargo(p, cargo) {
+  const e = (p.crew_escala || ESCALA_SUELDOS_DEFAULT).find(x => x.cargo === cargo);
+  if (!e) return { basico:0, convenio:"subalternos" };
+  return { basico: e.coef != null ? e.coef * p.crew_basicoJM : (e.basico || 0), convenio: e.convenio || "subalternos" };
+}
+
+function pctAntiguedad(anios) {
+  if (anios <= 0) return 0;
+  if (anios <= 5) return 0.01;
+  if (anios <= 9) return 0.015;
+  return 0.02;
+}
+
+// Costo mensual (ARS) de una persona en la posición, días navegados.
+// Réplica de EVENTUALES filas 34–56 + lavandería de la Calculadora Crewing.
+export function calcLiquidacion(p, pos) {
+  const { basico:B, convenio } = basicoCargo(p, pos.cargo);
+  const cv = CONVENIOS[convenio] || CONVENIOS.subalternos;
+  const diasMes = p.crew_diasMes || 30;
+  // Pilotaje: solo el básico, sin adicionales, vacaciones, francos, SAC ni estabilidad
+  const k = cv.soloBasico ? 0 : 1;
+  const conformado = B * (1+pos.rj) * (1+pos.supply) * (1+pos.locacion);
+  const rj        = k * pos.rj * B;
+  const supply    = k * pos.supply * (B + rj);
+  const locacion  = k * pos.locacion * (B + rj + supply);
+  const feriados  = cv.feriados ? conformado / cv.divFeriados * p.crew_feriados / 12 : 0;
+  const acta      = k * pos.acta * (B + rj + supply + locacion + (cv.actaConFeriados ? feriados : 0));
+  const antiguedad= k * (B + rj) * p.crew_antiguedad * pctAntiguedad(p.crew_antiguedad);
+  const bruto     = B + rj + supply + locacion + feriados + acta + antiguedad;
+  const licAnual  = k * conformado / p.crew_divisorVac * p.crew_vacaciones / 12;
+  const diasFranco= diasMes + p.crew_feriados / 12;
+  const francos   = k * conformado / diasMes * diasFranco * pos.precioFranco * pos.regFranco;
+  const sac       = k * (bruto + licAnual + (cv.sacConFrancos ? francos : 0)) / 12;
+  const preEstab  = bruto + licAnual + francos + sac;
+  const estabilidad = k * p.crew_estabilidad * preEstab;
+  const salarioFinal= preEstab + estabilidad;
+  const cargas    = (salarioFinal - licAnual - francos) * (p.crew_cargasSociales + p.crew_art)
+                  + p.crew_seguroVida + p.crew_ffep;
+  const sindical  = (bruto + sac) * cv.cuotaSindical;
+  const decreto633= salarioFinal * (p.crew_decreto633 ? 0.02 : 0);
+  const costoBruto= salarioFinal + cargas + sindical + decreto633;
+  const iibb      = costoBruto * (p.crew_contratoTercero ? p.crew_iibb : 0);
+  const credDeb   = costoBruto * (p.crew_contratoTercero ? p.crew_impCredDeb : 0);
+  const lavanderia= pos.lavanderia ? p.crew_lavanderiaUSD * p.crew_fx : 0;
+  const mensual   = costoBruto + iibb + credDeb + lavanderia;
+  return {
+    convenio, basico:B, conformado, rj, supply, locacion, feriados, acta, antiguedad, bruto,
+    licAnual, francos, sac, preEstab, estabilidad, salarioFinal,
+    cargas, sindical, decreto633, costoBruto, iibb, credDeb, lavanderia,
+    mensual, diarioARS: mensual / diasMes, diarioUSD: mensual / diasMes / p.crew_fx,
+  };
+}
+
+// "Posición por día": costo diario de toda la dotación + management fee
+export function calcTripulacion(p) {
+  const filas = (p.crew_dotacion || []).map(pos => {
+    const liq = calcLiquidacion(p, pos);
+    return { ...pos, liq, usdDia: liq.diarioUSD * pos.cantidad };
+  });
+  const personas  = filas.reduce((s, f) => s + f.cantidad, 0);
+  const crewUSDDia= filas.reduce((s, f) => s + f.usdDia, 0);
+  const total     = crewUSDDia + (p.crew_managementFee || 0);
+  return { filas, personas, crewUSDDia, managementFee: p.crew_managementFee || 0, total };
+}
+
+// ─── COSTO DIARIO DEL BARCO (según modalidad) ─────────────────────────────
+export const esBBC = p => p.barco_modalidad === "bbc";
+// Variable de alquiler que se sortea en Monte Carlo y se mueve en sensibilidades
+export const hireKey = p => esBBC(p) ? "bbc_hire" : "barco_timeCharter";
+export const hireLabel = p => esBBC(p) ? "Bare Boat hire" : "Time Charter";
+
+export function costoDiarioBarco(p) {
+  const fmt = v => `$${Math.round(v).toLocaleString("es-AR")}`;
+  if (!esBBC(p)) {
+    const hire = p.barco_timeCharter, trip = p.barco_tripulacion, misc = p.barco_miscPorDia || 0;
+    const total = hire + trip + misc;
+    return {
+      modalidad:"tc", total, hire, tripulacion:trip, misc, factorHire:1,
+      resumen:`TC: $${hire}/d + Trip: $${trip}/d + Misc: $${misc}/d = $${total}/d`,
+    };
+  }
+  const crew = calcTripulacion(p);
+  const diasAnio = p.bbc_diasAnio || 365;
+  const items = (p.bbc_items || []).filter(i => i.activo !== false)
+    .map(i => ({ ...i, usdDia: i.unidad === "anio" ? i.valor / diasAnio : i.valor }));
+  const fijos = items.reduce((s, i) => s + i.usdDia, 0);
+  const subtotal = p.bbc_hire + crew.total + fijos;
+  const imprevistos = subtotal * (p.bbc_pctImprevistos || 0);
+  const pctImp = (p.bbc_pctImpVentas || 0) + (p.bbc_pctImpTransf || 0);
+  const impuestos = (subtotal + imprevistos) * pctImp;
+  const total = subtotal + imprevistos + impuestos;
+  return {
+    modalidad:"bbc", total, hire:p.bbc_hire, tripulacion:crew.total, misc:0,
+    crew, items, fijos, subtotal, imprevistos, impuestos,
+    // Cuánto sube el total por cada USD de hire (los recargos son porcentuales)
+    factorHire:(1 + (p.bbc_pctImprevistos || 0)) * (1 + pctImp),
+    resumen:`BBC ${fmt(p.bbc_hire)} + Trip ${fmt(crew.total)} + Fijos ${fmt(fijos)} + Recargos ${fmt(imprevistos+impuestos)} = ${fmt(total)}/d`,
+  };
+}
+
+// Días del análisis multi-viaje: vigencia del waiver (TC) o período elegido (BBC)
+export const diasPeriodoMultiViaje = p => esBBC(p) ? (p.bbc_diasPeriodo || 30) : (p.barco_diasWaiver || 30);
+// Costos únicos del contrato BBC: inicio (movilización + adecuación) y fin (desmovilización)
+export function costoMovilizacion(p) {
+  const k = esBBC(p) ? inc(p,"movilizacion") : 0;
+  const inicio = ((p.bbc_movilizacion || 0) + (p.bbc_adecuacion || 0)) * k;
+  const fin    = (p.bbc_desmovilizacion || 0) * k;
+  return { inicio, fin, total: inicio + fin };
+}
+// En BBC no hay importación temporal ni waiver
+export const costoWaiver = p => esBBC(p) ? 0 : (p.barco_importacionWaiver || 0);
+
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 function probSuperaUmbral(mu, sigma, umbral) {
   if(sigma<=0) return mu>=umbral?1:0;
@@ -474,7 +738,7 @@ export function checkEspejo(p) {
 export function calcEtapa1(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
+  const cd=costoDiarioBarco(p); const tc=cd.total;
 
   const velIdeal_TnMin=p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa;
   const velIdeal_TnHr =velIdeal_TnMin*60;
@@ -490,12 +754,12 @@ export function calcEtapa1(p) {
   const tnPostCarga=p.cap_capacidadBarco;
   const precioArena=p.cap_precioArenaOrigen;
 
-  const costoArena =precioArena*p.cap_capacidadBarco;
-  const costoMerma =precioArena*mermaTn;
-  const costoOpex  =p.cap_opexUSDTn*p.cap_capacidadBarco;
-  const combPuerto =tReal_dias*p.barco_consumoPuerto*vlsfo;
+  const costoArena =precioArena*p.cap_capacidadBarco*inc(p,"arena");
+  const costoMerma =precioArena*mermaTn*inc(p,"arena");
+  const costoOpex  =p.cap_opexUSDTn*p.cap_capacidadBarco*inc(p,"operacion");
+  const combPuerto =tReal_dias*p.barco_consumoPuerto*vlsfo*inc(p,"combustible");
   const fleteEtapa =tReal_dias*tc;
-  const agencia    =calcAgenciaZarate(p, tReal_dias);
+  const agencia    =calcAgenciaZarate(p, tReal_dias)*inc(p,"agenciaCarga");
   const costoTotal =costoArena+costoMerma+costoOpex+combPuerto+fleteEtapa+agencia;
 
   return {
@@ -520,9 +784,7 @@ export function calcEtapa1(p) {
       `${tReal_dias.toFixed(1)}d × ${p.barco_consumoPuerto}T/d × $${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTC:[
-      `Time Charter: $${p.barco_timeCharter}/día`,
-      `Tripulación: $${p.barco_tripulacion}/día`,
-      `Total diario: $${tc}/día`,
+      cd.resumen,
       `${tReal_dias.toFixed(1)}d × $${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
@@ -530,7 +792,7 @@ export function calcEtapa1(p) {
       `Merma: $${precioArena}×${mermaTn.toFixed(0)}Tn = $${costoMerma.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Opex: $${p.cap_opexUSDTn}/Tn×${p.cap_capacidadBarco.toLocaleString()}Tn = $${costoOpex.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Agencia Zárate: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
   };
@@ -540,7 +802,7 @@ export function calcEtapa1(p) {
 export function calcEtapa2(p) {
   const vlsfo=getPrecioVLSFO(p.nav_escenarioVLSFO,p.nav_vlsfoManual,p.vlsfo_historico);
   const vlsfoStats=calcVLSFOStats(p.vlsfo_historico);
-  const tc=p.barco_timeCharter+p.barco_tripulacion+(p.barco_miscPorDia||0);
+  const cd=costoDiarioBarco(p); const tc=cd.total;
   const nav=velPromedioPonderada(p.nav_tramos);
 
   // Consumo interpolado por tramo — prioridad: distancia manual (>0) → wpIds Haversine → 0
@@ -550,7 +812,7 @@ export function calcEtapa2(p) {
     const consumoDia = interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "cargado");
     return acc + (hs/24)*consumoDia;
   }, 0);
-  const combNav  = combNavTotal*vlsfo;
+  const combNav  = combNavTotal*vlsfo*inc(p,"combustible");
   const fleteNav = nav.diasNav*tc;
   const costoTotal=combNav+fleteNav;
 
@@ -563,12 +825,12 @@ export function calcEtapa2(p) {
       `Escenario: ${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label}`,
     ],
     hoverTC:[
-      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d = $${tc}/d`,
+      cd.resumen,
       `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
       `Comb. ida: ${combNavTotal.toFixed(1)}T×$${vlsfo} = $${combNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
   };
 }
@@ -768,7 +1030,7 @@ function calcTpCalesitas(nCal, nTolvas, t_ciclo_cal, t_ciclo_tolva, Tn_por_ciclo
 export function calcEtapa3(p, tnEntrada=null) {
   const vlsfo     = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const vlsfoStats= calcVLSFOStats(p.vlsfo_historico);
-  const tc        = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+  const cd        = costoDiarioBarco(p); const tc = cd.total;
   const tn        = tnEntrada ?? (p.cap_capacidadBarco * (1 - p.cap_pctMerma));
 
   const sch = calcScheduler(p, tn);
@@ -797,18 +1059,19 @@ export function calcEtapa3(p, tnEntrada=null) {
   const tnEntregadas     = tnPostDescarga - mermaAcopio_Tn;
 
   // ── Costos ──────────────────────────────────────────────────────────────
-  const costoOpex    = p.des_opexUSDTn * tn;
-  const costoCamiones= sch.costoDir;
-  const costoAcopio  = sch.costoCal;  // ciclo local calesitas (BB → depósito → BB)
-  const costoFleteAcopio = (p.des_costoFleteAcopioUSDTn ?? 37.14) * tnAcopio; // flete depósito → Neuquén
-  const combPuerto   = tReal_dias * p.barco_consumoPuerto * vlsfo;
+  const kLog         = inc(p,"logistica");
+  const costoOpex    = p.des_opexUSDTn * tn * inc(p,"operacion");
+  const costoCamiones= sch.costoDir * kLog;
+  const costoAcopio  = sch.costoCal * kLog;  // ciclo local calesitas (BB → depósito → BB)
+  const costoFleteAcopio = (p.des_costoFleteAcopioUSDTn ?? 37.14) * tnAcopio * kLog; // flete depósito → Neuquén
+  const combPuerto   = tReal_dias * p.barco_consumoPuerto * vlsfo * inc(p,"combustible");
   const fleteEtapa   = tReal_dias * tc;
-  const agencia      = calcAgenciaBB(p, tReal_dias);
+  const agencia      = calcAgenciaBB(p, tReal_dias) * inc(p,"agenciaDescarga");
   const precioArenaEq= (p._costoArenaEq != null && p._costoArenaEq > 0)
     ? p._costoArenaEq
     : (p.cap_precioArenaOrigen || 13.5);
-  const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq;
-  const costoMermaAcopio   = mermaAcopio_Tn  * precioArenaEq;
+  const costoMermaDescarga = mermaDescarga_Tn * precioArenaEq * inc(p,"arena");
+  const costoMermaAcopio   = mermaAcopio_Tn  * precioArenaEq * inc(p,"arena");
   const costoTotal   = costoOpex + costoCamiones + costoAcopio + costoFleteAcopio
                      + combPuerto + fleteEtapa + agencia + costoMermaDescarga + costoMermaAcopio;
 
@@ -838,7 +1101,7 @@ export function calcEtapa3(p, tnEntrada=null) {
       `${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTC:[
-      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d = $${tc}/d`,
+      cd.resumen,
       `Incluye: t_scheduler + inop + espera BB + espera Zárate`,
       `${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
@@ -849,7 +1112,7 @@ export function calcEtapa3(p, tnEntrada=null) {
       `Alquiler predio: ${sch.Tn_calesitas.toFixed(0)}Tn × $${sch.costoAlqUSDTn.toFixed(2)}/Tn = $${sch.costoAlqTotal.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Flete acopio → Neuquén: ${tnAcopio.toFixed(0)}Tn × $${(p.des_costoFleteAcopioUSDTn??37.14).toFixed(2)}/Tn = $${costoFleteAcopio.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Comb. puerto: ${tReal_dias.toFixed(1)}d×${p.barco_consumoPuerto}T/d×$${vlsfo} = $${combPuerto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Barco: ${tReal_dias.toFixed(1)}d×$${tc}/d = $${fleteEtapa.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Agencia BB: $${agencia.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Merma desc: ${mermaDescarga_Tn.toFixed(0)}Tn × $${precioArenaEq.toFixed(1)}/Tn eq. = $${costoMermaDescarga.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
@@ -860,7 +1123,7 @@ export function calcEtapa3(p, tnEntrada=null) {
 export function calcEtapaRepo(p) {
   const vlsfo    = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
-  const tc       = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+  const cd       = costoDiarioBarco(p); const tc = cd.total;
   const tramos   = p.repo_tramos || TRAMOS_REPO_DEFAULT;
   const nav      = velPromedioPonderada(tramos);
 
@@ -872,30 +1135,36 @@ export function calcEtapaRepo(p) {
     return acc + (hs / 24) * consumoDia;
   }, 0);
 
-  const combCosto  = combTotal * vlsfo;
-  const fleteCosto = nav.diasNav * tc;
+  // Fuera de alcance: el barco se recibe en el puerto de carga, el viaje no suma
+  const kR         = inc(p,"repo");
+  const combCosto  = combTotal * vlsfo * inc(p,"combustible") * kR;
+  const fleteCosto = nav.diasNav * tc * kR;
   // Costos únicos por escala (se cargan en este viaje)
-  const limpiezaBodega     = p.barco_limpiezaBodega     || 0;
-  const importacionWaiver  = p.barco_importacionWaiver  || 0;
-  const extrasTotal        = (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
+  const limpiezaBodega     = (p.barco_limpiezaBodega || 0) * kR;
+  const importacionWaiver  = costoWaiver(p) * kR;
+  const extrasTotal        = (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0) * kR;
   // F-03: fleteCosto incluido en costoTotal para que grand total cierre correctamente
-  const costoTotal = combCosto + fleteCosto + limpiezaBodega + importacionWaiver + extrasTotal;
+  const costoViaje = combCosto + fleteCosto + limpiezaBodega + importacionWaiver + extrasTotal;
+  // Movilización/adecuación/desmovilización: un solo contrato de un viaje → se cargan acá,
+  // aunque el viaje a puerto de carga esté fuera de alcance
+  const mov = costoMovilizacion(p);
+  const costoTotal = costoViaje + mov.total;
 
   return {
     ...nav, vlsfo, vlsfoStats, tc,
     combTotal, combCosto, fleteCosto,
-    limpiezaBodega, importacionWaiver, costoTotal,
+    limpiezaBodega, importacionWaiver, costoViaje, movInicio:mov.inicio, movFin:mov.fin, costoTotal,
     hoverComb:[
       `Consumo lastre interpolado por tramo`,
       `Total: ${combTotal.toFixed(1)}T × $${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTC:[
-      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d + Misc: $${p.barco_miscPorDia||0}/d = $${tc}/d`,
+      cd.resumen,
       `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
       `Combustible lastre: ${combTotal.toFixed(1)}T×$${vlsfo} = $${combCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteCosto.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Limpieza bodega: $${limpiezaBodega.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       `Importación/Waiver: $${importacionWaiver.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
       ...(p.repo_itemsExtra||[]).filter(it=>it.activo).map(it=>`${it.label}: $${it.usd.toLocaleString("es-AR",{maximumFractionDigits:0})}`),
@@ -909,7 +1178,7 @@ export function calcEtapa4(p) { return calcEtapaVuelta(p); }
 export function calcEtapaVuelta(p) {
   const vlsfo    = getPrecioVLSFO(p.nav_escenarioVLSFO, p.nav_vlsfoManual, p.vlsfo_historico);
   const vlsfoStats = calcVLSFOStats(p.vlsfo_historico);
-  const tc       = p.barco_timeCharter + p.barco_tripulacion + (p.barco_miscPorDia||0);
+  const cd       = costoDiarioBarco(p); const tc = cd.total;
   const tramos   = p.vta_tramos || DEFAULT_PARAMS.vta_tramos;
   const nav      = velPromedioPonderada(tramos);
 
@@ -932,12 +1201,12 @@ export function calcEtapaVuelta(p) {
       `Total: ${combLastreTotal.toFixed(1)}T × $${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTC:[
-      `TC: $${p.barco_timeCharter}/d + Trip: $${p.barco_tripulacion}/d + Misc: $${p.barco_miscPorDia||0}/d = $${tc}/d`,
+      cd.resumen,
       `${nav.diasNav.toFixed(1)}d × $${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
     hoverTotal:[
       `Combustible lastre: ${combLastreTotal.toFixed(1)}T×$${vlsfo} = $${combLastre.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
-      `TC+Trip+Misc: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
+      `Barco: ${nav.diasNav.toFixed(1)}d×$${tc}/d = $${fleteNav.toLocaleString("es-AR",{maximumFractionDigits:0})}`,
     ],
   };
 }
@@ -950,7 +1219,7 @@ export function calcEtapaVuelta(p) {
 export function calcNViajes(p, tot) {
   // tot = resultado de calcTotal ya calculado — usamos sus días directamente
   // sin recalcular nada con meses
-  const diasWaiver = p.barco_diasWaiver || 30;
+  const diasWaiver = diasPeriodoMultiViaje(p);
 
   // Ciclo viaje 1 dentro del waiver: E1.tReal + E2.nav + E3.tReal (sin E0 repo)
   const diasE1  = tot.e1.tReal_dias;
@@ -966,7 +1235,7 @@ export function calcNViajes(p, tot) {
     const hs   = dist / t.velocidad;
     return acc + (hs / 24) * interpolarConsumo(p.barco_tablaVelConsumo, t.velocidad, "lastre");
   }, 0);
-  const costoVuelta = combVuelta * vlsfo + diasE2 * tc;
+  const costoVuelta = combVuelta * vlsfo * inc(p,"combustible") + diasE2 * tc;
   const diasVuelta  = diasE2;
 
   // Ciclo viaje 2+: vuelta + ciclo1
@@ -987,13 +1256,14 @@ export function calcNViajes(p, tot) {
   for (let i = 1; i <= nViajes; i++) {
     if (i === 1) {
       diasAcum  = diasCiclo1;
-      costoAcum = tot.costoTotal;
+      costoAcum = tot.costoTotal - tot.e0.movFin;  // la desmovilización va al final del contrato
       tnAcum    = tot.tnEntregadas;
     } else {
       diasAcum  += diasCiclo2;
       costoAcum += costoViajeAdicional;
       tnAcum    += tot.tnEntregadas;
     }
+    if (i === nViajes) costoAcum += tot.e0.movFin;
     viajes.push({
       n: i,
       diasWaiverAcum: diasAcum,
@@ -1014,9 +1284,9 @@ export function calcNViajes(p, tot) {
     diasTotalesWaiver, diasTotales,
     viajes,
     costoViajeAdicional, costoTotalSistema, tnTotales, usdTnSistema,
-    ahorroPorWaiver:   (p.barco_importacionWaiver||0) * viajesExtra,
-    ahorroPorLimpieza: (p.barco_limpiezaBodega||0)    * viajesExtra,
-    ahorroTotal:       ((p.barco_importacionWaiver||0) + (p.barco_limpiezaBodega||0)) * viajesExtra,
+    ahorroPorWaiver:   costoWaiver(p) * inc(p,"repo") * viajesExtra,
+    ahorroPorLimpieza: (p.barco_limpiezaBodega||0) * inc(p,"repo") * viajesExtra,
+    ahorroTotal:       (costoWaiver(p) + (p.barco_limpiezaBodega||0)) * inc(p,"repo") * viajesExtra,
   };
 }
 
@@ -1031,7 +1301,7 @@ export function calcTotal(p) {
   const e3=calcEtapa3(pConEq,e1.tnPostCarga);
   const costoTotal =e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
   const usdTn      =costoTotal/e3.tnEntregadas;
-  const diasTotales=e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias;
+  const diasTotales=e0.diasNav*inc(p,"repo")+e1.tReal_dias+e2.diasNav+e3.tReal_dias;
   return {e0,e1,e2,e3,costoTotal,usdTn,diasTotales,tnEntregadas:e3.tnEntregadas};
 }
 
@@ -1110,6 +1380,14 @@ export function runMonteCarlo(p, n=5000) {
   const pVbBase = probSuperaUmbral(dBanual.vientoProm,dBanual.vientoSigma,p.des_inopViento);
   const pBbase  = Math.min(pLbBase+pVbBase-pLbBase*pVbBase, 0.90);
 
+  // Costo diario del barco: se calcula una vez (la liquidación de tripulación no se sortea)
+  const cdBase   = costoDiarioBarco(p);
+  const hireBase = cdBase.hire;
+  // Alcance: 1 = bloque a nuestro cargo, 0 = no suma
+  const kComb = inc(p,"combustible"), kRepo = inc(p,"repo"), kAgZ = inc(p,"agenciaCarga"), kAgB = inc(p,"agenciaDescarga");
+  const kAre  = inc(p,"arena"), kOpe = inc(p,"operacion"), kLog = inc(p,"logistica");
+  const movContrato = costoMovilizacion(p).total;
+
   const results = [];
 
   for (let i = 0; i < n; i++) {
@@ -1118,10 +1396,11 @@ export function runMonteCarlo(p, n=5000) {
       : usarBootstrap
           ? vlsfoPool[Math.floor(Math.random() * vlsfoPool.length)]  // bootstrap: sorteo directo del histórico 24M
           : Math.max(300, basePrecio + randn()*sigmaVLSFO);           // fallback: Normal si hay pocos datos
-    const tcBase = !S('tc') ? p.barco_timeCharter
+    const tcBase = !S('tc') ? hireBase
       : R('tc') ? tri('tc')
-      : Math.max(5000, p.barco_timeCharter + randn()*sigma('tc'));
-    const tc     = tcBase + p.barco_tripulacion + (p.barco_miscPorDia||0);
+      : Math.max(5000, hireBase + randn()*sigma('tc'));
+    // El resto del costo diario no varía; en BBC los recargos % se aplican sobre el hire sorteado
+    const tc     = cdBase.total + (tcBase - hireBase) * cdBase.factorHire;
     // Cada variable: fija → valor base; rango → triangular; si no → Normal alrededor del base
     const sortear = (id, base, piso) => !S(id) ? base : R(id) ? tri(id) : Math.max(piso, base + randn()*sigma(id));
     const espBB  = sortear('espBB',    esperaBBBase,              0);
@@ -1155,16 +1434,17 @@ export function runMonteCarlo(p, n=5000) {
       const hs = dist/t.velocidad;
       return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"lastre");
     },0);
-    const c0 = combRepoT*vlsfo + diasNavR*tc + (p.barco_limpiezaBodega||0) + (p.barco_importacionWaiver||0)
-             + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0);
+    const c0 = kRepo * (combRepoT*vlsfo*kComb + diasNavR*tc + (p.barco_limpiezaBodega||0) + costoWaiver(p)
+             + (p.repo_itemsExtra||[]).reduce((s,it)=>s+(it.activo?it.usd:0),0))
+             + movContrato;
 
     // E1 — Carga (F-06: barco zarpa con cap_capacidadBarco, merma es costo adicional)
     const vH1  = p.cap_gruas*p.cap_grampada*p.cap_densidadArena*p.cap_movGrampa*60;
     const tI1  = p.cap_capacidadBarco/vH1/p.cap_horasDia;
     const tR1  = tI1 + tI1*pZ/Math.max(0.01,1-pZ) + espC;
     const mCTn = p.cap_capacidadBarco*mC;  // Tn merma compradas extra en origen
-    const c1   = pa*p.cap_capacidadBarco + pa*mCTn + p.cap_opexUSDTn*p.cap_capacidadBarco
-               + tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + calcAgenciaZarate(p,tR1);
+    const c1   = kAre*(pa*p.cap_capacidadBarco + pa*mCTn) + kOpe*p.cap_opexUSDTn*p.cap_capacidadBarco
+               + kComb*tR1*p.barco_consumoPuerto*vlsfo + tR1*tc + kAgZ*calcAgenciaZarate(p,tR1);
 
     // E2 — Navegación ida
     const tramosV = p.nav_tramos.map(t=>({...t,velocidad:t.velocidad*vF}));
@@ -1174,7 +1454,7 @@ export function runMonteCarlo(p, n=5000) {
       const hs = dist/t.velocidad;
       return acc+(hs/24)*interpolarConsumo(p.barco_tablaVelConsumo,t.velocidad,"cargado");
     },0);
-    const c2 = combNavT*vlsfo + diasNav*tc;
+    const c2 = kComb*combNavT*vlsfo + diasNav*tc;
 
     // E3 — Descarga (usa Scheduler completo — F-02)
     // F-06: usar cap_capacidadBarco como tnEntrada (igual que determinístico)
@@ -1194,20 +1474,20 @@ export function runMonteCarlo(p, n=5000) {
     const precEq = tnABordo>0 ? (c0+c1+c2)/tnABordo : pa;
     const fleteAcopioUSDTn = p.des_costoFleteAcopioUSDTn ?? 37.14;
     // F-04: agregar mATn*precEq (merma acopio) a c3
-    const c3 = p.des_opexUSDTn*tnABordo + p.des_costoCamionesDirUSDTn*tnDi
-             + schMC.costoCal + fleteAcopioUSDTn*tnAc
-             + tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
-             + calcAgenciaBB(p,tR3) + mDTn*precEq + mATn*precEq;
+    const c3 = kOpe*p.des_opexUSDTn*tnABordo + kLog*(p.des_costoCamionesDirUSDTn*tnDi
+             + schMC.costoCal + fleteAcopioUSDTn*tnAc)
+             + kComb*tR3*p.barco_consumoPuerto*vlsfo + tR3*tc
+             + kAgB*calcAgenciaBB(p,tR3) + kAre*(mDTn*precEq + mATn*precEq);
 
     // Desglose de ítems para proforma MC
-    const combTotal = combRepoT + (tR1*p.barco_consumoPuerto) + combNavT + (tR3*p.barco_consumoPuerto);
-    const barcoTotal = (diasNavR + tR1 + diasNav + tR3) * tc;
-    const agZarate   = calcAgenciaZarate(p, tR1);
-    const agBB       = calcAgenciaBB(p, tR3);
-    const opex       = p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnABordo;
-    const camiones   = p.des_costoCamionesDirUSDTn*tnDi + schMC.costoCal + fleteAcopioUSDTn*tnAc;
-    const arena      = pa*p.cap_capacidadBarco;
-    const mermas     = pa*mCTn_gross + mDTn*precEq + mATn*precEq;
+    const combTotal = kComb*(combRepoT*kRepo + (tR1*p.barco_consumoPuerto) + combNavT + (tR3*p.barco_consumoPuerto));
+    const barcoTotal = (diasNavR*kRepo + tR1 + diasNav + tR3) * tc;
+    const agZarate   = kAgZ*calcAgenciaZarate(p, tR1);
+    const agBB       = kAgB*calcAgenciaBB(p, tR3);
+    const opex       = kOpe*(p.cap_opexUSDTn*p.cap_capacidadBarco + p.des_opexUSDTn*tnABordo);
+    const camiones   = kLog*(p.des_costoCamionesDirUSDTn*tnDi + schMC.costoCal + fleteAcopioUSDTn*tnAc);
+    const arena      = kAre*pa*p.cap_capacidadBarco;
+    const mermas     = kAre*(pa*mCTn_gross + mDTn*precEq + mATn*precEq);
     const repo       = c0;
     const total      = c0+c1+c2+c3;
 
@@ -1255,7 +1535,7 @@ export function runMonteCarlo(p, n=5000) {
     let base = "";
     switch(v.id) {
       case "vlsfo":   base = `$${basePrecio}/T (${VLSFO_ESCENARIOS.find(e=>e.id===p.nav_escenarioVLSFO)?.label})`; break;
-      case "tc":      base = `$${p.barco_timeCharter.toLocaleString()}/d`; break;
+      case "tc":      base = `$${hireBase.toLocaleString()}/d (${hireLabel(p)})`; break;
       case "velFact": base = "100% (neutro)"; break;
       case "espBB":   base = `${(p.des_esperaBBMes.reduce((a,b)=>a+b,0)/12).toFixed(1)}d prom. anual`; break;
       case "espZ":    base = `${p.des_esperaZarateDias}d`; break;
