@@ -78,6 +78,9 @@ export const VLSFO_HISTORICO_DEFAULT = [
   {año:2025,mes:9,precio:487.5},{año:2025,mes:10,precio:505},{año:2025,mes:11,precio:486},
   {año:2026,mes:0,precio:483},{año:2026,mes:1,precio:515},{año:2026,mes:2,precio:1193},
   {año:2026,mes:3,precio:868},{año:2026,mes:4,precio:880.5},{año:2026,mes:5,precio:808.5},
+  // Jul–Oct 2026: máximo diario del mes, Ship & Bunker Santos (octubre hasta el 13/10/2026)
+  {año:2026,mes:6,precio:853},{año:2026,mes:7,precio:825.5},{año:2026,mes:8,precio:881},
+  {año:2026,mes:9,precio:850.5},
 ];
 
 export function calcVLSFOStats(historico) {
