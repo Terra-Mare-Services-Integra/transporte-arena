@@ -2481,9 +2481,10 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
   const totEv={
     costoTotal: tot.costoTotal,
     usdTn: tot.usdTn,
-    diasTotales: e0.diasNav+e1.tReal_dias+e2.diasNav+e3.tReal_dias,
+    diasTotales: tot.diasTotales,  // respeta el alcance: sin reposicionamiento no suma sus días
     tnEntregadas: e3.tnEntregadas,
   };
+  const ctrEv=calcNViajes(p,tot);
 
   const etapas=[
     {
@@ -2570,10 +2571,12 @@ function TabEvaluacion({p,tnEntregadas,tot}) {
     <div>
       {/* KPIs globales */}
       <div className="kpis">
-        <KPI label="USD/Tn final"  value={`$${totEv.usdTn.toFixed(1)}`}             color={C.gold}/>
+        {/* En BBC estos KPIs son de un solo viaje; el encabezado muestra el contrato completo */}
+        <KPI label={esBBC(p)?"USD/Tn 1 viaje":"USD/Tn final"} value={`$${totEv.usdTn.toFixed(1)}`} color={C.gold}
+          unit={esBBC(p)?`contrato: $${ctrEv.usdTnSistema.toFixed(1)} (${ctrEv.nViajes} ${ctrEv.nViajes===1?"viaje":"viajes"})`:undefined}/>
         <KPI label="Tn entregadas" value={totEv.tnEntregadas.toFixed(0)}             color={C.green}/>
-        <KPI label="Días totales"  value={`${totEv.diasTotales.toFixed(1)}d`}        color={C.navy}/>
-        <KPI label="Costo total"   value={`$${(totEv.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
+        <KPI label={esBBC(p)?"Días 1 viaje":"Días totales"} value={`${totEv.diasTotales.toFixed(1)}d`} color={C.navy}/>
+        <KPI label={esBBC(p)?"Costo 1 viaje":"Costo total"} value={`$${(totEv.costoTotal/1000).toFixed(0)}k`} color={C.navy}/>
         <KPI label="VLSFO"         value={`$${e1.vlsfo}/T`}                        color={C.orange}/>
         <KPI label="Barco / día"   value={`$${Math.round(e1.tc).toLocaleString("es-AR")}/d`}          color={C.mid}/>
       </div>
