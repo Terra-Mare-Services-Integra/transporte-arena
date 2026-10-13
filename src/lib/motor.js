@@ -1296,7 +1296,8 @@ export function calcTotal(p) {
   const e0=calcEtapaRepo(p);
   const e1=calcEtapa1(p);
   const e2=calcEtapa2(p);
-  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal+e2.costoTotal+e0.costoTotal)/e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
+  // Arena puesta en destino: sin movilización/adecuación, que son costos del contrato, no de la arena
+  const costoArenaEq = e1.tnPostCarga > 0 ? (e1.costoTotal+e2.costoTotal+e0.costoViaje)/e1.tnPostCarga : (p.cap_precioArenaOrigen||13.5);
   const pConEq = {...p, _costoArenaEq: costoArenaEq};
   const e3=calcEtapa3(pConEq,e1.tnPostCarga);
   const costoTotal =e0.costoTotal+e1.costoTotal+e2.costoTotal+e3.costoTotal;
@@ -1471,7 +1472,7 @@ export function runMonteCarlo(p, n=5000) {
     const tnAc = tnPD - tnDi;
     const mATn = tnAc*mA; const tnEnt = tnPD-mATn;
     // F-05: precEq includes E0+E1+E2 (igual que determinístico)
-    const precEq = tnABordo>0 ? (c0+c1+c2)/tnABordo : pa;
+    const precEq = tnABordo>0 ? (c0-movContrato+c1+c2)/tnABordo : pa;
     const fleteAcopioUSDTn = p.des_costoFleteAcopioUSDTn ?? 37.14;
     // F-04: agregar mATn*precEq (merma acopio) a c3
     const c3 = kOpe*p.des_opexUSDTn*tnABordo + kLog*(p.des_costoCamionesDirUSDTn*tnDi
